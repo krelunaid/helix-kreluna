@@ -1,0 +1,346 @@
+import { useEffect, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Download, Github, Globe, Monitor, Wifi } from "lucide-react";
+import { AppStoreMark, PlayStoreMark } from "@/components/store-marks";
+import { RedirectToSignIn } from "@/lib/auth/gates";
+import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { SiteHeader } from "@/components/site-header";
+import { Button } from "@/components/ui/button";
+import { getProject, type Profile, type Project } from "@/lib/server/vetra";
+import {
+  DEPLOY_COST,
+  downloadNativePack,
+  listDeploys,
+  publishWeb,
+  shipStore,
+  type Deploy,
+} from "@/lib/server/deploy";
+import { scoreProduct } from "@/lib/server/score-fn";
+import type { KrelunaScore } from "@/lib/score";
+import { ScoreCard } from "@/components/score-card";
+import { bundleIdFromTitle } from "@/lib/expo-pack";
+import { toast } from "sonner";
+import { wantsDesktop } from "@/lib/brief";
+import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import { githubStatus, pushProjectGithub } from "@/lib/server/github";
+
+export const Route = createFileRoute("/studio/$id/launch")({ component: Launch });
+
+function Launch() {
+  const { id } = Route.useParams();
+  const { user, isPending } = useCurrentUserState();
+  const { t, locale } = useI18n();
+  const [project, setProject] = useState<Project | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [deploys, setDeploys] = useState<Deploy[]>([]);
+  const [appleTeam, setAppleTeam] = useState("");
+  const [bundleId, setBundleId] = useState("");
+  const [busy, setBusy] = useState<"web" | "ios" | "android" | "windows" | "zip-ios" | "zip-android" | "zip-windows" | "gh" | null>(null);
+  const [ghUrl, setGhUrl] = useState<string | null>(null);
+  const [web, setWeb] = useState<{ url: string; testersUrl: string; testersCode: string } | null>(null);
+  const [score, setScore] = useState<KrelunaScore | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    void getProject({ data: id })
+      .then((r) => {
+        setProject(r.project);
+        setProfile(r.profile);
+        setBundleId((b) => b || bundleIdFromTitle(r.project.title));
+        if (r.project.html) {
+          void scoreProduct({ data: { html: r.project.html, prompt: r.project.prompt, twin: true, locale } }).then(setScore);
+        }
+      })
+      .catch(() => undefined);
+    void listDeploys({ data: id }).then(setDeploys).catch(() => undefined);
+  }, [user?.id, id]);
+
+  if (isPending) {
+    return (
+      <div className="min-h-screen">
+        <SiteHeader dense />
+      </div>
+    );
+  }
+  if (!user) return <RedirectToSignIn />;
+
+  async function goWeb() {
+    setBusy("web");
+    try {
+      const r = await publishWeb({ data: { projectId: id } });
+      setWeb(r);
+      setDeploys(await listDeploys({ data: id }));
+      const next = await getProject({ data: id });
+      setProject(next.project);
+      setProfile(next.profile);
+      toast.success(t("launch.webOk"));
+      if (score && score.readiness < 80) toast.message(t("score.shipWarn"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("launch.err"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function goStore(target: "ios" | "android") {
+    setBusy(target);
+    try {
+      const r = await shipStore({
+        data: { projectId: id, target, appleTeam, bundleId },
+      });
+      setWeb({ url: r.url, testersUrl: r.testersUrl, testersCode: r.testersCode });
+      setDeploys(await listDeploys({ data: id }));
+      const next = await getProject({ data: id });
+      setProfile(next.profile);
+      if (r.pack?.base64) {
+        const bin = atob(r.pack.base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const blob = new Blob([bytes], { type: "application/zip" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = r.pack.filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+      toast.success(target === "ios" ? t("launch.iosOk") : t("launch.andOk"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("launch.err"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function zip(target: "ios" | "android" | "windows") {
+    if (!project?.html) return;
+    setBusy(target === "ios" ? "zip-ios" : target === "windows" ? "zip-windows" : "zip-android");
+    try {
+      const pack = await downloadNativePack({
+        data: {
+          title: project.title,
+          html: project.html,
+          slug: web?.url.split("/").pop(),
+          target,
+          appleTeam,
+          bundleId,
+        },
+      });
+      const bin = atob(pack.base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], { type: "application/zip" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = pack.filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast.success(target === "windows" ? t("launch.winOk") : target === "ios" ? t("launch.iosOk") : t("launch.andOk"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("launch.err"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const last = (target: string) => deploys.find((d) => d.target === target);
+  const showWindows = wantsDesktop(project?.prompt ?? "");
+
+  return (
+    <div className="min-h-screen">
+      <SiteHeader credits={profile?.credits_balance} dense />
+      <div className="mx-auto max-w-5xl px-4 py-8">
+        <p className="text-xs tracking-[0.16em] text-muted uppercase">{t("launch.kicker")}</p>
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="font-display text-4xl tracking-tight">{project?.title ?? t("launch.title")}</h1>
+            <p className="mt-2 max-w-xl text-sm text-muted">{t("launch.lead")}</p>
+          </div>
+          <Link to="/studio/$id" params={{ id }} className="text-sm text-muted underline-offset-4 hover:text-fg hover:underline">
+            {t("launch.back")}
+          </Link>
+        </div>
+        <div className="mt-4">
+          {ghUrl ? (
+            <a href={ghUrl} target="_blank" rel="noreferrer" className="text-sm text-accent underline-offset-2 hover:underline">
+              {ghUrl}
+            </a>
+          ) : (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!project?.html || busy === "gh"}
+              onClick={() => {
+                setBusy("gh");
+                void githubStatus()
+                  .then((s) => {
+                    if (!s.login) {
+                      toast.message(t("acc.ghWho"));
+                      throw new Error("no-gh");
+                    }
+                    return pushProjectGithub({ data: { projectId: id } });
+                  })
+                  .then((r) => {
+                    if (!r) return;
+                    setGhUrl(r.url);
+                    toast.success(t("acc.ghPushed"));
+                  })
+                  .catch((err) => {
+                    if (err instanceof Error && err.message === "no-gh") return;
+                    toast.error(err instanceof Error ? err.message : t("acc.ghErr"));
+                  })
+                  .finally(() => setBusy(null));
+              }}
+            >
+              <Github className="size-4" />
+              {t("acc.ghPush")}
+            </Button>
+          )}
+        </div>
+
+        {score ? (
+          <div className="mt-8">
+            <ScoreCard score={score} />
+          </div>
+        ) : project?.html ? (
+          <p className="mt-8 text-sm text-muted">{t("score.scanning")}</p>
+        ) : null}
+
+        <div className="mt-8 grid gap-4 sm:grid-cols-2">
+          <article className="rounded-2xl bg-surface p-5 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
+            <AppStoreMark className="size-12" />
+            <h2 className="mt-3 text-lg">{t("launch.ios")}</h2>
+            <p className="mt-1 text-sm text-muted">{t("launch.iosBody")}</p>
+            <label className="mt-4 block text-xs text-subtle">
+              Apple Team ID
+              <input
+                value={appleTeam}
+                onChange={(e) => setAppleTeam(e.target.value)}
+                placeholder="AB12C3D4E5"
+                className="mt-1 w-full rounded-md bg-elevated px-3 py-2 text-sm text-fg outline-none shadow-[0_0_0_1px_rgb(255_255_255/0.08)]"
+              />
+            </label>
+            <label className="mt-3 block text-xs text-subtle">
+              Bundle ID
+              <input
+                value={bundleId}
+                onChange={(e) => setBundleId(e.target.value)}
+                className="mt-1 w-full rounded-md bg-elevated px-3 py-2 text-sm text-fg outline-none shadow-[0_0_0_1px_rgb(255_255_255/0.08)]"
+              />
+            </label>
+            <p className="mt-3 text-xs text-subtle">{DEPLOY_COST.ios} cr</p>
+            <Button className="mt-3 w-full" disabled={!!busy || !project?.html} onClick={() => void goStore("ios")}>
+              {busy === "ios" ? t("launch.shipping") : t("launch.iosCta")}
+            </Button>
+            <Button
+              variant="secondary"
+              className="mt-2 w-full"
+              disabled={!!busy || !project?.html}
+              onClick={() => void zip("ios")}
+            >
+              <Download className="size-4" />
+              {busy === "zip-ios" ? "…" : t("launch.zipIos")}
+            </Button>
+          </article>
+
+          <article className="rounded-2xl bg-surface p-5 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
+            <PlayStoreMark className="size-12" />
+            <h2 className="mt-3 text-lg">{t("launch.and")}</h2>
+            <p className="mt-1 text-sm text-muted">{t("launch.andBody")}</p>
+            <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.android} cr</p>
+            <Button className="mt-4 w-full" disabled={!!busy || !project?.html} onClick={() => void goStore("android")}>
+              {busy === "android" ? t("launch.shipping") : t("launch.andCta")}
+            </Button>
+            <Button
+              variant="secondary"
+              className="mt-2 w-full"
+              disabled={!!busy || !project?.html}
+              onClick={() => void zip("android")}
+            >
+              <Download className="size-4" />
+              {busy === "zip-android" ? "…" : t("launch.zipAnd")}
+            </Button>
+          </article>
+
+          <article className="rounded-2xl bg-surface p-5 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
+            <Globe className="size-5 text-accent" />
+            <h2 className="mt-3 text-lg">{t("launch.web")}</h2>
+            <p className="mt-1 text-sm text-muted">{t("launch.webBody")}</p>
+            <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.web} cr</p>
+            <Button className="mt-4 w-full" disabled={!!busy || !project?.html} onClick={() => void goWeb()}>
+              <Wifi className="size-4" />
+              {busy === "web" ? t("launch.shipping") : t("launch.webCta")}
+            </Button>
+            {web ? (
+              <a href={web.url} className="mt-3 block truncate text-sm text-accent underline-offset-2 hover:underline">
+                {web.url}
+              </a>
+            ) : null}
+          </article>
+
+          {showWindows ? (
+          <article className="rounded-2xl bg-surface p-5 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
+            <Monitor className="size-5 text-accent" />
+            <h2 className="mt-3 text-lg">{t("launch.win")}</h2>
+            <p className="mt-1 text-sm text-muted">{t("launch.winBody")}</p>
+            <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.windows} cr</p>
+            <Button className="mt-4 w-full" disabled={!!busy || !project?.html} onClick={() => void zip("windows")}>
+              <Download className="size-4" />
+              {busy === "zip-windows" ? t("launch.shipping") : t("launch.winCta")}
+            </Button>
+          </article>
+          ) : null}
+        </div>
+
+        {web?.testersUrl ? (
+          <div className="mt-6 rounded-2xl bg-accent/10 px-5 py-4 text-sm">
+            <p className="font-medium">{t("launch.track")}</p>
+            <p className="mt-1 text-muted">{t("launch.trackBody", { code: web.testersCode })}</p>
+            <a href={web.testersUrl} className="mt-2 inline-block text-accent underline-offset-2 hover:underline">
+              {web.testersUrl}
+            </a>
+          </div>
+        ) : null}
+
+        {deploys.length ? (
+          <div className="mt-10">
+            <p className="text-xs tracking-[0.16em] text-subtle uppercase">{t("launch.harbor")}</p>
+            <ul className="mt-3 space-y-3">
+              {deploys.map((d) => (
+                <li key={d.id} className="rounded-xl bg-surface px-4 py-3 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm">
+                      {d.target === "web" ? "Web" : d.target === "ios" ? "TestFlight" : d.target === "windows" ? "Windows" : "Google Play"} · {d.status}
+                    </p>
+                    {d.url ? (
+                      <a href={d.url} className="text-xs text-accent underline-offset-2 hover:underline">
+                        {d.url}
+                      </a>
+                    ) : null}
+                  </div>
+                  <ol className="mt-2 space-y-1">
+                    {d.log.map((s) => (
+                      <li key={s.id} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="text-muted">{s.label}</span>
+                        <span
+                          className={cn(
+                            "uppercase",
+                            s.status === "done" && "text-fg",
+                            s.status === "blocked" && "text-accent",
+                            s.status === "error" && "text-danger",
+                          )}
+                        >
+                          {s.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}

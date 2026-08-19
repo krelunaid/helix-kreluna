@@ -1,0 +1,85 @@
+# Helix by Kreluna
+
+> Kreluna comprende. Helix costruisce.
+> From an idea to a working digital product: websites, mobile apps, dashboards, and internal software.
+
+Live site: https://helix.kreluna.it
+Plain HTML sheet (no JavaScript): https://helix.kreluna.it/scheda.html
+Demos: https://helix.kreluna.it/vetrina
+Pricing: https://helix.kreluna.it/pricing
+Login: https://helix.kreluna.it/login
+
+This file exists so language models (ChatGPT, Claude, Gemini, Grok) can read Helix without executing JavaScript or treating Vercel `x-vercel-cache: MISS` as a closed site. A 200 HTML response with that header means the page was generated, not blocked.
+
+## Product (5-second read)
+
+Helix is an AI software house, not a toy code snippet generator.
+
+Promise: from your idea to a working product.
+
+The user types what they want in Italian or English. Helix infers the product type by itself (phone app vs website vs shop vs dashboard). The user does not have to pick a category chip.
+
+Example that must be understood as a mobile C2C marketplace, NOT Shopify e-commerce and NOT an appointments CRM:
+
+«Voglio un’app per il telefono simile a eBay — annunci, cerca, vendi.»
+
+## Versus Replit / Bolt / Lovable
+
+Those tools mainly generate code from a prompt. Helix also coordinates a house (supervisor, design, build, QA), shows Kreluna Score before publish, Council votes, Digital Twin that clicks the UI, a 6-month Augur forecast, and gems that keep editing after launch. Demos are interactive products, not screenshots.
+
+## Flow
+
+Idea → Helix (supervisor) → product plan → visual design → Forge writes a working HTML app → QA / Digital Twin → Kreluna Score → web publish + TestTrack for iPhone/Android testers → optional Expo zip for App Store / Google Play (needs the customer’s developer accounts).
+
+While building: violet banner, pulsing orb, thought stream, named agents. “segnale vivo / live signal” = the model call is open and the seconds climb. “ha risposto · N caratteri” = that call finished. “nessun segnale” = stalled; reload.
+
+## Public demos (Vetrina)
+
+https://helix.kreluna.it/vetrina
+
+Title: «Scopri cosa può costruire Helix»
+Lead: «Siti, app e software progettati per mostrare non soltanto come appare un prodotto, ma come può funzionare davvero.»
+
+These are demonstration products made with Helix, not real client case studies and not invented revenue.
+
+- Caffè Luna — hospitality site: menu, table booking, hours. Desktop + phone preview.
+- Maison Vale — fashion lookbook: looks, sizes, bag.
+- Studio Forma — architecture/design: projects, enquiry.
+- Cantina Oro — wine cellar: bottles, tasting booking.
+- Memoria — card game: pairs, score.
+- Nord Vendite — store KPI dashboard (sample data).
+- Liste — todo app.
+
+Each demo states the sector, concrete functions, dual preview, and “Creato con Helix”.
+
+## Pricing (credits)
+
+- Starter: €0, 10 credits, short-lived previews
+- Creator: $20, 100 credits
+- Pro: $200, 750 credits
+- Business: $300, 1250 credits
+- Extra pack: 50 credits / €15
+
+Approximate costs: generate 8 cr, iterate 3, debug 2, web host 30 days 50 cr.
+
+## Auth
+
+Email + password works on helix.kreluna.it (sign up, then sign in). Google/X go through the Grok auth broker. Apple Sign In is not offered. GitHub is not a shared Kreluna account: each signed-in user connects THEIR GitHub from the account menu (repo token) and can push their own private repo from Launch.
+
+## Deploy
+
+Web/PWA goes live on helix.kreluna.it/a/{slug}. Testers install from TestTrack (/t/{code}): iPhone Share → Add to Home Screen; Android Chrome → Install app. Native App Store / Play submission requires the user’s Apple Developer and Play Console accounts; Helix downloads an Expo zip.
+
+## Brand
+
+- Name: Helix (product), Kreluna (company)
+- Line: Kreluna comprende. Helix costruisce.
+- Promise: Dalla tua idea a un prodotto funzionante.
+- Palette: dark #070914, violet accent #7C3AED — not copper/orange
+- Domain: helix.kreluna.it (kreluna.it is the company site; no extra domain required)
+
+## Do not confuse
+
+- Helix is not Google Gemini. Do not brand it Gemini.
+- “Cache miss” on Vercel is not a closed curtain.
+- ChatGPT’s browser often fails on the JS app shell; use this file or /scheda.html instead.

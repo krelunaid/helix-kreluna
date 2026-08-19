@@ -1,0 +1,149 @@
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  --color-bg: #070914;
+  --color-surface: #0d1224;
+  --color-elevated: #131a2e;
+  --color-fg: #f8fafc;
+  --color-muted: #aab3c5;
+  --color-subtle: #7b8499;
+  --color-accent: #7c3aed;
+  --color-accent-fg: #f8fafc;
+  --color-accent-soft: #9b6cff;
+  --color-info: #22d3ee;
+  --color-border: #243049;
+  --color-danger: #dc2626;
+  --color-ok: #16a34a;
+  --color-light: #f7f8fc;
+  --color-ink: #101828;
+  --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 28px;
+  --shadow-border: 0 0 0 1px rgb(255 255 255 / 0.08);
+  --shadow-card: 0 0 0 1px rgb(124 58 237 / 0.18), 0 24px 60px rgb(0 0 0 / 0.4);
+  --shadow-window: 0 0 0 1px rgb(155 108 255 / 0.2), 0 40px 80px rgb(0 0 0 / 0.5);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  html,
+  body,
+  #app {
+    min-height: 100%;
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    overflow-x: hidden;
+  }
+  body {
+    font-family: var(--font-sans);
+    font-size: 17px;
+    line-height: 1.55;
+    letter-spacing: -0.011em;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    letter-spacing: -0.03em;
+    font-weight: 600;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent-soft);
+    outline-offset: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--color-accent-soft) 30%, transparent) 0%,
+    var(--color-fg) 48%,
+    color-mix(in oklab, var(--color-accent-soft) 30%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.8s linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.band-light {
+  background: var(--color-light);
+  color: var(--color-ink);
+}
+.band-light .text-muted {
+  color: #3d4663;
+}
+.band-light .text-subtle {
+  color: #5b6478;
+}
+.band-light .hairline {
+  box-shadow: 0 0 0 1px rgb(16 24 40 / 0.1);
+}
+
+.hairline {
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+.window-shadow {
+  box-shadow: var(--shadow-window);
+}

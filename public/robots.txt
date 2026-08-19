@@ -1,0 +1,28 @@
+User-agent: *
+Allow: /
+Allow: /scheda.html
+Allow: /llms.txt
+Disallow: /studio
+Disallow: /dashboard
+Disallow: /try
+Disallow: /login
+
+User-agent: GPTBot
+Allow: /
+Allow: /scheda.html
+Allow: /llms.txt
+
+User-agent: ChatGPT-User
+Allow: /
+Allow: /scheda.html
+Allow: /llms.txt
+
+User-agent: OAI-SearchBot
+Allow: /
+Allow: /scheda.html
+Allow: /llms.txt
+
+User-agent: Googlebot
+Allow: /
+
+Sitemap: https://helix.kreluna.it/sitemap.xml
