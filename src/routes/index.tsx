@@ -7,15 +7,18 @@ import { HelixMark } from "@/components/kreluna-mark";
 import { ProjectCard } from "@/components/project-card";
 import { Button } from "@/components/ui/button";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { ACTIONS, PLANS } from "@/lib/plans";
+import { PLANS } from "@/lib/plans";
 import { createProject, listProjects, type Project } from "@/lib/server/vetra";
 import { IdeaDesk } from "@/components/idea-desk";
 import { HouseRoster } from "@/components/house-roster";
-import { startBuild } from "@/lib/server/agents";
+import { startGuestBuild } from "@/lib/server/agents";
+import { saveGuestBuildAccess } from "@/lib/guest-build-access";
 import { useI18n } from "@/lib/i18n";
 import { toast } from "sonner";
 import { track } from "@/lib/analytics";
-import { featuredFor, featuredHtml } from "@/lib/templates";
+import { featuredHtml } from "@/lib/templates";
+import { homeFlagshipsFor } from "@/lib/flagships";
+import type { BuildLevel } from "@/lib/build-level";
 
 export const Route = createFileRoute("/")({ component: Home });
 
@@ -35,7 +38,7 @@ function Home() {
   const [busy, setBusy] = useState(false);
   const [mine, setMine] = useState<Project[]>([]);
   const [filter, setFilter] = useState<"all" | "apps" | "live">("all");
-  const featured = featuredFor(locale);
+  const featured = homeFlagshipsFor(locale);
 
   useEffect(() => {
     track("home_view");
@@ -51,7 +54,12 @@ function Home() {
       .catch(() => setMine([]));
   }, [user?.id]);
 
-  async function build(text = prompt, gear: "auto" | "house" | "fast" = "auto", max = false) {
+  async function build(
+    text = prompt,
+    gear: "auto" | "house" | "fast" = "auto",
+    max = false,
+    buildLevel: BuildLevel = "prototype",
+  ) {
     const value = text.trim();
     if (!value) return;
     setBusy(true);
@@ -59,11 +67,23 @@ function Home() {
     toast.message(t("think.started"));
     try {
       if (user) {
-        const { id } = await createProject({ data: { prompt: value, locale, gear, max } });
+				const { id } = await createProject({
+					data: {
+						prompt: value,
+						locale,
+						gear,
+						max,
+						buildLevel,
+						requestId: crypto.randomUUID(),
+					},
+				});
         track("project_created");
         void navigate({ to: "/studio/$id", params: { id } });
       } else {
-        const { jobId } = await startBuild({ data: { prompt: value, locale, mode: "generate", gear, max } });
+				const { jobId, guestAccessToken, expiresAt } = await startGuestBuild({
+					data: { prompt: value, locale, mode: "generate", buildLevel, gear, max },
+				});
+				saveGuestBuildAccess(jobId, guestAccessToken, expiresAt);
         void navigate({ to: "/try", search: { job: jobId } });
       }
     } catch (err) {
@@ -94,7 +114,10 @@ function Home() {
                   onChange={setPrompt}
                   busy={busy}
                   example={t("mkt.example")}
-                  onSubmit={({ prompt: p, gear, max }) => void build(p, gear, max)}
+                  authenticated={Boolean(user)}
+                  onSubmit={({ prompt: p, gear, max, buildLevel }) =>
+                    void build(p, gear, max, buildLevel)
+                  }
                 />
                 <div className="mt-4 flex flex-wrap gap-2">
                   {SUGGEST.map((s) => (
@@ -206,16 +229,28 @@ function Home() {
             <h2 className="text-4xl tracking-tight">{t("mkt.demo.title")}</h2>
             <p className="mt-3 max-w-2xl text-muted">{t("mkt.demo.lead")}</p>
             <div className="mt-10 grid gap-6 md:grid-cols-3">
-              {featured.slice(0, 3).map((item) => (
+              {featured.map((item) => (
                 <article key={item.id} className="overflow-hidden rounded-2xl bg-white">
-                  <Link to="/a/$slug" params={{ slug: item.id }} className="block">
-                    <ProjectCard title={item.title} kind={item.kind} meta={item.prompt} cover={item.cover} html={featuredHtml(item.id, locale)} />
+                  <Link
+                    to="/a/$slug"
+                    params={{ slug: item.id }}
+                    search={{ lang: locale }}
+                    className="block"
+                  >
+                    <ProjectCard
+                      title={item.brand}
+                      kind={item.kind}
+                      meta={item.title}
+                      previewTitle={`${item.brand} · ${item.title}`}
+                      html={featuredHtml(item.id, locale)}
+                    />
                   </Link>
                   <div className="px-5 pb-5">
-                    <p className="text-sm text-muted">{item.prompt}</p>
+                    <p className="text-sm text-muted">{item.capability}</p>
                     <Link
                       to="/a/$slug"
                       params={{ slug: item.id }}
+                      search={{ lang: locale }}
                       className="mt-3 inline-block text-sm font-medium text-accent"
                     >
                       {t("vetrina.open")}

@@ -196,18 +196,17 @@ revive and live work stay identical.
 - **Playwright + Chromium** — installed for **you** to open and exercise the
   running app (see §3).
 - **`screenshots/`** — write agent QA screenshots here (never under `/tmp`).
-- **`vite.config.ts` + `tsconfig.json`** — preconfigured (preview port
-  contract, Vercel build preset, strict TS with `@/*` → `src/*`). Edit if you
-  must, but keep the port, the build-gated nitro plugin (see §"Build &
+- **`vite.config.ts` + `tsconfig.json`** — preconfigured (preview port,
+  Netlify full-stack adapter, strict TS with `@/*` → `src/*`). Edit if you
+  must, but keep the port, the Netlify TanStack Start plugin (see §"Build &
   deploy target"), and the Grok PWA plugin (`grokPwaPlugin`). Do **not**
   recreate them from scratch or import a vendored `vite-tanstack-config`
   preset — the template already ships a self-contained config.
-- **`public/__grok/`, `server/`, and `scripts/grok-pwa-*`** — platform Add to
-  Home Screen chrome (template icon, install page + assets, the Vite plugin,
-  and the Nitro middleware that serves it on deployed apps). Do not delete or
-  overwrite any of them. `?install=1&platform=ios` shows the install tutorial,
-  not app UI; if you add your own server routes, put them in `src/routes/`,
-  never in `server/`.
+- **`public/__grok/`, `src/start.ts`, `src/server.ts`, and
+  `scripts/grok-pwa-*`** — platform Add to Home Screen chrome (template icon,
+  install page + assets, the Vite plugin, request routes and streaming response
+  wrapper). `?install=1&platform=ios` shows the install tutorial, not app UI;
+  add application server routes under `src/routes/`.
 - **No app routes/UI yet** — only the pre-wired `src/lib` data/auth helpers
   (see "Data & auth") and `src/lib/error-component.tsx` (the router's
   `defaultErrorComponent`); build the app around them, don't delete them.
@@ -434,11 +433,13 @@ users. Full guides + snippets: the **`neon` skill** (database) and the
   **verified** `context.userId` (resolved from the same-origin session; throws
   when signed out). Scope **every** query by that `user_id`. Never trust a
   client-sent id.
-- **Migrations:** `migrations/*.sql` are the single schema source — applied to
-  **Neon on deploy** (`npm run build` runs them, so Vercel ships with the schema
-  ready) and to the **PGLite** preview automatically on startup. `0001_auth.sql`
-  is the Better Auth schema (don't edit); add your app's tables as ordered files
-  (`migrations/0002_*.sql`), not inline.
+- **Migrations:** `migrations/*.sql` are the single schema source. `npm run build`
+  is deliberately non-mutating; apply Neon migrations explicitly with
+  `npm run db:migrate`, while only the guarded Netlify production context uses
+  `build:netlify:production`. CI, branch deploys and deploy previews never
+  migrate a shared database. PGLite applies the same files automatically on
+  startup. `0001_auth.sql` is the Better Auth schema (don't edit); add app
+  tables as ordered files (`migrations/0002_*.sql`), not inline.
 - **Auth:** this app runs its own Better Auth at `/api/auth/*` and federates to
   the shared Grok auth broker for **Google** and **X**. The only other supported
   method is this app's own **email/password** (local Better Auth, off by default —
@@ -450,13 +451,13 @@ users. Full guides + snippets: the **`neon` skill** (database) and the
   route for it. Then read the user via `useCurrentUser()`
   (`@/lib/auth/use-current-user`) and gate UI with `SignedIn` / `SignedOut` /
   `UserButton` (`@/lib/auth/gates`). See the **`auth` skill**. Real sign-in
-  works in preview, so a visitor is signed out until they sign in — don't fake
-  a user.
-- **Env:** do **not** create a `.env` file. Live preview needs none — auth uses
-  the baked preview client and the DB falls back to PGLite. On deploy the
-  platform injects `DATABASE_URL` + per-app auth creds. Set
-  `VITE_AUTH_ENABLED=false` only to turn sign-in OFF. Never expose server-only
-  vars to the client (only `VITE_`-prefixed reach the browser).
+  works only when broker credentials are injected; never fake a user.
+- **Env:** do **not** commit a `.env` file. Local preview defaults to auth OFF
+  and PGLite. Real preview/deploy auth requires injected `GROK_AUTH_*` values;
+  no OAuth secret is baked into this repository. Netlify requires
+  `DATABASE_URL`, xAI, Better Auth, public-host and broker configuration and
+  fails closed when they are incomplete. Never expose server-only vars to the
+  client (only `VITE_`-prefixed reach the browser).
 - **AI features (chat, images, video, voice):** when `XAI_API_KEY` is in the
   env, the app has real xAI API access (server-only; latest model `grok-4.5`,
   docs at [docs.x.ai](https://docs.x.ai)) — chat/LLM **plus Imagine
@@ -467,14 +468,15 @@ users. Full guides + snippets: the **`neon` skill** (database) and the
 
 ### Build & deploy target
 
-You never trigger the deploy yourself, **but the app you build is eventually
-deployed to Vercel** by the platform — so your output must **build cleanly under
-Vercel's process**. `npm run build` must succeed and emit valid output, and code
+You never trigger the deploy yourself, **but this app is deployed to Netlify**
+with TanStack Start SSR and Functions — so your output must **build cleanly under
+Netlify's process**. `npm run build` is a non-mutating artifact build and must
+succeed with valid output; code
 that works under `npm run dev` but breaks a production / SSR build is a bug:
 watch for dev-only deps, server-only Node APIs run at import time, runtime
 filesystem writes, and hard-coded ports / hosts / secrets. Before treating the
 app as done, confirm `npm run build` and `npm run typecheck` pass — that's what
-Vercel runs.
+Netlify runs.
 
 **A passing `npm run build` does not mean the deployed app renders.** After
 building, serve the built output and load it in a browser (§3). The most common
@@ -486,13 +488,9 @@ fallback doesn't shadow real asset requests — then re-verify the served build
 renders.
 
 The workspace **ships a ready `vite.config.ts` and `tsconfig.json`** — don't
-recreate them. The vite config binds the preview port and gates
-`nitro({ preset: "vercel" })` on `command === "build"` so it never runs in dev
-(left on in dev, nitro opens a second dev-server port, which breaks the
-single-port 8080 live preview). If you edit it, preserve the port contract,
-the build-gated nitro plugin (including its `serverDir: "./server"` option —
-without it the deployed app loses the Home Screen install page), and
-`grokPwaPlugin()`.
+recreate them. Preserve the port contract, `grokPwaPlugin()`,
+`@netlify/vite-plugin-tanstack-start`, the explicit CSRF middleware in
+`src/start.ts`, and the streaming PWA response wrapper in `src/server.ts`.
 
 ```bash
 npm run dev         # 0.0.0.0:8080 — run in background when ready; leave it up
@@ -663,7 +661,7 @@ If the shared contract isn’t ready, stay sequential.
    D = right** while moving forward (see `controls` skill self-test). Flip one
    steer/roll sign if inverted; retest.
 6. **Verify the PRODUCTION build, not just dev.** Dev (Vite) can render while
-   the deployed Vercel build is blank. Before declaring done: run
+   the deployed Netlify build is blank. Before declaring done: run
    `npm run build`, serve the built output, and load it in the browser the same
    way as step 5. Watch specifically for
    `Failed to load module script … MIME type "text/html"`. Fix the config and

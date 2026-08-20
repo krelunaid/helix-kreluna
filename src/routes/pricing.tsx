@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { ACTIONS, EXTRA_PACK, PLANS, type PlanId } from "@/lib/plans";
-import { buyExtraCredits, choosePlan, getAccount, type Profile } from "@/lib/server/vetra";
+import { choosePlan, getAccount, type Profile } from "@/lib/server/vetra";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { formatCredits } from "@/lib/utils";
 import { toast } from "sonner";
@@ -37,26 +37,9 @@ function Pricing() {
     try {
       const next = await choosePlan({ data: id });
       setProfile(next);
-      toast.success(`Piano ${id} attivo. Crediti aggiunti.`);
+      toast.success(t("pricing.planOn", { id }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function extra() {
-    if (!user) {
-      void navigate({ to: "/login", search: { next: "/pricing" } });
-      return;
-    }
-    setBusy("extra");
-    try {
-      const next = await buyExtraCredits();
-      setProfile(next);
-      toast.success(`+${EXTRA_PACK.credits}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("common.error"));
     } finally {
       setBusy(null);
     }
@@ -115,11 +98,13 @@ function Pricing() {
               <Button
                 className="mt-6 w-full"
                 variant={p.highlight ? "primary" : "secondary"}
-                disabled={busy === p.id || profile?.plan === p.id}
+                disabled={p.id !== "free" || busy === p.id || profile?.plan === p.id}
                 onClick={() => void pick(p.id)}
               >
                 {profile?.plan === p.id
                   ? t("pricing.active")
+                  : p.id !== "free"
+                    ? t("pricing.unavailable")
                   : busy === p.id
                     ? t("pricing.activating")
                     : t("pricing.choose")}
@@ -169,15 +154,9 @@ function Pricing() {
             <Button
               className="mt-8 w-full sm:w-auto"
               variant="secondary"
-              disabled={busy === "extra"}
-              onClick={() => void extra()}
+              disabled
             >
-              {busy === "extra"
-                ? t("pricing.adding")
-                : t("pricing.buyExtra", {
-                    n: EXTRA_PACK.credits,
-                    price: `${EXTRA_PACK.currency}${EXTRA_PACK.price}`,
-                  })}
+              {t("pricing.unavailable")}
             </Button>
           </div>
         </section>

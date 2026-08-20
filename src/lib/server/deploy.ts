@@ -2,7 +2,32 @@ import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { bundleIdFromTitle, expoFiles, slugify, withPwa, windowsFiles } from "@/lib/expo-pack";
-import { featuredFor, featuredHtml } from "@/lib/templates";
+import { archivedFor, featuredFor, featuredHtml } from "@/lib/templates";
+import { normalizeLocale } from "@/lib/i18n-core";
+import { toBase64, zipFiles } from "@/lib/zip";
+import { publicOriginFromHostname } from "@/lib/env.shared";
+import { protectGeneratedHtml } from "@/lib/generated-content-policy";
+import {
+  GUEST_PUBLISH_TTL_MS,
+  hashOpaqueToken,
+  isOpaqueGuestToken,
+  utf8ByteLength,
+} from "@/lib/guest-security";
+import { initialWebHostingIdempotencyKey, rethrowCreditMutationError } from "@/lib/server/credits";
+import { hashGuestBuildToken } from "@/lib/server/build-job-access";
+import {
+  getApprovedGuestBuild,
+  getApprovedOwnedBuild,
+  HumanGateError,
+  normalizeGateRequestId,
+} from "@/lib/server/review/human-gate";
+import {
+  assertPublishedUtf8,
+  PublishedArtifactIntegrityError,
+  sha256BytesHex,
+  sha256Utf8Hex,
+} from "@/lib/server/release/integrity";
+import { deleteExpiredGuestPublications } from "@/lib/server/persistence/guest-publications";
 
 let schemaReady: Promise<void> | null = null;
 
@@ -42,13 +67,44 @@ async function ensureSchema() {
   return schemaReady;
 }
 
-export const DEPLOY_COST = { web: 50, ios: 80, android: 80, windows: 50 } as const;
+// Windows currently prepares a source-only Electron wrapper and performs no
+// provider build, signing or submission. The endpoint does not debit credits,
+// so its displayed cost must remain zero until an atomic paid flow exists.
+export const DEPLOY_COST = { web: 50, ios: 80, android: 80, windows: 0 } as const;
 export type DeployTarget = keyof typeof DEPLOY_COST;
+
+export type StoreReadiness = {
+  sourcePackageReady: true;
+  credentialsConfigured: boolean;
+  nativeBuildReady: false;
+  signingReady: false;
+  submissionReady: false;
+  missingCredentials: string[];
+  reason: "STORE_PROVIDER_NOT_INTEGRATED";
+};
+
+export function storeReadiness(
+  target: "ios" | "android",
+  env: Record<string, string | undefined> = process.env,
+): StoreReadiness {
+  const required =
+    target === "ios" ? ["EXPO_TOKEN", "APPLE_TEAM_ID"] : ["EXPO_TOKEN", "PLAY_SERVICE_JSON"];
+  const missingCredentials = required.filter((name) => !env[name]?.trim());
+  return {
+    sourcePackageReady: true,
+    credentialsConfigured: missingCredentials.length === 0,
+    nativeBuildReady: false,
+    signingReady: false,
+    submissionReady: false,
+    missingCredentials,
+    reason: "STORE_PROVIDER_NOT_INTEGRATED",
+  };
+}
 
 export type DeployStep = {
   id: string;
   label: string;
-  status: "queued" | "running" | "done" | "blocked" | "error";
+  status: "queued" | "running" | "done" | "blocked" | "skipped" | "error";
   detail: string;
 };
 
@@ -67,14 +123,42 @@ export type Deploy = {
   log: DeployStep[];
   created_at: string;
   updated_at: string;
+  build_job_id: string | null;
+  provider: string | null;
+  provider_deploy_id: string | null;
+  artifact_ref: string | null;
+  /** SHA-256 of the source HTML sealed by Human Gate. */
+  artifact_sha256: string | null;
+  /** SHA-256 of the exact HTML or ZIP bytes persisted/exported by Harbor. */
+  published_sha256: string | null;
+  output_integrity_version: number | null;
+  rollback_ref: string | null;
+  release_key: string | null;
+  completed_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
 };
 
 export type PublicApp = {
   slug: string;
   title: string;
   html: string;
-  testers_code: string | null;
-  project_id: string | null;
+  isGuest: boolean;
+  expiresAt: string | null;
+  sourceArtifactSha256: string | null;
+  servedSha256: string | null;
+};
+
+type PublicAppRow = {
+  slug: string;
+  title: string;
+  html: string;
+  visibility: string;
+  expires_at: string | null;
+  source_job_id: string | null;
+  source_artifact_sha256: string | null;
+  served_sha256: string | null;
+  publication_integrity_version: number | null;
 };
 
 type DeployRow = Omit<Deploy, "log"> & { log: string };
@@ -93,17 +177,17 @@ function mapDeploy(row: DeployRow): Deploy {
 }
 
 function publicOrigin() {
-  const host = import.meta.env.VITE_PUBLIC_HOSTNAME as string | undefined;
-  if (host) return `https://${host}`;
-  if (typeof process !== "undefined" && process.env.VITE_PUBLIC_HOSTNAME) {
-    return `https://${process.env.VITE_PUBLIC_HOSTNAME}`;
-  }
-  return "";
+  const host =
+    (typeof process !== "undefined" ? process.env.VITE_PUBLIC_HOSTNAME : undefined) ??
+    (import.meta.env.VITE_PUBLIC_HOSTNAME as string | undefined);
+  return host ? publicOriginFromHostname(host) : "";
 }
 
-function appUrl(slug: string) {
+function appUrl(slug: string, accessToken?: string) {
   const origin = publicOrigin();
-  return origin ? `${origin}/a/${slug}` : `/a/${slug}`;
+  const path = `/a/${slug}`;
+  const url = origin ? `${origin}${path}` : path;
+  return accessToken ? `${url}?access=${encodeURIComponent(accessToken)}` : url;
 }
 
 function trackUrl(code: string) {
@@ -112,7 +196,9 @@ function trackUrl(code: string) {
 }
 
 function testersCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
+  const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const random = crypto.getRandomValues(new Uint8Array(12));
+  return Array.from(random, (byte) => alphabet[byte % alphabet.length]).join("");
 }
 
 async function uniqueSlug(base: string) {
@@ -127,138 +213,170 @@ async function uniqueSlug(base: string) {
   return `${root}-${Date.now().toString(36).slice(-4)}`;
 }
 
-export async function shipLive(title: string, html: string, projectId?: string) {
-  if (!html) throw new Error("Nothing to publish");
+async function cleanupExpiredGuestPublishes() {
   await ensureSchema();
-  const sql = await getSql();
-  let slug: string | null = null;
-  let code: string | null = null;
-  if (projectId) {
-    const existing = await sql<{ slug: string; testers_code: string | null }>`
-      select slug, testers_code from public_apps where project_id = ${projectId}
-    `;
-    slug = existing[0]?.slug ?? null;
-    code = existing[0]?.testers_code ?? null;
-  }
-  slug = slug ?? (await uniqueSlug(title));
-  code = code ?? testersCode();
-  const page = withPwa(html, title, slug);
-  await sql`
-    insert into public_apps (slug, title, html, testers_code, project_id)
-    values (${slug}, ${title}, ${page}, ${code}, ${projectId ?? null})
-    on conflict (slug) do update
-      set html = excluded.html, title = excluded.title, testers_code = excluded.testers_code, updated_at = now()
-  `;
-  const url = appUrl(slug);
-  const testersUrl = trackUrl(code);
-  return { slug, url, testersCode: code, testersUrl };
+  await deleteExpiredGuestPublications();
 }
 
-async function spend(userId: string, amount: number, action: string, projectId: string | null, note: string) {
-  const sql = await getSql();
-  const rows = await sql<{ credits_balance: number }>`
-    select credits_balance from profiles where user_id = ${userId}
-  `;
-  const bal = rows[0]?.credits_balance ?? 0;
-  if (bal < amount) throw new Error("Crediti insufficienti");
-  await sql`update profiles set credits_balance = credits_balance - ${amount} where user_id = ${userId}`;
-  await sql`
-    insert into credit_ledger (user_id, project_id, action, credits, note)
-    values (${userId}, ${projectId}, ${action}, ${-amount}, ${note})
-  `;
+async function markResponsePrivate() {
+  const { setResponseHeader } = await import("@tanstack/react-start/server");
+  setResponseHeader("Cache-Control", "private, no-store, max-age=0");
+  setResponseHeader("Referrer-Policy", "no-referrer");
+}
+
+async function toPublicApp(row: PublicAppRow): Promise<PublicApp> {
+  const isGuest = row.visibility === "guest";
+  const protectedHtml = protectGeneratedHtml(row.html, { noIndex: isGuest });
+  if (row.publication_integrity_version === 1) {
+    if (!row.source_job_id || !row.source_artifact_sha256) {
+      throw new PublishedArtifactIntegrityError();
+    }
+    await assertPublishedUtf8({
+      value: protectedHtml,
+      expectedSha256: row.served_sha256,
+    });
+  } else if (row.publication_integrity_version !== null) {
+    throw new PublishedArtifactIntegrityError();
+  }
+  return {
+    slug: row.slug,
+    title: row.title,
+    html: protectedHtml,
+    isGuest,
+    expiresAt: row.expires_at,
+    sourceArtifactSha256: row.source_artifact_sha256,
+    servedSha256: row.publication_integrity_version === 1 ? row.served_sha256 : null,
+  };
 }
 
 function harborWeb(): DeployStep[] {
   return [
-    { id: "pack", label: "Harbor · package", status: "done", detail: "PWA + public slug" },
-    { id: "cdn", label: "Harbor · edge", status: "done", detail: "Live on Kreluna" },
-    { id: "track", label: "Harbor · TestTrack", status: "done", detail: "Testers can open the link" },
+    {
+      id: "gate",
+      label: "Human Gate",
+      status: "done",
+      detail: "Approved artifact hash verified",
+    },
+    {
+      id: "persist",
+      label: "Harbor · Kreluna hosting",
+      status: "done",
+      detail: "Exact served HTML bytes persisted with a separate SHA-256",
+    },
+    {
+      id: "url",
+      label: "Harbor · public route",
+      status: "done",
+      detail: "Public Kreluna URL created",
+    },
+    {
+      id: "cdn",
+      label: "Harbor · CDN verification",
+      status: "skipped",
+      detail: "No independent CDN probe was executed",
+    },
   ];
 }
 
-function harborStore(target: "ios" | "android", hasTeam: boolean): DeployStep[] {
-  const store = target === "ios" ? "App Store" : "Google Play";
+function harborStore(target: "ios" | "android"): DeployStep[] {
+  const store = target === "ios" ? "App Store Connect" : "Google Play Console";
   return [
-    { id: "pack", label: "Harbor · package", status: "done", detail: "Native shell" },
-    { id: "cfg", label: "Harbor · store listing", status: "done", detail: store },
+    {
+      id: "gate",
+      label: "Human Gate",
+      status: "done",
+      detail: "Approved artifact hash verified",
+    },
+    {
+      id: "pack",
+      label: "Harbor · web-to-native source package",
+      status: "done",
+      detail: `Expo source workspace prepared for ${target} with exact ZIP SHA-256`,
+    },
+    {
+      id: "build",
+      label: "Harbor · native binary build",
+      status: "skipped",
+      detail: "EAS/native build was not executed",
+    },
     {
       id: "sign",
-      label: target === "ios" ? "Harbor · Apple" : "Harbor · Google",
-      status: hasTeam ? "done" : "blocked",
-      detail: hasTeam ? "Developer account attached." : "Add your App Store / Play developer account to finish signing.",
+      label: "Harbor · signing",
+      status: "blocked",
+      detail: "Developer signing credentials are required",
     },
     {
       id: "upload",
       label: `Harbor · ${store}`,
-      status: hasTeam ? "running" : "blocked",
-      detail: hasTeam
-        ? `Queued for ${store}.`
-        : `${store} waits for your developer login. Testers use TestTrack now.`,
+      status: "skipped",
+      detail: "No store upload or submission was executed",
     },
   ];
 }
 
-export async function queueStores(input: { title: string; html: string; projectId?: string; userId?: string; slug?: string; testersCode?: string }) {
-  await ensureSchema();
-  const sql = await getSql();
-  const slug = input.slug ?? (await uniqueSlug(input.title));
-  const code = input.testersCode ?? testersCode();
-  const bundle = bundleIdFromTitle(input.title);
-  const appleTeam = process.env.APPLE_TEAM_ID?.trim() || "";
-  const playReady = Boolean(process.env.PLAY_SERVICE_JSON || process.env.EXPO_TOKEN);
-  const url = appUrl(slug);
-  const testersUrl = trackUrl(code);
-  for (const target of ["ios", "android"] as const) {
-    const hasTeam = target === "ios" ? Boolean(appleTeam) : playReady || true;
-    const status = target === "ios" ? (appleTeam ? "appstore" : "queued") : "play";
-    const id = crypto.randomUUID();
-    await sql`
-      insert into deploys (id, project_id, user_id, target, status, slug, bundle_id, apple_team, testers_code, url, log)
-      values (
-        ${id}, ${input.projectId ?? null}, ${input.userId ?? null}, ${target}, ${status}, ${slug},
-        ${bundle}, ${appleTeam || null}, ${code}, ${target === "ios" ? testersUrl : url},
-        ${JSON.stringify(harborStore(target, hasTeam))}
-      )
-    `;
-  }
-  return {
-    appStore: testersUrl,
-    play: url,
-    testersCode: code,
-    testersUrl,
-    bundleId: bundle,
-  };
-}
-
 export const getPublicApp = createServerFn({ method: "GET" })
-  .validator((slug: string) => slug.trim().slice(0, 64))
-  .handler(async ({ data: slug }) => {
+  .validator((input: { slug: string; accessToken?: string; locale?: string }) => ({
+    slug: input.slug.trim().slice(0, 64),
+    accessToken: input.accessToken?.trim().slice(0, 128) || "",
+    locale: normalizeLocale(input.locale),
+  }))
+  .handler(async ({ data }) => {
+    await markResponsePrivate();
+    // Built-in examples use a reserved namespace and never depend on a
+    // database row. This keeps the showcase deterministic, localizable and
+    // available even when the application database is offline.
+    const builtIn = [...featuredFor(data.locale), ...archivedFor(data.locale)].find(
+      (entry) => entry.id === data.slug,
+    );
+    if (builtIn) {
+      return {
+        slug: data.slug,
+        title: builtIn.title,
+        html: protectGeneratedHtml(featuredHtml(data.slug, data.locale)),
+        isGuest: false,
+        expiresAt: null,
+        sourceArtifactSha256: null,
+        servedSha256: null,
+      };
+    }
     await ensureSchema();
+    await cleanupExpiredGuestPublishes();
     const sql = await getSql();
-    const rows = await sql<PublicApp>`
-      select slug, title, html, testers_code, project_id from public_apps where slug = ${slug}
+    const tokenHash = isOpaqueGuestToken(data.accessToken)
+      ? await hashOpaqueToken(data.accessToken)
+      : null;
+    const rows = await sql<PublicAppRow>`
+      select slug, title, html, visibility, expires_at, source_job_id,
+             source_artifact_sha256, served_sha256,
+             publication_integrity_version
+      from public_apps
+      where slug = ${data.slug}
+        and (
+          visibility <> 'guest'
+          or (
+            expires_at > now()
+            and guest_token_hash = ${tokenHash}
+          )
+        )
     `;
-    if (rows[0]) return rows[0];
-    const demo = featuredFor("en").find((x) => x.id === slug);
-    if (!demo) return null;
-    return {
-      slug,
-      title: demo.title,
-      html: featuredHtml(slug, "en"),
-      testers_code: null,
-      project_id: null,
-    };
+    return rows[0] ? await toPublicApp(rows[0]) : null;
   });
 
 export const getPublicByCode = createServerFn({ method: "GET" })
   .validator((code: string) => code.trim().toUpperCase().slice(0, 12))
   .handler(async ({ data: code }) => {
+    await markResponsePrivate();
     await ensureSchema();
+    await cleanupExpiredGuestPublishes();
     const sql = await getSql();
-    const rows = await sql<PublicApp>`
-      select slug, title, html, testers_code, project_id from public_apps where testers_code = ${code}
+    const rows = await sql<PublicAppRow>`
+      select slug, title, html, visibility, expires_at, source_job_id,
+             source_artifact_sha256, served_sha256,
+             publication_integrity_version
+      from public_apps
+      where testers_code = ${code} and visibility = 'public'
     `;
-    return rows[0] ?? null;
+    return rows[0] ? await toPublicApp(rows[0]) : null;
   });
 
 export const listDeploys = createServerFn({ method: "GET" })
@@ -269,7 +387,11 @@ export const listDeploys = createServerFn({ method: "GET" })
     const sql = await getSql();
     const rows = await sql<DeployRow>`
       select id, project_id, user_id, target, status, slug, bundle_id, apple_team,
-             version, testers_code, url, log, created_at, updated_at
+             version, testers_code, url, log, created_at, updated_at,
+             build_job_id, provider, provider_deploy_id, artifact_ref,
+             artifact_sha256, published_sha256, output_integrity_version,
+             rollback_ref, release_key, completed_at,
+             error_code, error_message
       from deploys where project_id = ${projectId} and user_id = ${context.userId}
       order by created_at desc
     `;
@@ -278,192 +400,632 @@ export const listDeploys = createServerFn({ method: "GET" })
 
 export const publishWeb = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: { projectId: string }) => ({ projectId: input.projectId }))
+  .validator((input: { projectId: string; jobId: string; requestId: string }) => ({
+    projectId: input.projectId.trim().slice(0, 128),
+    jobId: input.jobId.trim().slice(0, 128),
+    requestId: normalizeGateRequestId(input.requestId),
+  }))
   .handler(async ({ context, data }) => {
     await ensureSchema();
     const sql = await getSql();
-    const rows = await sql<{ id: string; title: string; html: string | null; hosted: boolean | number }>`
-      select id, title, html, hosted from projects
+    const artifact = await getApprovedOwnedBuild({
+      jobId: data.jobId,
+      projectId: data.projectId,
+      userId: context.userId,
+    });
+    const releaseKey = `web:${data.jobId}:${data.requestId}`;
+    const replay = await sql<{
+      id: string;
+      slug: string;
+      url: string;
+      testers_code: string;
+      html: string;
+      source_artifact_sha256: string | null;
+      served_sha256: string | null;
+      publication_integrity_version: number | null;
+      artifact_sha256: string | null;
+      published_sha256: string | null;
+      output_integrity_version: number | null;
+    }>`
+      select deploy.id, deploy.slug, deploy.url, app.testers_code, app.html,
+             app.source_artifact_sha256, app.served_sha256,
+             app.publication_integrity_version, deploy.artifact_sha256,
+             deploy.published_sha256, deploy.output_integrity_version
+      from deploys as deploy
+      join public_apps as app on app.slug = deploy.slug
+      where deploy.release_key = ${releaseKey}
+        and deploy.user_id = ${context.userId}
+        and deploy.project_id = ${data.projectId}
+        and deploy.status = 'deployed'
+    `;
+    if (replay[0]) {
+      if (
+        replay[0].output_integrity_version !== 1 ||
+        replay[0].publication_integrity_version !== 1 ||
+        replay[0].artifact_sha256 !== artifact.artifactSha256 ||
+        replay[0].source_artifact_sha256 !== artifact.artifactSha256 ||
+        replay[0].published_sha256 !== replay[0].served_sha256
+      ) {
+        throw new PublishedArtifactIntegrityError();
+      }
+      await assertPublishedUtf8({
+        value: protectGeneratedHtml(replay[0].html),
+        expectedSha256: replay[0].served_sha256,
+      });
+      return {
+        slug: replay[0].slug,
+        url: replay[0].url,
+        testersCode: replay[0].testers_code,
+        testersUrl: trackUrl(replay[0].testers_code),
+        deployId: replay[0].id,
+        sourceArtifactSha256: replay[0].artifact_sha256,
+        publishedSha256: replay[0].published_sha256,
+      };
+    }
+    const rows = await sql<{
+      id: string;
+      title: string;
+      hosted: boolean | number;
+    }>`
+      select id, title, hosted from projects
       where id = ${data.projectId} and user_id = ${context.userId}
     `;
-    if (!rows[0]?.html) throw new Error("Build the app first");
+    if (!rows[0]) throw new HumanGateError("HUMAN_GATE_FORBIDDEN", 403);
     const project = rows[0];
     const existing = await sql<{ slug: string; testers_code: string | null }>`
       select slug, testers_code from public_apps where project_id = ${project.id}
     `;
     const slug = existing[0]?.slug ?? (await uniqueSlug(project.title));
     const code = existing[0]?.testers_code ?? testersCode();
-    const html = withPwa(project.html as string, project.title, slug);
-    if (!existing[0] && !project.hosted) {
-      await spend(context.userId, DEPLOY_COST.web, "host", project.id, "Web + TestTrack");
-    }
-    await sql`
-      insert into public_apps (slug, title, html, testers_code, project_id)
-      values (${slug}, ${project.title}, ${html}, ${code}, ${project.id})
-      on conflict (slug) do update
-        set html = excluded.html, title = excluded.title, updated_at = now()
-    `;
+    const html = protectGeneratedHtml(
+      withPwa(artifact.html, artifact.title || project.title, slug),
+    );
+    const publishedSha256 = await sha256Utf8Hex(html);
     const until = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    await sql`
-      update projects
-      set hosted = true, hosted_until = ${until}, html = ${html}, updated_at = now()
-      where id = ${project.id} and user_id = ${context.userId}
-    `;
     const id = crypto.randomUUID();
+    let deployId: string = id;
     const url = appUrl(slug);
-    await sql`
-      insert into deploys (id, project_id, user_id, target, status, slug, testers_code, url, log)
-      values (
-        ${id}, ${project.id}, ${context.userId}, 'web', 'live', ${slug}, ${code}, ${url},
-        ${JSON.stringify(harborWeb())}
-      )
+    const shouldCharge = !existing[0] && !project.hosted;
+    const previous = await sql<{ id: string }>`
+      select id
+      from deploys
+      where project_id = ${project.id}
+        and user_id = ${context.userId}
+        and target = 'web'
+        and status = 'deployed'
+      order by completed_at desc nulls last, created_at desc
+      limit 1
     `;
+    const rollbackRef = previous[0]?.id ?? null;
+    try {
+      const deployed = await sql<{ id: string }>`
+        with gate as materialized (
+          select job.id
+          from build_jobs as job
+          join projects as owned on owned.id = job.project_id
+          where job.id = ${data.jobId}
+            and job.project_id = ${project.id}
+            and job.user_id = ${context.userId}
+            and owned.user_id = ${context.userId}
+            and owned.current_build_job_id = job.id
+            and job.queue_status in ('approved', 'deployed')
+            and job.artifact_sha256 = ${artifact.artifactSha256}
+            and not exists (
+              select 1
+              from deploys as prior_release
+              where prior_release.release_key = ${releaseKey}
+                and (
+                  prior_release.artifact_sha256 is distinct from ${artifact.artifactSha256}
+                  or prior_release.published_sha256 is distinct from ${publishedSha256}
+                )
+            )
+            and exists (
+              select 1 from build_job_gate_events as event
+              where event.job_id = job.id
+                and event.decision = 'approve'
+                and event.artifact_sha256 = job.artifact_sha256
+            )
+          for update of job
+        ), credit as (
+          select mutation.was_applied
+          from gate
+          cross join (select 1 where ${shouldCharge}) as charge_required
+          cross join lateral apply_credit_entry(
+            ${context.userId},
+            ${-DEPLOY_COST.web},
+            'host',
+            ${project.id},
+            'Web + TestTrack',
+            ${initialWebHostingIdempotencyKey(project.id)}
+          ) as mutation
+        ),
+        permitted as (
+          select false as charge_applied
+          from gate
+          where not ${shouldCharge}
+          union all
+          select was_applied as charge_applied from credit
+          limit 1
+        ),
+        published as (
+          insert into public_apps (
+            slug, title, html, testers_code, project_id, visibility,
+            guest_token_hash, expires_at, content_bytes, source_job_id,
+            source_artifact_sha256, served_sha256
+          )
+          select
+            ${slug}, ${artifact.title || project.title}, ${html}, ${code}, ${project.id}, 'public',
+            null, null, ${utf8ByteLength(html)}, ${data.jobId},
+            ${artifact.artifactSha256}, ${publishedSha256}
+          from permitted
+          on conflict (slug) do update
+            set html = excluded.html,
+                title = excluded.title,
+                visibility = 'public',
+                guest_token_hash = null,
+                expires_at = null,
+                content_bytes = excluded.content_bytes,
+                source_job_id = excluded.source_job_id,
+                source_artifact_sha256 = excluded.source_artifact_sha256,
+                served_sha256 = excluded.served_sha256,
+                publication_integrity_version = excluded.publication_integrity_version,
+                updated_at = now()
+          returning slug, served_sha256
+        ),
+        hosted as (
+          update projects
+          set hosted = true,
+              hosted_until = ${until},
+              html = ${html},
+              credits_spent = credits_spent
+                + case when permitted.charge_applied then ${DEPLOY_COST.web} else 0 end,
+              updated_at = now()
+          from published, permitted
+          where projects.id = ${project.id}
+            and projects.user_id = ${context.userId}
+          returning projects.id, published.served_sha256
+        ),
+        release as (
+          insert into deploys (
+            id, project_id, user_id, target, status, slug, testers_code, url, log,
+            build_job_id, provider, provider_deploy_id, artifact_ref,
+            artifact_sha256, published_sha256, rollback_ref, release_key,
+            completed_at
+          )
+          select
+            ${id}, hosted.id, ${context.userId}, 'web', 'deployed', ${slug}, ${code}, ${url},
+            ${JSON.stringify(harborWeb())}, ${data.jobId}, 'kreluna-public-apps', ${id},
+            ${`build-job:${data.jobId}`}, ${artifact.artifactSha256},
+            hosted.served_sha256, ${rollbackRef},
+            ${releaseKey}, now()
+          from hosted
+          on conflict (release_key) where release_key is not null
+          do update set updated_at = deploys.updated_at
+          where deploys.artifact_sha256 = excluded.artifact_sha256
+            and deploys.published_sha256 = excluded.published_sha256
+          returning id
+        ), completed as (
+          select completed.release_id as id
+          from release
+          cross join lateral complete_build_job_release(
+            ${data.jobId}, ${artifact.artifactSha256}, release.id
+          ) as completed
+        )
+        select id from completed
+      `;
+      if (!deployed[0]) throw new Error("Web publish did not commit");
+      deployId = deployed[0].id;
+    } catch (error) {
+      rethrowCreditMutationError(error);
+    }
     return {
       slug,
       url,
       testersCode: code,
       testersUrl: trackUrl(code),
+      deployId,
+      sourceArtifactSha256: artifact.artifactSha256,
+      publishedSha256,
     };
   });
 
 export const publishGuest = createServerFn({ method: "POST" })
-  .validator((input: { title: string; html: string }) => ({
-    title: input.title.trim().slice(0, 80) || "App",
-    html: input.html,
+  .validator((input: { jobId: string; guestAccessToken: string; requestId: string }) => ({
+    jobId: input.jobId.trim().slice(0, 128),
+    guestAccessToken: input.guestAccessToken.trim().slice(0, 128),
+    requestId: normalizeGateRequestId(input.requestId),
   }))
   .handler(async ({ data }) => {
-    if (!data.html) throw new Error("Nothing to publish");
-    const slug = await uniqueSlug(data.title);
-    const code = testersCode();
-    const html = withPwa(data.html, data.title, slug);
+    await markResponsePrivate();
+    const artifact = await getApprovedGuestBuild(data);
+    const accessToken = await hashOpaqueToken(
+      `helix-guest-publish-v1\u0000${data.guestAccessToken}\u0000${data.jobId}`,
+    );
+    const tokenHash = await hashOpaqueToken(accessToken);
+    const slugHash = await hashOpaqueToken(`helix-guest-slug-v1\u0000${accessToken}`);
+    const slug = `g-${slugHash.slice(0, 40)}`;
+    const expiresAt = new Date(Date.now() + GUEST_PUBLISH_TTL_MS).toISOString();
+    const releaseKey = `guest-preview:${data.jobId}`;
+    const html = protectGeneratedHtml(withPwa(artifact.html, artifact.title, slug), {
+      noIndex: true,
+    });
+    const publishedSha256 = await sha256Utf8Hex(html);
     const sql = await getSql();
-    await sql`
-      insert into public_apps (slug, title, html, testers_code)
-      values (${slug}, ${data.title}, ${html}, ${code})
+    const existing = await sql<{
+      slug: string;
+      expires_at: string;
+      html: string;
+      source_artifact_sha256: string | null;
+      served_sha256: string | null;
+      publication_integrity_version: number | null;
+      artifact_sha256: string | null;
+      published_sha256: string | null;
+      output_integrity_version: number | null;
+    }>`
+      select app.slug, app.expires_at, app.html,
+             app.source_artifact_sha256, app.served_sha256,
+             app.publication_integrity_version, deploy.artifact_sha256,
+             deploy.published_sha256, deploy.output_integrity_version
+      from public_apps as app
+      join deploys as deploy on deploy.release_key = ${releaseKey}
+      where app.source_job_id = ${data.jobId}
+        and app.visibility = 'guest'
+        and app.expires_at > now()
     `;
-    const id = crypto.randomUUID();
-    const url = appUrl(slug);
-    await sql`
-      insert into deploys (id, target, status, slug, testers_code, url, log)
-      values (${id}, 'web', 'live', ${slug}, ${code}, ${url}, ${JSON.stringify(harborWeb())})
-    `;
-    return { slug, url, testersCode: code, testersUrl: trackUrl(code) };
+    if (existing[0]) {
+      if (
+        existing[0].output_integrity_version !== 1 ||
+        existing[0].publication_integrity_version !== 1 ||
+        existing[0].artifact_sha256 !== artifact.artifactSha256 ||
+        existing[0].source_artifact_sha256 !== artifact.artifactSha256 ||
+        existing[0].published_sha256 !== existing[0].served_sha256 ||
+        existing[0].published_sha256 !== publishedSha256
+      ) {
+        throw new PublishedArtifactIntegrityError();
+      }
+      await assertPublishedUtf8({
+        value: protectGeneratedHtml(existing[0].html, { noIndex: true }),
+        expectedSha256: existing[0].served_sha256,
+      });
+      const url = appUrl(existing[0].slug, accessToken);
+      return {
+        slug: existing[0].slug,
+        url,
+        accessToken,
+        testersCode: accessToken,
+        testersUrl: url,
+        expiresAt: String(existing[0].expires_at),
+        sourceArtifactSha256: existing[0].artifact_sha256,
+        publishedSha256: existing[0].published_sha256,
+      };
+    }
+    const { GUEST_PUBLISH_BUDGET, releaseGuestBudget, reserveGuestBudget } =
+      await import("@/lib/server/guest-abuse.server");
+    const lease = await reserveGuestBudget(GUEST_PUBLISH_BUDGET, {
+      inputBytes: utf8ByteLength(artifact.html),
+    });
+    try {
+      await cleanupExpiredGuestPublishes();
+      const id = crypto.randomUUID();
+      const url = appUrl(slug, accessToken);
+      const privateAuditUrl = appUrl(slug);
+      const guestLog: DeployStep[] = [
+        {
+          id: "gate",
+          label: "Human Gate",
+          status: "done",
+          detail: "Guest capability and approved artifact hash verified",
+        },
+        {
+          id: "temporary",
+          label: "Harbor · temporary guest preview",
+          status: "done",
+          detail: `Expires ${expiresAt}`,
+        },
+      ];
+      const buildTokenHash = await hashGuestBuildToken(data.guestAccessToken);
+      const deployed = await sql<{ id: string }>`
+        with gate as materialized (
+          select job.id
+          from build_jobs as job
+          where job.id = ${data.jobId}
+            and job.user_id is null
+            and job.project_id is null
+            and job.guest_access_token_hash = ${buildTokenHash}
+            and job.guest_access_expires_at > now()
+            and job.queue_status in ('approved', 'deployed')
+            and job.artifact_sha256 = ${artifact.artifactSha256}
+            and not exists (
+              select 1
+              from deploys as prior_release
+              where prior_release.release_key = ${releaseKey}
+                and (
+                  prior_release.artifact_sha256 is distinct from ${artifact.artifactSha256}
+                  or prior_release.published_sha256 is distinct from ${publishedSha256}
+                )
+            )
+            and exists (
+              select 1 from build_job_gate_events as event
+              where event.job_id = job.id
+                and event.decision = 'approve'
+                and event.artifact_sha256 = job.artifact_sha256
+            )
+          for update
+        ), published as (
+          insert into public_apps (
+            slug, title, html, testers_code, project_id, visibility,
+            guest_token_hash, expires_at, content_bytes, source_job_id,
+            source_artifact_sha256, served_sha256
+          )
+          select
+            ${slug}, ${artifact.title}, ${html}, null, null, 'guest',
+            ${tokenHash}, ${expiresAt}, ${utf8ByteLength(html)}, ${data.jobId},
+            ${artifact.artifactSha256}, ${publishedSha256}
+          from gate
+          on conflict (source_job_id) where source_job_id is not null
+          do update set
+            title = excluded.title,
+            html = excluded.html,
+            guest_token_hash = excluded.guest_token_hash,
+            expires_at = excluded.expires_at,
+            content_bytes = excluded.content_bytes,
+            source_artifact_sha256 = excluded.source_artifact_sha256,
+            served_sha256 = excluded.served_sha256,
+            publication_integrity_version = excluded.publication_integrity_version,
+            updated_at = now()
+          returning slug, served_sha256
+        ), release as (
+          insert into deploys (
+            id, target, status, slug, testers_code, url, log,
+            build_job_id, provider, provider_deploy_id, artifact_ref,
+            artifact_sha256, published_sha256, release_key, completed_at
+          )
+          select
+            ${id}, 'web', 'deployed', published.slug, null, ${privateAuditUrl},
+            ${JSON.stringify(guestLog)}, ${data.jobId},
+            'kreluna-temporary-preview', ${id}, ${`build-job:${data.jobId}`},
+            ${artifact.artifactSha256}, published.served_sha256,
+            ${releaseKey}, now()
+          from published
+          on conflict (release_key) where release_key is not null
+          do update set updated_at = deploys.updated_at
+          where deploys.artifact_sha256 = excluded.artifact_sha256
+            and deploys.published_sha256 = excluded.published_sha256
+          returning id
+        ), completed as (
+          select completed.release_id as id
+          from release
+          cross join lateral complete_build_job_release(
+            ${data.jobId}, ${artifact.artifactSha256}, release.id
+          ) as completed
+        )
+        select id from completed
+      `;
+      if (!deployed[0]) throw new HumanGateError("HUMAN_GATE_CLOSED");
+      return {
+        slug,
+        url,
+        accessToken,
+        testersCode: accessToken,
+        testersUrl: url,
+        expiresAt,
+        sourceArtifactSha256: artifact.artifactSha256,
+        publishedSha256,
+      };
+    } finally {
+      try {
+        await releaseGuestBudget(lease);
+      } catch (error) {
+        console.error("[guest-publish] failed to release concurrency lease", {
+          error: error instanceof Error ? error.name : "UnknownError",
+        });
+      }
+    }
   });
 
 export const shipStore = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: { projectId: string; target: "ios" | "android"; appleTeam?: string; bundleId?: string }) => ({
-    projectId: input.projectId,
-    target: input.target,
-    appleTeam: input.appleTeam?.trim().slice(0, 20) || "",
-    bundleId: input.bundleId?.trim().slice(0, 80) || "",
-  }))
+  .validator(
+    (input: {
+      projectId: string;
+      jobId: string;
+      target: "ios" | "android";
+      appleTeam?: string;
+      bundleId?: string;
+      requestId: string;
+    }) => ({
+      projectId: input.projectId.trim().slice(0, 128),
+      jobId: input.jobId.trim().slice(0, 128),
+      target: input.target,
+      appleTeam: input.appleTeam?.trim().slice(0, 20) || "",
+      bundleId: input.bundleId?.trim().slice(0, 80) || "",
+      requestId: normalizeGateRequestId(input.requestId),
+    }),
+  )
   .handler(async ({ context, data }) => {
     await ensureSchema();
     const sql = await getSql();
-    const rows = await sql<{ id: string; title: string; html: string | null }>`
-      select id, title, html from projects
+    const artifact = await getApprovedOwnedBuild({
+      jobId: data.jobId,
+      projectId: data.projectId,
+      userId: context.userId,
+    });
+    const rows = await sql<{ id: string; title: string }>`
+      select id, title from projects
       where id = ${data.projectId} and user_id = ${context.userId}
     `;
-    if (!rows[0]?.html) throw new Error("Build the app first");
+    if (!rows[0]) throw new HumanGateError("HUMAN_GATE_FORBIDDEN", 403);
     const project = rows[0];
-    await spend(
-      context.userId,
-      DEPLOY_COST[data.target],
-      data.target,
-      project.id,
-      data.target === "ios" ? "TestFlight pack" : "Play pack",
-    );
-    const pub = await sql<{ slug: string; testers_code: string | null }>`
-      select slug, testers_code from public_apps where project_id = ${project.id}
-    `;
-    const slug = pub[0]?.slug ?? (await uniqueSlug(project.title));
-    const code = pub[0]?.testers_code ?? testersCode();
-    if (!pub[0]) {
-      const html = withPwa(project.html as string, project.title, slug);
-      await sql`
-        insert into public_apps (slug, title, html, testers_code, project_id)
-        values (${slug}, ${project.title}, ${html}, ${code}, ${project.id})
-      `;
-    }
-    const bundle = data.bundleId || bundleIdFromTitle(project.title);
-    const hasTeam = data.target === "ios" ? Boolean(data.appleTeam) : true;
-    const status = hasTeam ? (data.target === "ios" ? "testflight" : "play") : "needs_account";
-    const url = data.target === "ios" ? trackUrl(code) : appUrl(slug);
+    const title = artifact.title || project.title;
+    const slug = slugify(title);
+    const bundle = data.bundleId || bundleIdFromTitle(title);
+    const files = expoFiles({
+      title,
+      slug,
+      html: artifact.html,
+      bundleId: bundle,
+      appleTeam: data.appleTeam,
+      liveUrl: appUrl(slug),
+      platform: data.target,
+    });
+    const zip = zipFiles(files);
+    const publishedSha256 = await sha256BytesHex(zip);
+    const pack = {
+      filename: `${slug}-${data.target}-source.zip`,
+      base64: toBase64(zip),
+    };
+    const readiness = storeReadiness(data.target);
+    const releaseKey = `store-package:${data.jobId}:${data.target}:${data.requestId}`;
     const id = crypto.randomUUID();
-    await sql`
-      insert into deploys (
-        id, project_id, user_id, target, status, slug, bundle_id, apple_team,
-        testers_code, url, log
-      )
-      values (
-        ${id}, ${project.id}, ${context.userId}, ${data.target}, ${status}, ${slug},
-        ${bundle}, ${data.appleTeam || null}, ${code}, ${url},
-        ${JSON.stringify(harborStore(data.target, hasTeam))}
-      )
-    `;
+    let deployId: string = id;
+    try {
+      const prepared = await sql<{ id: string }>`
+        with gate as materialized (
+          select job.id
+          from build_jobs as job
+          join projects as owned on owned.id = job.project_id
+          where job.id = ${data.jobId}
+            and job.project_id = ${project.id}
+            and job.user_id = ${context.userId}
+            and owned.user_id = ${context.userId}
+            and owned.current_build_job_id = job.id
+            and job.queue_status in ('approved', 'deployed')
+            and job.artifact_sha256 = ${artifact.artifactSha256}
+            and not exists (
+              select 1
+              from deploys as prior_release
+              where prior_release.release_key = ${releaseKey}
+                and (
+                  prior_release.artifact_sha256 is distinct from ${artifact.artifactSha256}
+                  or prior_release.published_sha256 is distinct from ${publishedSha256}
+                )
+            )
+            and exists (
+              select 1 from build_job_gate_events as event
+              where event.job_id = job.id
+                and event.decision = 'approve'
+                and event.artifact_sha256 = job.artifact_sha256
+            )
+          for update of job
+        ), credit as materialized (
+          select gate.id as job_id, mutation.was_applied
+          from gate
+          cross join lateral apply_credit_entry(
+            ${context.userId},
+            ${-DEPLOY_COST[data.target]},
+            ${data.target},
+            ${project.id},
+            ${
+              data.target === "ios"
+                ? "iOS web-to-native source package"
+                : "Android web-to-native source package"
+            },
+            ${releaseKey}
+          ) as mutation
+        ), project_cost as (
+          update projects
+          set credits_spent = credits_spent
+                + case when credit.was_applied then ${DEPLOY_COST[data.target]} else 0 end,
+              updated_at = now()
+          from credit
+          where projects.id = ${project.id}
+            and projects.user_id = ${context.userId}
+          returning projects.id
+        )
+        insert into deploys (
+          id, project_id, user_id, target, status, slug, bundle_id, apple_team,
+          testers_code, url, log, build_job_id, provider,
+          provider_deploy_id, artifact_ref, artifact_sha256, published_sha256,
+          release_key, completed_at
+        )
+        select
+          ${id}, project_cost.id, ${context.userId}, ${data.target},
+          'package_prepared', ${slug}, ${bundle}, ${data.appleTeam || null},
+          null, null, ${JSON.stringify(harborStore(data.target))}, ${data.jobId},
+          'local-export', null, ${pack.filename}, ${artifact.artifactSha256},
+          ${publishedSha256},
+          ${releaseKey}, now()
+        from project_cost
+        on conflict (release_key) where release_key is not null
+        do update set updated_at = deploys.updated_at
+        where deploys.artifact_sha256 = excluded.artifact_sha256
+          and deploys.published_sha256 = excluded.published_sha256
+        returning id
+      `;
+      if (!prepared[0]) throw new HumanGateError("HUMAN_GATE_CLOSED");
+      deployId = prepared[0].id;
+    } catch (error) {
+      rethrowCreditMutationError(error);
+    }
     return {
-      id,
-      status,
+      id: deployId,
+      status: "package_prepared" as const,
       slug,
       bundleId: bundle,
-      testersCode: code,
-      testersUrl: trackUrl(code),
-      url: appUrl(slug),
-      needsAccount: !hasTeam,
-      pack: (() => {
-        const files = expoFiles({
-          title: project.title,
-          slug,
-          html: project.html as string,
-          bundleId: bundle,
-          appleTeam: data.appleTeam,
-          liveUrl: appUrl(slug),
-          platform: data.target,
-        });
-        return { filename: `${slug}-${data.target}.zip`, base64: toBase64(zipFiles(files)) };
-      })(),
+      testersCode: null,
+      testersUrl: null,
+      url: null,
+      needsAccount: true,
+      submissionStatus: "not_executed" as const,
+      readiness,
+      pack,
+      sourceArtifactSha256: artifact.artifactSha256,
+      publishedSha256,
     };
   });
 
 export const downloadNativePack = createServerFn({ method: "POST" })
-  .validator((input: {
-    title: string;
-    html: string;
-    slug?: string;
-    target: "ios" | "android" | "windows";
-    appleTeam?: string;
-    bundleId?: string;
-  }) => ({
-    title: input.title.trim().slice(0, 80) || "App",
-    html: input.html,
-    slug: slugify(input.slug || input.title),
-    target: input.target,
-    appleTeam: input.appleTeam?.trim() || "",
-    bundleId: input.bundleId?.trim() || bundleIdFromTitle(input.title),
-  }))
-  .handler(({ data }) => {
-    const liveUrl = appUrl(data.slug);
+  .middleware([authMiddleware])
+  .validator(
+    (input: {
+      projectId: string;
+      jobId: string;
+      target: "ios" | "android" | "windows";
+      appleTeam?: string;
+      bundleId?: string;
+    }) => ({
+      projectId: input.projectId.trim().slice(0, 128),
+      jobId: input.jobId.trim().slice(0, 128),
+      target: input.target,
+      appleTeam: input.appleTeam?.trim() || "",
+      bundleId: input.bundleId?.trim() || "",
+    }),
+  )
+  .handler(async ({ context, data }) => {
+    const artifact = await getApprovedOwnedBuild({
+      jobId: data.jobId,
+      projectId: data.projectId,
+      userId: context.userId,
+    });
+    const title = artifact.title || "App";
+    const slug = slugify(title);
+    const bundleId = data.bundleId || bundleIdFromTitle(title);
+    const liveUrl = appUrl(slug);
     const files =
       data.target === "windows"
         ? windowsFiles({
-            title: data.title,
-            slug: data.slug,
-            html: data.html,
+            title,
+            slug,
+            html: artifact.html,
             liveUrl,
           })
         : expoFiles({
-            title: data.title,
-            slug: data.slug,
-            html: data.html,
-            bundleId: data.bundleId,
+            title,
+            slug,
+            html: artifact.html,
+            bundleId,
             appleTeam: data.appleTeam,
             liveUrl,
             platform: data.target,
           });
     const zip = zipFiles(files);
+    const publishedSha256 = await sha256BytesHex(zip);
     return {
-      filename: `${data.slug}-${data.target}.zip`,
+      filename: `${slug}-${data.target}-source.zip`,
       base64: toBase64(zip),
+      status: "source_package_prepared" as const,
+      submissionStatus: "not_executed" as const,
+      sourceArtifactSha256: artifact.artifactSha256,
+      publishedSha256,
     };
   });

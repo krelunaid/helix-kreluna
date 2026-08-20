@@ -4,6 +4,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Gear } from "@/lib/house";
+import { getBuildQuote, type BuildLevel } from "@/lib/build-level";
+
+type SpeechRecognitionResultEvent = Event & {
+  results: ArrayLike<ArrayLike<{ transcript?: string }>>;
+};
+
+type SpeechRecognitionLike = {
+  lang: string;
+  onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 export function IdeaDesk({
   value,
@@ -11,33 +25,51 @@ export function IdeaDesk({
   onSubmit,
   busy,
   example,
+  authenticated,
 }: {
   value: string;
   onChange: (v: string) => void;
-  onSubmit: (payload: { prompt: string; gear: Gear; max: boolean }) => void;
+  onSubmit: (payload: {
+    prompt: string;
+    gear: Gear;
+    max: boolean;
+    buildLevel: BuildLevel;
+  }) => void;
   busy?: boolean;
   example?: string;
+  authenticated?: boolean;
 }) {
   const { t, locale } = useI18n();
   const [gear, setGear] = useState<Gear>("auto");
   const [max, setMax] = useState(false);
   const [listening, setListening] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const buildLevel: BuildLevel = "prototype";
+  const prototypeQuote = getBuildQuote({
+    buildLevel: "prototype",
+    authenticated: Boolean(authenticated),
+  });
+  const productionQuote = getBuildQuote({
+    buildLevel: "production",
+    authenticated: Boolean(authenticated),
+  });
 
   function send() {
     const prompt = value.trim();
     if (!prompt || busy) return;
-    onSubmit({ prompt, gear, max });
+    onSubmit({ prompt, gear, max, buildLevel });
   }
 
   function speak() {
-    const SR = (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognition; SpeechRecognition?: new () => SpeechRecognition })
-      .SpeechRecognition ||
-      (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognition }).webkitSpeechRecognition;
+    const speechWindow = window as unknown as {
+      SpeechRecognition?: SpeechRecognitionConstructor;
+      webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    };
+    const SR = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
     if (!SR) return;
     const rec = new SR();
     rec.lang = locale === "it" ? "it-IT" : "en-US";
-    rec.onresult = (e: SpeechRecognitionEvent) => {
+    rec.onresult = (e) => {
       const said = e.results[0]?.[0]?.transcript ?? "";
       if (said) onChange(value ? `${value} ${said}` : said);
     };
@@ -62,6 +94,40 @@ export function IdeaDesk({
         className="min-h-28 border-0 bg-transparent text-base shadow-none sm:min-h-32"
       />
       {example ? <p className="px-1 text-xs text-subtle">{example}</p> : null}
+      <fieldset className="mt-3 grid gap-2 sm:grid-cols-2">
+        <legend className="sr-only">{t("desk.level")}</legend>
+        <button
+          type="button"
+          role="radio"
+          aria-checked="true"
+          className="rounded-xl border border-accent/50 bg-accent/10 px-3 py-2 text-left"
+        >
+          <span className="block text-xs font-medium text-fg">
+            {t("desk.prototype")} · {prototypeQuote.credits} cr
+          </span>
+          <span className="mt-0.5 block text-[11px] leading-4 text-muted">
+            {t("desk.prototypeHint")}
+          </span>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked="false"
+          aria-disabled="true"
+          disabled
+          className="rounded-xl border border-border px-3 py-2 text-left opacity-55"
+          title={productionQuote.reasonCode}
+        >
+          <span className="block text-xs font-medium text-fg">
+            {t("desk.production")} · {t("desk.unavailable")}
+          </span>
+          <span className="mt-0.5 block text-[11px] leading-4 text-muted">
+            {authenticated
+              ? t("desk.productionHint")
+              : t("desk.productionGuestHint")}
+          </span>
+        </button>
+      </fieldset>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input
           ref={fileRef}
@@ -90,7 +156,10 @@ export function IdeaDesk({
         </button>
         <button
           type="button"
-          className={cn("grid size-10 place-items-center rounded-full hairline", listening ? "text-accent" : "text-muted")}
+          className={cn(
+            "grid size-10 place-items-center rounded-full hairline",
+            listening ? "text-accent" : "text-muted",
+          )}
           onClick={speak}
           aria-label="mic"
         >
@@ -109,7 +178,10 @@ export function IdeaDesk({
         <button
           type="button"
           onClick={() => setMax((v) => !v)}
-          className={cn("h-10 rounded-full px-3 text-xs", max ? "bg-accent text-accent-fg" : "hairline text-muted")}
+          className={cn(
+            "h-10 rounded-full px-3 text-xs",
+            max ? "bg-accent text-accent-fg" : "hairline text-muted",
+          )}
           title={t("desk.maxHint")}
         >
           {t("desk.max")}

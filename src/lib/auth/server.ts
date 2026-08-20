@@ -12,19 +12,15 @@
  * each provider's `idp` hint.
  *
  * Tri-mode:
- *   - Deployed: the deployer injects a per-app `GROK_AUTH_*` + `BETTER_AUTH_URL`
+ *   - Deployed: Netlify injects a per-app `GROK_AUTH_*` + `BETTER_AUTH_URL`
  *     + `DATABASE_URL`, so real federated auth is persisted in Postgres.
- *   - Sandbox live preview: no injection -> falls back to the shared **preview
- *     client** (`./preview`) and derives the preview's `https://*.grok-sandbox.com`
- *     origin from the request, so real sign-in works (no demo users). Sessions
- *     and identities persist in the embedded PGLite DB (same DB as app data);
- *     the process restart wipes both. Live-preview iframe clients use a bearer
- *     token (partitioned cookies) — see `client.ts`.
+ *   - Sandbox live preview: broker sign-in is available only when GROK_AUTH_*
+ *     credentials are injected. No credential is baked into the source.
  *   - Explicitly off (`VITE_AUTH_ENABLED=false`): no providers; per-user server
  *     functions fall back to a dev user (see `verify.server.ts`).
  *
- * NEVER import this from client code — it pulls in `pg` + the preview secret +
- * server-only Better Auth internals. The client uses `@/lib/auth/client`;
+ * NEVER import this from client code — it pulls in `pg` and server-only Better
+ * Auth internals. The client uses `@/lib/auth/client`;
  * components read the user via `@/lib/auth/use-current-user`; server functions get
  * a verified id via `@/lib/auth/middleware`.
  */
@@ -35,15 +31,11 @@ import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import { ensureDbReady, getPglite } from "../db";
+import { serverEnv } from "../env.server";
 import { emailAndPasswordEnabled } from "./email-password";
 import { GROK_PROVIDERS } from "./providers";
 import { pgliteDialect } from "./pglite-dialect";
-import {
-  GROK_ISSUER_DEFAULT,
-  PREVIEW_ALLOWED_HOSTS,
-  PREVIEW_CLIENT_ID,
-  PREVIEW_CLIENT_SECRET,
-} from "./preview";
+import { GROK_ISSUER_DEFAULT, PREVIEW_ALLOWED_HOSTS } from "./preview";
 
 // Kick (and share) PGLite bootstrap as soon as the auth server module loads.
 void ensureDbReady();
@@ -62,26 +54,17 @@ function previewAuthSecret(): string {
   return globalAuthRef.__grokAuthPreviewSecret__;
 }
 
-/** Read an env var, treating empty/whitespace as unset. */
-const env = (key: string): string | undefined => {
-  const value = process.env[key]?.trim();
-  return value ? value : undefined;
-};
+const authDisabled = !serverEnv.authEnabled;
 
-// Explicit off-switch. The deployer sets `VITE_AUTH_ENABLED=true` when it
-// provisions auth; set it to "false" to force auth off everywhere (dev user).
-const authDisabled = env("VITE_AUTH_ENABLED") === "false";
-
-// Broker federation creds: the deployer injects a per-app client when deployed;
-// otherwise fall back to the shared live-preview client, which the broker accepts
-// for any `*.grok-sandbox.com` callback (see `./preview`).
-const grokIssuer = env("GROK_AUTH_ISSUER") ?? GROK_ISSUER_DEFAULT;
-const grokClientId = env("GROK_AUTH_CLIENT_ID") ?? PREVIEW_CLIENT_ID;
-const grokClientSecret = env("GROK_AUTH_CLIENT_SECRET") ?? PREVIEW_CLIENT_SECRET;
+// Broker credentials are server-only and environment-only. There is no
+// preview fallback: missing credentials keep auth disabled locally and fail
+// environment validation on Netlify.
+const grokIssuer = serverEnv.GROK_AUTH_ISSUER ?? GROK_ISSUER_DEFAULT;
+const grokClientId = serverEnv.GROK_AUTH_CLIENT_ID;
+const grokClientSecret = serverEnv.GROK_AUTH_CLIENT_SECRET;
 
 /** True when federated sign-in is active (real auth is enforced). */
-export const authConfigured =
-  !authDisabled && Boolean(grokClientId && grokClientSecret);
+export const authConfigured = !authDisabled && Boolean(grokClientId && grokClientSecret);
 
 // This app's own Better Auth origin. When deployed the deployer injects the
 // public URL. In the sandbox live preview there's no fixed URL (each preview gets
@@ -89,10 +72,10 @@ export const authConfigured =
 // it derives the origin per-request from the (proxied) host, validated against the
 // preview allowlist, which makes the OAuth `redirect_uri` the concrete preview URL
 // the broker's preview client accepts.
-const explicitBaseURL = env("BETTER_AUTH_URL");
+const explicitBaseURL = serverEnv.BETTER_AUTH_URL;
 // Explicit `string[]` (not a readonly tuple) — Better Auth's DynamicBaseURLConfig
 // requires a mutable `allowedHosts: string[]`.
-const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS];
+const previewAllowedHosts: string[] = serverEnv.isNetlify ? [] : [...PREVIEW_ALLOWED_HOSTS];
 // Local `npm run dev` (port 8080 contract). Browsers may send Origin as any of
 // these for the same server — trusting only `localhost` rejects `127.0.0.1` and
 // breaks email/password with "Invalid origin".
@@ -101,35 +84,29 @@ const LOCAL_DEV_ORIGINS: string[] = [
   "http://127.0.0.1:8080",
   "http://[::1]:8080",
 ];
-const KRELUNA_HOSTS: string[] = [
-  "helix.kreluna.it",
-  "www.helix.kreluna.it",
-  "kreluna.it",
-  "www.kreluna.it",
-];
-
-const baseURL = {
-  allowedHosts: [...previewAllowedHosts, ...KRELUNA_HOSTS, "localhost", "127.0.0.1", "[::1]"],
+const configuredHost = serverEnv.hostname ? new URL(serverEnv.publicOrigin).hostname : undefined;
+const baseURL = explicitBaseURL ?? {
+  allowedHosts: [
+    ...previewAllowedHosts,
+    ...(configuredHost ? [configuredHost] : []),
+    "localhost",
+    "127.0.0.1",
+    "[::1]",
+  ],
   protocol: "auto" as const,
-  fallback: explicitBaseURL ?? "http://localhost:8080",
+  fallback: "http://localhost:8080",
 };
 
 // Origins Better Auth accepts on credentialed POSTs (sign-up/sign-in, etc.).
 // Missing entries here surface as FORBIDDEN "Invalid origin".
 const trustedOrigins: string[] = [
   ...(explicitBaseURL ? [explicitBaseURL] : []),
-  ...LOCAL_DEV_ORIGINS,
+  ...(!serverEnv.isNetlify ? LOCAL_DEV_ORIGINS : []),
   ...previewAllowedHosts,
-  ...previewAllowedHosts.flatMap((host) => [`https://${host}`, `http://${host}`]),
-  "https://helix.kreluna.it",
-  "https://www.helix.kreluna.it",
-  "https://kreluna.it",
-  "https://www.kreluna.it",
-  "https://*.grok.me",
-  "https://*.kreluna.it",
+  ...previewAllowedHosts.map((host) => `https://${host}`),
 ];
 
-const databaseUrl = env("DATABASE_URL");
+const databaseUrl = serverEnv.DATABASE_URL;
 
 // Static broker OAuth endpoints (skip OIDC discovery on every sign-in / callback).
 // Discovery would cost an extra network hop to the broker before the popup can
@@ -179,7 +156,7 @@ export const auth = betterAuth({
   baseURL,
   // Deployed apps inject BETTER_AUTH_SECRET. Preview: process-stable secret on
   // globalThis so HMR doesn't invalidate PGLite-backed sessions (see above).
-  secret: env("BETTER_AUTH_SECRET") ?? previewAuthSecret(),
+  secret: serverEnv.BETTER_AUTH_SECRET ?? previewAuthSecret(),
   database,
 
   // CSRF / origin check for credentialed auth POSTs (email sign-up/sign-in, …).

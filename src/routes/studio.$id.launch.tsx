@@ -15,7 +15,6 @@ import {
   shipStore,
   type Deploy,
 } from "@/lib/server/deploy";
-import { scoreProduct } from "@/lib/server/score-fn";
 import type { KrelunaScore } from "@/lib/score";
 import { ScoreCard } from "@/components/score-card";
 import { bundleIdFromTitle } from "@/lib/expo-pack";
@@ -24,22 +23,27 @@ import { wantsDesktop } from "@/lib/brief";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { githubStatus, pushProjectGithub } from "@/lib/server/github";
+import { getBuildJob } from "@/lib/server/agents";
+import type { PublicBuildJob } from "@/lib/agent-types";
+import { downloadApprovedWorkspace } from "@/lib/server/workspace-export";
 
 export const Route = createFileRoute("/studio/$id/launch")({ component: Launch });
 
 function Launch() {
   const { id } = Route.useParams();
   const { user, isPending } = useCurrentUserState();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [project, setProject] = useState<Project | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [deploys, setDeploys] = useState<Deploy[]>([]);
   const [appleTeam, setAppleTeam] = useState("");
   const [bundleId, setBundleId] = useState("");
-  const [busy, setBusy] = useState<"web" | "ios" | "android" | "windows" | "zip-ios" | "zip-android" | "zip-windows" | "gh" | null>(null);
+  const [busy, setBusy] = useState<"web" | "ios" | "android" | "windows" | "zip-ios" | "zip-android" | "zip-windows" | "workspace" | "gh" | null>(null);
   const [ghUrl, setGhUrl] = useState<string | null>(null);
   const [web, setWeb] = useState<{ url: string; testersUrl: string; testersCode: string } | null>(null);
   const [score, setScore] = useState<KrelunaScore | null>(null);
+  const [job, setJob] = useState<PublicBuildJob | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -48,13 +52,18 @@ function Launch() {
         setProject(r.project);
         setProfile(r.profile);
         setBundleId((b) => b || bundleIdFromTitle(r.project.title));
-        if (r.project.html) {
-          void scoreProduct({ data: { html: r.project.html, prompt: r.project.prompt, twin: true, locale } }).then(setScore);
-        }
       })
-      .catch(() => undefined);
-    void listDeploys({ data: id }).then(setDeploys).catch(() => undefined);
-  }, [user?.id, id]);
+      .catch((error) => setLoadError(error instanceof Error ? error.message : t("launch.err")));
+    void getBuildJob({ data: { projectId: id } })
+      .then((next) => {
+        setJob(next);
+        setScore(next?.score ?? null);
+      })
+      .catch((error) => setLoadError(error instanceof Error ? error.message : t("launch.err")));
+    void listDeploys({ data: id })
+      .then(setDeploys)
+      .catch((error) => setLoadError(error instanceof Error ? error.message : t("launch.err")));
+  }, [user?.id, id, t]);
 
   if (isPending) {
     return (
@@ -66,9 +75,12 @@ function Launch() {
   if (!user) return <RedirectToSignIn />;
 
   async function goWeb() {
+    if (!job) return;
     setBusy("web");
     try {
-      const r = await publishWeb({ data: { projectId: id } });
+      const r = await publishWeb({
+        data: { projectId: id, jobId: job.id, requestId: crypto.randomUUID() },
+      });
       setWeb(r);
       setDeploys(await listDeploys({ data: id }));
       const next = await getProject({ data: id });
@@ -84,12 +96,19 @@ function Launch() {
   }
 
   async function goStore(target: "ios" | "android") {
+    if (!job) return;
     setBusy(target);
     try {
       const r = await shipStore({
-        data: { projectId: id, target, appleTeam, bundleId },
+        data: {
+          projectId: id,
+          jobId: job.id,
+          target,
+          appleTeam,
+          bundleId,
+          requestId: crypto.randomUUID(),
+        },
       });
-      setWeb({ url: r.url, testersUrl: r.testersUrl, testersCode: r.testersCode });
       setDeploys(await listDeploys({ data: id }));
       const next = await getProject({ data: id });
       setProfile(next.profile);
@@ -113,14 +132,13 @@ function Launch() {
   }
 
   async function zip(target: "ios" | "android" | "windows") {
-    if (!project?.html) return;
+    if (!project?.html || !job) return;
     setBusy(target === "ios" ? "zip-ios" : target === "windows" ? "zip-windows" : "zip-android");
     try {
       const pack = await downloadNativePack({
         data: {
-          title: project.title,
-          html: project.html,
-          slug: web?.url.split("/").pop(),
+          projectId: id,
+          jobId: job.id,
           target,
           appleTeam,
           bundleId,
@@ -143,8 +161,35 @@ function Launch() {
     }
   }
 
-  const last = (target: string) => deploys.find((d) => d.target === target);
+  async function downloadWorkspace() {
+    if (!job?.workspace) return;
+    setBusy("workspace");
+    try {
+      const pack = await downloadApprovedWorkspace({
+        data: { projectId: id, jobId: job.id },
+      });
+      const bin = atob(pack.base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let index = 0; index < bin.length; index += 1) {
+        bytes[index] = bin.charCodeAt(index);
+      }
+      const blob = new Blob([bytes], { type: "application/zip" });
+      const anchor = document.createElement("a");
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = pack.filename;
+      anchor.click();
+      URL.revokeObjectURL(anchor.href);
+      toast.success(t("workspace.downloaded"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("launch.err"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const showWindows = wantsDesktop(project?.prompt ?? "");
+  const gateReady =
+    job?.queue?.status === "approved" || job?.queue?.status === "deployed";
 
   return (
     <div className="min-h-screen">
@@ -153,7 +198,18 @@ function Launch() {
         <p className="text-xs tracking-[0.16em] text-muted uppercase">{t("launch.kicker")}</p>
         <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="font-display text-4xl tracking-tight">{project?.title ?? t("launch.title")}</h1>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="font-display text-4xl tracking-tight">
+                {project?.title ?? t("launch.title")}
+              </h1>
+              {project ? (
+                <span className="rounded-full border border-border px-2 py-1 text-[10px] tracking-wide text-muted uppercase">
+                  {project.buildLevel === "production"
+                    ? t("desk.production")
+                    : t("desk.prototype")}
+                </span>
+              ) : null}
+            </div>
             <p className="mt-2 max-w-xl text-sm text-muted">{t("launch.lead")}</p>
           </div>
           <Link to="/studio/$id" params={{ id }} className="text-sm text-muted underline-offset-4 hover:text-fg hover:underline">
@@ -161,6 +217,16 @@ function Launch() {
           </Link>
         </div>
         <div className="mt-4">
+          {loadError ? (
+            <p className="mb-3 text-sm text-danger">{loadError}</p>
+          ) : null}
+          {!gateReady ? (
+            <div className="mb-4 rounded-xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm">
+              <p className="font-medium">{t("gate.releaseBlocked")}</p>
+              <p className="mt-1 text-muted">{t("gate.releaseBlockedBody")}</p>
+            </div>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
           {ghUrl ? (
             <a href={ghUrl} target="_blank" rel="noreferrer" className="text-sm text-accent underline-offset-2 hover:underline">
               {ghUrl}
@@ -169,8 +235,9 @@ function Launch() {
             <Button
               size="sm"
               variant="secondary"
-              disabled={!project?.html || busy === "gh"}
+              disabled={!project?.html || !job || !gateReady || busy === "gh"}
               onClick={() => {
+                if (!job) return;
                 setBusy("gh");
                 void githubStatus()
                   .then((s) => {
@@ -178,7 +245,9 @@ function Launch() {
                       toast.message(t("acc.ghWho"));
                       throw new Error("no-gh");
                     }
-                    return pushProjectGithub({ data: { projectId: id } });
+                    return pushProjectGithub({
+                      data: { projectId: id, jobId: job.id },
+                    });
                   })
                   .then((r) => {
                     if (!r) return;
@@ -196,6 +265,23 @@ function Launch() {
               {t("acc.ghPush")}
             </Button>
           )}
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!job?.workspace || !gateReady || busy === "workspace"}
+            onClick={() => void downloadWorkspace()}
+          >
+            <Download className="size-4" />
+            {busy === "workspace"
+              ? t("launch.shipping")
+              : t("workspace.download")}
+          </Button>
+          {job?.workspace ? (
+            <span className="text-xs text-subtle">
+              {job.workspace.fileCount} {t("workspace.files")} · {job.workspace.buildLevel}
+            </span>
+          ) : null}
+          </div>
         </div>
 
         {score ? (
@@ -203,7 +289,9 @@ function Launch() {
             <ScoreCard score={score} />
           </div>
         ) : project?.html ? (
-          <p className="mt-8 text-sm text-muted">{t("score.scanning")}</p>
+          <p className="mt-8 text-sm text-muted">
+            {job ? t("score.unavailable") : t("score.scanning")}
+          </p>
         ) : null}
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -229,17 +317,8 @@ function Launch() {
               />
             </label>
             <p className="mt-3 text-xs text-subtle">{DEPLOY_COST.ios} cr</p>
-            <Button className="mt-3 w-full" disabled={!!busy || !project?.html} onClick={() => void goStore("ios")}>
+            <Button className="mt-3 w-full" disabled={!!busy || !project?.html || !gateReady} onClick={() => void goStore("ios")}>
               {busy === "ios" ? t("launch.shipping") : t("launch.iosCta")}
-            </Button>
-            <Button
-              variant="secondary"
-              className="mt-2 w-full"
-              disabled={!!busy || !project?.html}
-              onClick={() => void zip("ios")}
-            >
-              <Download className="size-4" />
-              {busy === "zip-ios" ? "…" : t("launch.zipIos")}
             </Button>
           </article>
 
@@ -248,17 +327,8 @@ function Launch() {
             <h2 className="mt-3 text-lg">{t("launch.and")}</h2>
             <p className="mt-1 text-sm text-muted">{t("launch.andBody")}</p>
             <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.android} cr</p>
-            <Button className="mt-4 w-full" disabled={!!busy || !project?.html} onClick={() => void goStore("android")}>
+            <Button className="mt-4 w-full" disabled={!!busy || !project?.html || !gateReady} onClick={() => void goStore("android")}>
               {busy === "android" ? t("launch.shipping") : t("launch.andCta")}
-            </Button>
-            <Button
-              variant="secondary"
-              className="mt-2 w-full"
-              disabled={!!busy || !project?.html}
-              onClick={() => void zip("android")}
-            >
-              <Download className="size-4" />
-              {busy === "zip-android" ? "…" : t("launch.zipAnd")}
             </Button>
           </article>
 
@@ -267,7 +337,7 @@ function Launch() {
             <h2 className="mt-3 text-lg">{t("launch.web")}</h2>
             <p className="mt-1 text-sm text-muted">{t("launch.webBody")}</p>
             <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.web} cr</p>
-            <Button className="mt-4 w-full" disabled={!!busy || !project?.html} onClick={() => void goWeb()}>
+            <Button className="mt-4 w-full" disabled={!!busy || !project?.html || !gateReady} onClick={() => void goWeb()}>
               <Wifi className="size-4" />
               {busy === "web" ? t("launch.shipping") : t("launch.webCta")}
             </Button>
@@ -284,7 +354,7 @@ function Launch() {
             <h2 className="mt-3 text-lg">{t("launch.win")}</h2>
             <p className="mt-1 text-sm text-muted">{t("launch.winBody")}</p>
             <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.windows} cr</p>
-            <Button className="mt-4 w-full" disabled={!!busy || !project?.html} onClick={() => void zip("windows")}>
+            <Button className="mt-4 w-full" disabled={!!busy || !project?.html || !gateReady} onClick={() => void zip("windows")}>
               <Download className="size-4" />
               {busy === "zip-windows" ? t("launch.shipping") : t("launch.winCta")}
             </Button>
@@ -310,7 +380,13 @@ function Launch() {
                 <li key={d.id} className="rounded-xl bg-surface px-4 py-3 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm">
-                      {d.target === "web" ? "Web" : d.target === "ios" ? "TestFlight" : d.target === "windows" ? "Windows" : "Google Play"} · {d.status}
+                      {d.target === "web"
+                        ? "Web"
+                        : d.target === "ios"
+                          ? t("launch.iosPackage")
+                          : d.target === "windows"
+                            ? "Windows"
+                            : t("launch.androidPackage")} · {d.status}
                     </p>
                     {d.url ? (
                       <a href={d.url} className="text-xs text-accent underline-offset-2 hover:underline">
@@ -327,6 +403,7 @@ function Launch() {
                             "uppercase",
                             s.status === "done" && "text-fg",
                             s.status === "blocked" && "text-accent",
+                            s.status === "skipped" && "text-subtle",
                             s.status === "error" && "text-danger",
                           )}
                         >

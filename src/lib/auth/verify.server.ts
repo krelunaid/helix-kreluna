@@ -53,9 +53,7 @@ export type VerifiedUser = { id: string; email: string | null };
  * as a bearer token, which we present as `Authorization: Bearer …` (the `bearer`
  * plugin resolves it). When deployed no token is passed and the cookie is used.
  */
-export async function getSessionUser(
-  bearerToken?: string,
-): Promise<VerifiedUser | null> {
+export async function getSessionUser(bearerToken?: string): Promise<VerifiedUser | null> {
   if (!authConfigured) return null;
   const request = getRequest();
   if (!request) return null;
@@ -72,9 +70,9 @@ export async function getSessionUser(
 /**
  * Resolve the current user id for a server function, or throw when unauthorized.
  * Prefer `authMiddleware` (`./middleware`), which calls this for you.
- * - Auth enabled (default) -> the verified session user id; throws
- *   `UnauthorizedError` when signed out. Works in the sandbox preview too (real
- *   sign-in via the baked preview client).
+ * - Auth enabled explicitly -> the verified session user id; throws
+ *   `UnauthorizedError` when signed out. A sandbox preview needs injected
+ *   GROK_AUTH_* credentials for real sign-in.
  * - Auth disabled (`VITE_AUTH_ENABLED=false`) + `DATABASE_URL` set -> throw (fail
  *   closed): one shared dev user on a real database would let every visitor
  *   read/write everyone's rows.

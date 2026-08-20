@@ -2,16 +2,16 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-r
 import { AuthProvider } from "@/lib/auth/provider";
 import { I18nProvider } from "@/lib/i18n";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { publicEnv } from "@/lib/env.public";
 import { Toaster } from "sonner";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Helix by Kreluna";
-const host = import.meta.env.VITE_PUBLIC_HOSTNAME;
-const origin = host ? `https://${host}` : "";
-const ogImage = host ? `https://${host}/og.jpg` : undefined;
-const xBanner = host ? `https://${host}/x-banner.jpg` : undefined;
+const origin = publicEnv.origin;
+const ogImage = origin ? `${origin}/og.jpg` : undefined;
+const xBanner = origin ? `${origin}/x-banner.jpg` : undefined;
 const DESC =
-  "Trasforma la tua idea in un sito, un’app o un software. Helix progetta, sviluppa, testa e prepara il prodotto digitale per la pubblicazione.";
+  "Trasforma la tua idea in un prodotto digitale. Helix progetta, sviluppa, esegue i controlli configurati e prepara un candidato per la tua revisione.";
 
 export const Route = createRootRoute({
   head: () => ({

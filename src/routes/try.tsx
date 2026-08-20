@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Bug, Rocket, Send } from "lucide-react";
-import { AppStoreMark, PlayStoreMark } from "@/components/store-marks";
 import { SiteHeader } from "@/components/site-header";
 import { PreviewFrame } from "@/components/preview-frame";
 import { ScoreCard } from "@/components/score-card";
@@ -9,16 +8,20 @@ import { ControlCenter } from "@/components/control-center";
 import { HumanGate } from "@/components/human-gate";
 import { ThoughtStream, WorkingBanner } from "@/components/thought-stream";
 import { GemRail } from "@/components/gem-rail";
-import { liftScore } from "@/lib/server/score-fn";
-import { applyLook, lookById, type LookId } from "@/lib/atelier";
+import type { LookId } from "@/lib/atelier";
 import { LumenBoard } from "@/components/lumen-board";
 import { Button } from "@/components/ui/button";
 import { ACTIONS } from "@/lib/plans";
-import { startBuild, getBuildJob } from "@/lib/server/agents";
-import type { BuildJob } from "@/lib/agent-types";
+import { getGuestBuildJob, startGuestBuild } from "@/lib/server/agents";
+import type { PublicBuildJob } from "@/lib/agent-types";
 import { type ChatMessage } from "@/lib/server/vetra";
 import { loadGuest, saveGuest, type GuestProject } from "@/lib/guest";
+import {
+  loadGuestBuildAccess,
+  saveGuestBuildAccess,
+} from "@/lib/guest-build-access";
 import { publishGuest } from "@/lib/server/deploy";
+import { decideGuestBuildJob } from "@/lib/server/review/human-gate";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -37,9 +40,12 @@ function GuestStudio() {
   const navigate = useNavigate();
   const { locale, t } = useI18n();
   const [project, setProject] = useState<GuestProject | null>(null);
-  const [job, setJob] = useState<BuildJob | null>(null);
+  const [job, setJob] = useState<PublicBuildJob | null>(null);
+  const [jobAccessError, setJobAccessError] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState<"iterate" | "debug" | "pub" | null>(null);
+  const [busy, setBusy] = useState<
+    "iterate" | "debug" | "pub" | "reject" | null
+  >(null);
   const [published, setPublished] = useState<{ url: string; testersUrl: string; testersCode: string } | null>(null);
   const [mobile, setMobile] = useState<"preview" | "chat">(jobId ? "chat" : "preview");
 
@@ -53,12 +59,39 @@ function GuestStudio() {
 
   useEffect(() => {
     if (!jobId) return;
+		const activeJobId = jobId;
     let stop = false;
     let misses = 0;
     async function tick() {
-      const next = await getBuildJob({ data: { jobId } });
+			const guestAccessToken = loadGuestBuildAccess(activeJobId);
+			if (!guestAccessToken) {
+				if (!stop) {
+					setJobAccessError(
+						locale === "it"
+							? "L'accesso guest è scaduto. Avvia una nuova generazione."
+							: "Guest access expired. Start a new generation.",
+					);
+				}
+				return;
+			}
+			let next: PublicBuildJob | null;
+			try {
+				next = await getGuestBuildJob({
+					data: { jobId: activeJobId, guestAccessToken },
+				});
+			} catch {
+				if (!stop) {
+					setJobAccessError(
+						locale === "it"
+							? "Accesso guest non valido o scaduto."
+							: "Guest access is invalid or expired.",
+					);
+				}
+				return;
+			}
       if (stop) return;
       if (next) {
+				setJobAccessError(null);
         misses = 0;
         setJob(next);
         if (next.html) {
@@ -97,23 +130,44 @@ function GuestStudio() {
     return () => {
       stop = true;
     };
-  }, [jobId]);
+	}, [jobId, locale]);
 
-  async function iterate(mode: "iterate" | "debug") {
+  async function iterate(
+    mode: "iterate" | "debug",
+    sourceJobId?: string,
+    promptOverride?: string,
+  ) {
     if (!project) return;
     const prompt =
-      mode === "debug" ? note.trim() || t("studio.debugDefault") : note.trim();
+      promptOverride?.trim() ||
+      (mode === "debug" ? note.trim() || t("studio.debugDefault") : note.trim());
     if (mode === "iterate" && !prompt) return;
     setBusy(mode);
     try {
-      const { jobId: nextId } = await startBuild({
+			const sourceGuestAccessToken = sourceJobId
+				? (loadGuestBuildAccess(sourceJobId) ?? undefined)
+				: undefined;
+			if (sourceJobId && !sourceGuestAccessToken) {
+				throw new Error(t("gate.guestExpired"));
+			}
+			const requestId = crypto.randomUUID();
+				const {
+				jobId: nextId,
+				guestAccessToken,
+				expiresAt,
+			} = await startGuestBuild({
         data: {
           prompt,
           locale,
           currentHtml: project.html,
           mode,
+				buildLevel: job?.buildLevel ?? "prototype",
+				sourceJobId,
+				sourceGuestAccessToken,
+				requestId: sourceJobId ? requestId : undefined,
         },
       });
+			saveGuestBuildAccess(nextId, guestAccessToken, expiresAt);
       setNote("");
       void navigate({ to: "/try", search: { job: nextId } });
     } catch (err) {
@@ -129,12 +183,63 @@ function GuestStudio() {
   const running = (job?.status === "running" && !hasApp) || !!busy;
 
   async function publish() {
-    if (!html) return;
+    if (!html || !jobId || !job) return;
+    const guestAccessToken = loadGuestBuildAccess(jobId);
+    if (!guestAccessToken) {
+      toast.error(t("gate.guestExpired"));
+      return;
+    }
     setBusy("pub");
     try {
-      const r = await publishGuest({ data: { title, html } });
+      if (job.queue?.status === "awaiting_human_approval") {
+        await decideGuestBuildJob({
+          data: {
+            jobId,
+            guestAccessToken,
+            decision: "approve",
+            requestId: crypto.randomUUID(),
+          },
+        });
+      }
+      const r = await publishGuest({
+        data: {
+          jobId,
+          guestAccessToken,
+          requestId: crypto.randomUUID(),
+        },
+      });
       setPublished(r);
       toast.success(t("launch.webOk"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("launch.err"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function reject() {
+    if (!jobId || job?.queue?.status !== "awaiting_human_approval") return;
+    const guestAccessToken = loadGuestBuildAccess(jobId);
+    if (!guestAccessToken) {
+      toast.error(t("gate.guestExpired"));
+      return;
+    }
+    setBusy("reject");
+    try {
+      await decideGuestBuildJob({
+        data: {
+          jobId,
+          guestAccessToken,
+          decision: "reject",
+          requestId: crypto.randomUUID(),
+          reason: note.trim() || undefined,
+        },
+      });
+      const next = await getGuestBuildJob({
+        data: { jobId, guestAccessToken },
+      });
+      if (next) setJob(next);
+      toast.message(t("gate.held"));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("launch.err"));
     } finally {
@@ -146,7 +251,7 @@ function GuestStudio() {
     <div className="flex h-[100dvh] flex-col overflow-hidden pt-0">
       <SiteHeader dense />
       <div className="border-b border-accent/40 bg-accent/10 px-4 py-2 text-sm text-fg">
-        {t("guest.banner")}{" "}
+        {t("guest.banner")} {t("desk.prototypeHint")}{" "}
         <Link to="/login" search={{ next: "/try" }} className="underline underline-offset-2">
           {t("guest.cta")}
         </Link>
@@ -155,7 +260,8 @@ function GuestStudio() {
         running={running || (!!jobId && !job)}
         beat={job?.beat}
         line={
-          job?.wire ||
+					jobAccessError ||
+					job?.wire ||
           (job?.thoughts?.length
             ? `${job.thoughts[job.thoughts.length - 1].agent}: ${job.thoughts[job.thoughts.length - 1].text}`
             : undefined)
@@ -163,7 +269,12 @@ function GuestStudio() {
       />
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{title}</p>
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-medium">{title}</p>
+            <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] tracking-wide text-muted uppercase">
+              {t("desk.prototype")}
+            </span>
+          </div>
           <p className="text-xs text-subtle">
             {job?.liveUrl ? (
               <a href={job.liveUrl} className="text-accent underline-offset-2 hover:underline" target="_blank" rel="noreferrer">
@@ -194,8 +305,7 @@ function GuestStudio() {
                 search={{ next: "/studio" }}
                 className="inline-flex h-9 items-center gap-1.5 rounded-full bg-accent px-3 text-xs font-medium text-accent-fg"
               >
-                <AppStoreMark className="size-5" />
-                <PlayStoreMark className="size-5" />
+                <Rocket className="size-4" />
                 {t("launch.studioCta")}
               </Link>
             </div>
@@ -203,7 +313,14 @@ function GuestStudio() {
             <Button
               size="sm"
               variant="secondary"
-              disabled={!hasApp || busy === "pub"}
+              disabled={
+                !hasApp ||
+                !jobId ||
+                busy === "pub" ||
+                (job?.queue?.status !== "awaiting_human_approval" &&
+                  job?.queue?.status !== "approved" &&
+                  job?.queue?.status !== "deployed")
+              }
               onClick={() => void publish()}
             >
               <Rocket className="size-3.5" />
@@ -240,7 +357,9 @@ function GuestStudio() {
                 ? t("preview.refining")
                 : running
                   ? t("studio.building")
-                  : t("preview.live")
+                  : job?.queue?.status === "deployed"
+                    ? t("preview.live")
+                    : t("gate.candidateReady")
             }
           />
         </div>
@@ -264,23 +383,30 @@ function GuestStudio() {
                   look={job?.look}
                   mood={job?.designMood}
                   onPick={(id: LookId) => {
-                    const src = job?.html ?? project?.html;
-                    if (!src || !job) return;
-                    const html = applyLook(src, lookById(id));
-                    setJob({ ...job, html, look: id });
-                    if (project) {
-                      const next = { ...project, html };
-                      saveGuest(next);
-                      setProject(next);
-                    }
+                    if (!job || job.queue?.status !== "awaiting_human_approval") return;
+                    void iterate(
+                      "iterate",
+                      job.id,
+                      locale === "it"
+                        ? `Applica la direzione visiva ${id} al candidato, preservando funzioni e contenuti.`
+                        : `Apply visual direction ${id} to the candidate while preserving behavior and content.`,
+                    );
                   }}
                 />
-                {job?.score ? (
+                {job?.score && job.queue?.status === "awaiting_human_approval" ? (
                   <HumanGate
+                    quality={job.quality}
                     onApprove={() => void publish()}
-                    onModify={() => undefined}
-                    onReject={() => toast.message(t("gate.held"))}
+                    onModify={() => {
+                      if (!note.trim()) {
+                        toast.message(t("gate.modifyHint"));
+                        return;
+                      }
+                      void iterate("iterate", job.id);
+                    }}
+                    onReject={() => void reject()}
                     onCouncil={() => toast.message(job.score?.council.why ?? "")}
+                    busy={busy !== null}
                   />
                 ) : null}
                 {job?.score ? (
@@ -288,10 +414,14 @@ function GuestStudio() {
                     score={job.score}
                     compact
                     onImprove={(improveId) => {
-                      if (!job.html) return;
-                      void liftScore({ data: { html: job.html, prompt: job.prompt, id: improveId } }).then((r) => {
-                        setJob({ ...job, html: r.html, score: r.score });
-                      });
+                      if (job.queue?.status !== "awaiting_human_approval") return;
+                      void iterate(
+                        "iterate",
+                        job.id,
+                        locale === "it"
+                          ? `Migliora il candidato sul criterio ${improveId}; conserva tutte le funzioni esistenti e verifica il risultato.`
+                          : `Improve the candidate on criterion ${improveId}; preserve every existing behavior and validate the result.`,
+                      );
                     }}
                   />
                 ) : null}
@@ -310,7 +440,10 @@ function GuestStudio() {
             className="border-t border-border p-3"
             onSubmit={(e) => {
               e.preventDefault();
-              void iterate("iterate");
+              void iterate(
+                "iterate",
+                job?.queue?.status === "awaiting_human_approval" ? job.id : undefined,
+              );
             }}
           >
             <textarea

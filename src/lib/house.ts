@@ -84,8 +84,8 @@ export const HOUSE: HouseAgent[] = [
   { id: "kiln", name: "Kiln", role: "Test Engineer", roleIt: "Ingegnere test", craft: "Tests", craftIt: "Test", desk: "quality", brief: "Unit, API, e2e, browsers.", briefIt: "Unit, API, e2e, browser." },
   { id: "moth", name: "Moth", role: "Bug Hunter", roleIt: "Cacciatore di bug", craft: "Bugs", craftIt: "Bug", desk: "quality", brief: "What tests miss.", briefIt: "Quello che i test non vedono." },
   { id: "quill", name: "Quill", role: "Code Review", roleIt: "Revisione codice", craft: "Review", craftIt: "Revisione", desk: "quality", brief: "Nobody approves their own work.", briefIt: "Nessuno approva il proprio lavoro." },
-  { id: "swift", name: "Swift", role: "Performance", roleIt: "Prestazioni", craft: "Speed", craftIt: "Velocità", desk: "quality", brief: "Load, memory, bundle, cache.", briefIt: "Carico, memoria, bundle, cache." },
-  { id: "echo", name: "Echo", role: "Accessibility", roleIt: "Accessibilità", craft: "Accessibility", craftIt: "Accessibilità", desk: "quality", brief: "Anyone can use it.", briefIt: "Chiunque deve poterlo usare." },
+  { id: "swift", name: "Swift", role: "Performance", roleIt: "Prestazioni", craft: "Speed", craftIt: "Velocità", desk: "quality", brief: "Browser timings only when the runner executes.", briefIt: "Tempi browser solo quando il runner viene eseguito." },
+  { id: "echo", name: "Echo", role: "Accessibility", roleIt: "Accessibilità", craft: "Accessibility", craftIt: "Accessibilità", desk: "quality", brief: "Measured labels, contrast, keyboard, landmarks and focus.", briefIt: "Misura label, contrasto, tastiera, landmark e focus." },
   { id: "beacon", name: "Beacon", role: "SEO / ASO", roleIt: "SEO / ASO", craft: "Visibility", craftIt: "Visibilità", desk: "growth", brief: "Web and store visibility.", briefIt: "Visibilità web e store." },
   { id: "ledger", name: "Ledger", role: "Cost", roleIt: "Costi", craft: "Cost", craftIt: "Costi", desk: "ops", brief: "Three configs, real tradeoffs.", briefIt: "Tre configurazioni, tradeoff veri." },
   { id: "harbor", name: "Harbor", role: "DevOps", roleIt: "DevOps", craft: "Publish", craftIt: "Pubblicazione", desk: "ops", brief: "CI, staging, rollback.", briefIt: "CI, staging, rollback." },
@@ -94,13 +94,13 @@ export const HOUSE: HouseAgent[] = [
   { id: "folio", name: "Folio", role: "Docs", roleIt: "Documenti", craft: "Docs", craftIt: "Documenti", desk: "growth", brief: "README, API, changelog.", briefIt: "README, API, changelog." },
   { id: "sage", name: "Sage", role: "Business", roleIt: "Business", craft: "Business", craftIt: "Business", desk: "growth", brief: "Pricing, premium, markets.", briefIt: "Prezzi, premium, mercati." },
   { id: "pulsar", name: "Pulsar", role: "Growth", roleIt: "Crescita", craft: "Growth", craftIt: "Crescita", desk: "growth", brief: "Landing, onboarding, conversion.", briefIt: "Landing, onboarding, conversione." },
-  { id: "senate", name: "Senate", role: "AI Council", roleIt: "Council AI", craft: "Council vote", craftIt: "Voto del council", desk: "ops", brief: "Specialists vote. Helix decides.", briefIt: "Gli specialisti votano. Helix decide." },
-  { id: "twin", name: "Twin", role: "Digital Twin", roleIt: "Digital twin", craft: "Simulation", craftIt: "Simulazione", desk: "quality", brief: "Clicks, forms, failed payments.", briefIt: "Click, form, pagamenti falliti." },
-  { id: "storm", name: "Storm", role: "Stress", roleIt: "Stress", craft: "Stress test", craftIt: "Stress test", desk: "quality", brief: "100 to 1,000,000 requests.", briefIt: "Da 100 a 1.000.000 di richieste." },
-  { id: "augur", name: "Augur", role: "Future", roleIt: "Futuro", craft: "6-month forecast", craftIt: "Previsione 6 mesi", desk: "ops", brief: "Where it breaks at 80k users.", briefIt: "Dove si rompe a 80mila utenti." },
+  { id: "senate", name: "Senate", role: "Automated Council", roleIt: "Council automatizzato", craft: "Formula score", craftIt: "Punteggio a formula", desk: "ops", brief: "Named heuristics, not simulated specialist votes.", briefIt: "Euristiche dichiarate, non voti simulati di specialisti." },
+  { id: "twin", name: "Twin", role: "Browser QA", roleIt: "QA browser", craft: "Runtime evidence", craftIt: "Prove runtime", desk: "quality", brief: "Real browser actions only; never HTML inference.", briefIt: "Solo azioni browser reali; mai inferenze dall'HTML." },
+  { id: "storm", name: "Storm", role: "Load test", roleIt: "Load test", craft: "Bounded load test", craftIt: "Load test limitato", desk: "quality", brief: "Opt-in bounded HTTP load test with measured latency and RPS.", briefIt: "Load test HTTP limitato e autorizzato, con latenza e RPS misurati." },
+  { id: "augur", name: "Augur", role: "Capacity", roleIt: "Capacità", craft: "Capacity forecast", craftIt: "Previsione capacità", desk: "ops", brief: "Ranges only from benchmarks and infrastructure data.", briefIt: "Intervalli solo da benchmark e dati infrastrutturali." },
   { id: "archive", name: "Archive", role: "Memory", roleIt: "Memoria", craft: "Memory", craftIt: "Memoria", desk: "ops", brief: "Why we chose this, months later.", briefIt: "Perché abbiamo scelto così, mesi dopo." },
   { id: "mend", name: "Mend", role: "Improvement", roleIt: "Miglioramento", craft: "Improvements", craftIt: "Migliorie", desk: "ops", brief: "Score up. You approve.", briefIt: "Alza lo score. Approvi tu." },
-  { id: "warden", name: "Warden", role: "Maintenance", roleIt: "Manutenzione", craft: "Maintenance", craftIt: "Manutenzione", desk: "ops", brief: "Find, fix in Twin, ship.", briefIt: "Trova, sistema nel Twin, pubblica." },
+  { id: "warden", name: "Warden", role: "Maintenance", roleIt: "Manutenzione", craft: "Maintenance", craftIt: "Manutenzione", desk: "ops", brief: "Monitor and propose fixes; publishing still needs policy approval.", briefIt: "Monitora e propone fix; la pubblicazione richiede comunque approvazione." },
   { id: "patch", name: "Superior", role: "Principal closer", roleIt: "Principal closer", craft: "Closing", craftIt: "Chiusura", desk: "eng", brief: "Every brief. If the first screen is empty, the job is not done.", briefIt: "Ogni brief. Se la prima schermata è vuota, il lavoro non è finito." },
 ];
 
@@ -158,7 +158,8 @@ export function orchestrate(
   phases: string[];
 } {
   const needs = detectNeeds(prompt);
-  const active: HouseId[] = ["gemini"];
+  // Aegis is a mandatory deterministic release scanner, not an optional AI desk.
+  const active: HouseId[] = ["gemini", "aegis"];
 
   if (mode !== "generate" || gear === "fast") {
     active.push("forge", "iris", "patch");
@@ -322,8 +323,8 @@ export function aftercare(title: string, prompt: string, needs: Need[]) {
       : "A €38  B €18  C €8 — C is the PWA on Kreluna. B adds analytics. A adds a backend.",
     harbor: "Web + TestTrack from Launch. Rollback = previous version.",
     seal: "Ship web when Score ≥ 80 and Aegis has no blockers.",
-    warden: "After launch: errors, cost, deps. Fix in Twin, then ask you.",
-    nimbus: "Preview on Kreluna. Production: Cloudflare or Vercel. Stores via Expo.",
+    warden: "Monitoring is not configured yet. Any future release still requires policy approval.",
+    nimbus: "No infrastructure provider is selected until the project requirements are known.",
   };
 }
 

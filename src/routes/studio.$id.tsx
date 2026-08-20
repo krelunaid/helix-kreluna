@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Bug, Send } from "lucide-react";
-import { AppStoreMark, PlayStoreMark } from "@/components/store-marks";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { SiteHeader } from "@/components/site-header";
@@ -11,8 +10,7 @@ import { ControlCenter } from "@/components/control-center";
 import { HumanGate } from "@/components/human-gate";
 import { ThoughtStream, WorkingBanner } from "@/components/thought-stream";
 import { GemRail } from "@/components/gem-rail";
-import { liftScore } from "@/lib/server/score-fn";
-import { applyLook, lookById, type LookId } from "@/lib/atelier";
+import type { LookId } from "@/lib/atelier";
 import { LumenBoard } from "@/components/lumen-board";
 import { Button } from "@/components/ui/button";
 import { ACTIONS } from "@/lib/plans";
@@ -23,7 +21,11 @@ import {
   type Project,
 } from "@/lib/server/vetra";
 import { getBuildJob } from "@/lib/server/agents";
-import type { BuildJob } from "@/lib/agent-types";
+import {
+  approveBuildJob,
+  rejectBuildJob,
+} from "@/lib/server/review/human-gate";
+import type { PublicBuildJob } from "@/lib/agent-types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -42,9 +44,11 @@ function Studio() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState<"iterate" | "debug" | "host" | null>(null);
+  const [busy, setBusy] = useState<
+    "iterate" | "debug" | "host" | "approve" | "reject" | null
+  >(null);
   const [mobile, setMobile] = useState<"preview" | "chat">("chat");
-  const [job, setJob] = useState<BuildJob | null>(null);
+  const [job, setJob] = useState<PublicBuildJob | null>(null);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -89,21 +93,72 @@ function Studio() {
     !project.hosted &&
     Date.now() - new Date(project.created_at).getTime() > 6 * 60 * 60 * 1000;
 
-  async function iterate(mode: "iterate" | "debug") {
+  async function iterate(
+    mode: "iterate" | "debug",
+    sourceJobId?: string,
+    promptOverride?: string,
+  ) {
     if (!project) return;
     const prompt =
-      mode === "debug"
+      promptOverride?.trim() || (mode === "debug"
         ? note.trim() || t("studio.debugDefault")
-        : note.trim();
+        : note.trim());
     if (mode === "iterate" && !prompt) return;
     setBusy(mode);
     try {
-      const r = await iterateProject({ data: { id: project.id, prompt, mode, locale } });
+			const r = await iterateProject({
+				data: {
+					id: project.id,
+					prompt,
+					mode,
+						locale,
+						requestId: crypto.randomUUID(),
+						sourceJobId,
+				},
+			});
       setProject(r.project);
       setProfile(r.profile);
       setNote("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("studio.errIterate"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function approve() {
+    if (!job || job.queue?.status !== "awaiting_human_approval") return;
+    setBusy("approve");
+    try {
+      await approveBuildJob({
+        data: { jobId: job.id, requestId: crypto.randomUUID() },
+      });
+      const next = await getBuildJob({ data: { jobId: job.id } });
+      if (next) setJob(next);
+      await navigate({ to: "/studio/$id/launch", params: { id } });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("launch.err"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function reject() {
+    if (!job || job.queue?.status !== "awaiting_human_approval") return;
+    setBusy("reject");
+    try {
+      await rejectBuildJob({
+        data: {
+          jobId: job.id,
+          requestId: crypto.randomUUID(),
+          reason: note.trim() || undefined,
+        },
+      });
+      const next = await getBuildJob({ data: { jobId: job.id } });
+      if (next) setJob(next);
+      toast.message(t("gate.held"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("launch.err"));
     } finally {
       setBusy(null);
     }
@@ -120,7 +175,14 @@ function Studio() {
         <>
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{project.title}</p>
+              <div className="flex items-center gap-2">
+                <p className="truncate text-sm font-medium">{project.title}</p>
+                <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] tracking-wide text-muted uppercase">
+                  {project.buildLevel === "production"
+                    ? t("desk.production")
+                    : t("desk.prototype")}
+                </span>
+              </div>
               <p className="text-xs tabular-nums text-subtle">
                 {t("studio.used", { n: project.credits_spent })}
                 {project.hosted
@@ -134,10 +196,13 @@ function Studio() {
               <Button
                 size="sm"
                 type="button"
+                disabled={
+                  job?.queue?.status !== "approved" &&
+                  job?.queue?.status !== "deployed"
+                }
                 onClick={() => void navigate({ to: "/studio/$id/launch", params: { id: project.id } })}
               >
-                <AppStoreMark className="size-5" />
-                <PlayStoreMark className="size-5" />
+                <Send className="size-4" />
                 {t("launch.studioCta")}
               </Button>
             </div>
@@ -193,7 +258,7 @@ function Studio() {
                     return t("preview.refining");
                   }
                   if (busy) return t("studio.building");
-                  if (project.status === "ready") return "Live";
+                  if (project.status === "ready") return t("gate.candidateReady");
                   return project.status;
                 })()}
               />
@@ -219,19 +284,30 @@ function Studio() {
                   look={job?.look}
                   mood={job?.designMood}
                   onPick={(id: LookId) => {
-                    const src = job?.html ?? project.html;
-                    if (!src) return;
-                    const html = applyLook(src, lookById(id));
-                    setJob(job ? { ...job, html, look: id } : job);
-                    setProject({ ...project, html });
+                    if (job?.queue?.status !== "awaiting_human_approval") return;
+                    void iterate(
+                      "iterate",
+                      job.id,
+                      locale === "it"
+                        ? `Applica la direzione visiva ${id} al candidato, preservando funzioni e contenuti.`
+                        : `Apply visual direction ${id} to the candidate while preserving behavior and content.`,
+                    );
                   }}
                 />
-                {job?.score ? (
+                {job?.score && job.queue?.status === "awaiting_human_approval" ? (
                   <HumanGate
-                    onApprove={() => void navigate({ to: "/studio/$id/launch", params: { id: project.id } })}
-                    onModify={() => undefined}
-                    onReject={() => toast.message(t("gate.held"))}
+                    quality={job.quality}
+                    onApprove={() => void approve()}
+                    onModify={() => {
+                      if (!note.trim()) {
+                        toast.message(t("gate.modifyHint"));
+                        return;
+                      }
+                      void iterate("iterate", job.id);
+                    }}
+                    onReject={() => void reject()}
                     onCouncil={() => toast.message(job.score?.council.why ?? "")}
+                    busy={busy === "approve" || busy === "reject" || busy === "iterate"}
                   />
                 ) : null}
                 {job?.score ? (
@@ -239,11 +315,14 @@ function Studio() {
                     score={job.score}
                     compact
                     onImprove={(improveId) => {
-                      if (!job.html) return;
-                      void liftScore({ data: { html: job.html, prompt: project.prompt, id: improveId } }).then((r) => {
-                        setJob({ ...job, html: r.html, score: r.score });
-                        setProject({ ...project, html: r.html });
-                      });
+                      if (job.queue?.status !== "awaiting_human_approval") return;
+                      void iterate(
+                        "iterate",
+                        job.id,
+                        locale === "it"
+                          ? `Migliora il candidato sul criterio ${improveId}; conserva tutte le funzioni esistenti e verifica il risultato.`
+                          : `Improve the candidate on criterion ${improveId}; preserve every existing behavior and validate the result.`,
+                      );
                     }}
                   />
                 ) : null}

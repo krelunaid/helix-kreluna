@@ -21,7 +21,7 @@ function shell(title: string, css: string, body: string, script = "", locale: Lo
   ${css}
 </style>
 </head>
-<body>${body}${script ? `<script>${script}<\/script>` : ""}</body></html>`;
+<body>${body}${script ? `<script>${script}</script>` : ""}</body></html>`;
 }
 
 export function buildAureliaHtml(locale: Locale = "en") {
@@ -220,4 +220,3 @@ export function buildHaloHtml(locale: Locale = "en") {
     locale,
   );
 }
-

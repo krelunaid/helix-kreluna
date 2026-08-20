@@ -1,11 +1,29 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
-import { ACTIONS, EXTRA_PACK, PLANS, type ActionId, type PlanId } from "@/lib/plans";
+import { ACTIONS, PLANS, type ActionId, type PlanId } from "@/lib/plans";
 import { htmlForPrompt } from "@/lib/templates";
 import { titleFromPrompt } from "@/lib/utils";
-import { LOCALE_NAME, normalizeLocale, t, type Locale } from "@/lib/i18n-core";
-import { enqueueBuild } from "@/lib/server/agents";
+import { normalizeLocale, t, type Locale } from "@/lib/i18n-core";
+import {
+  CreditMutationError,
+  initialWebHostingIdempotencyKey,
+  rethrowCreditMutationError,
+} from "@/lib/server/credits";
+import { createBuildJobDraft } from "@/lib/server/jobs/create";
+import { dispatchBuildJob } from "@/lib/server/jobs/dispatch.server";
+import { serializeBuildJob } from "@/lib/server/jobs/queue";
+import { loadBuildJob } from "@/lib/server/jobs/queue";
+import { sha256Hex } from "@/lib/server/agents/patch";
+import {
+  getApprovedOwnedBuild,
+  HumanGateError,
+} from "@/lib/server/review/human-gate";
+import {
+  assertBuildLevelAvailable,
+  parseBuildLevel,
+  type BuildLevel,
+} from "@/lib/build-level";
 
 export type Profile = {
   user_id: string;
@@ -27,6 +45,7 @@ export type Project = {
   title: string;
   prompt: string;
   kind: string;
+  buildLevel: BuildLevel;
   status: "draft" | "building" | "ready" | "error";
   html: string | null;
   messages: ChatMessage[];
@@ -46,7 +65,36 @@ export type LedgerRow = {
   created_at: string;
 };
 
-type ProjectRow = Omit<Project, "messages" | "hosted" | "status"> & {
+export const BILLING_ERROR_CODES = ["PAYMENTS_NOT_AVAILABLE", "INVALID_PLAN"] as const;
+export type BillingErrorCode = (typeof BILLING_ERROR_CODES)[number];
+
+export class BillingError extends Error {
+  readonly code: BillingErrorCode;
+  readonly status: 400 | 503;
+
+  constructor(code: BillingErrorCode) {
+    super(code);
+    this.name = "BillingError";
+    this.code = code;
+    this.status = code === "INVALID_PLAN" ? 400 : 503;
+  }
+}
+
+export class LegacyGeneratorRetiredError extends Error {
+  readonly code = "LEGACY_GENERATOR_RETIRED";
+  readonly status = 410;
+
+  constructor() {
+    super("LEGACY_GENERATOR_RETIRED");
+    this.name = "LegacyGeneratorRetiredError";
+  }
+}
+
+type ProjectRow = Omit<
+  Project,
+  "messages" | "hosted" | "status" | "buildLevel"
+> & {
+  build_level: string | null;
   messages: string;
   hosted: boolean | number;
   status: string;
@@ -65,6 +113,7 @@ function mapProject(row: ProjectRow): Project {
   return {
     ...row,
     status: (row.status as Project["status"]) || "draft",
+    buildLevel: parseBuildLevel(row.build_level),
     hosted: Boolean(row.hosted),
     html: row.html,
     messages: parseMessages(row.messages),
@@ -85,132 +134,81 @@ async function ensureProfile(userId: string): Promise<Profile> {
   return rows[0];
 }
 
-async function spend(
-  userId: string,
-  amount: number,
-  action: string,
-  projectId: string | null,
-  note: string,
-) {
-  const sql = await getSql();
-  const rows = await sql<{ credits_balance: number }>`
-    select credits_balance from profiles where user_id = ${userId}
-  `;
-  const bal = rows[0]?.credits_balance ?? 0;
-  if (bal < amount) {
-    throw new Error("Crediti insufficienti");
+function requestId(raw: unknown): string {
+  if (
+    typeof raw === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw)
+  ) {
+    return raw;
   }
-  await sql`
-    update profiles set credits_balance = credits_balance - ${amount}
-    where user_id = ${userId}
-  `;
-  await sql`
-    insert into credit_ledger (user_id, project_id, action, credits, note)
-    values (${userId}, ${projectId}, ${action}, ${-amount}, ${note})
-  `;
+  throw new CreditMutationError("INVALID_IDEMPOTENCY_KEY");
 }
 
-async function refund(
-  userId: string,
-  amount: number,
-  action: string,
-  projectId: string | null,
-  note: string,
-) {
-  const sql = await getSql();
-  await sql`
-    update profiles set credits_balance = credits_balance + ${amount}
-    where user_id = ${userId}
-  `;
-  await sql`
-    insert into credit_ledger (user_id, project_id, action, credits, note)
-    values (${userId}, ${projectId}, ${action}, ${amount}, ${note})
-  `;
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function extractHtml(text: string): string | null {
-  const fence = text.match(/```html\s*([\s\S]*?)```/i);
-  if (fence?.[1]) return fence[1].trim();
-  const doc = text.match(/<!DOCTYPE html[\s\S]*<\/html>/i);
-  if (doc) return doc[0].trim();
-  if (/<html[\s>]/i.test(text) && /<\/html>/i.test(text)) return text.trim();
-  return null;
+async function projectBuildFingerprint(input: {
+  requestId: string;
+  userId: string;
+  projectId: string;
+  prompt: string;
+  locale: Locale;
+  mode: ActionId;
+  buildLevel: BuildLevel;
+  gear?: "auto" | "house" | "fast";
+  max?: boolean;
+}): Promise<string> {
+  // Only API inputs belong in this fingerprint. In particular, currentHtml is
+  // a mutable server snapshot: including it would make a legitimate retry
+  // conflict after the worker has updated the project.
+  const canonical = JSON.stringify({
+    version: "helix-project-build-v2",
+    requestId: input.requestId,
+    userId: input.userId,
+    projectId: input.projectId,
+    prompt: input.prompt,
+    locale: input.locale,
+    mode: input.mode,
+    buildLevel: input.buildLevel,
+    gear: input.gear ?? "auto",
+    max: Boolean(input.max),
+  });
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
+  return bytesToHex(new Uint8Array(digest));
 }
 
-async function generateHtml(
-  prompt: string,
-  currentHtml: string | null,
-  mode: ActionId,
-  locale: Locale = "en",
-) {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) {
-    return { html: currentHtml && mode !== "generate" ? currentHtml : htmlForPrompt(prompt, locale), usedAi: false };
-  }
-
-  const lang = LOCALE_NAME[locale];
-  const system =
-    mode === "debug"
-      ? `You are Kreluna. Fix the given HTML app so it works. All visible UI text must be in ${lang}. Return ONLY a complete HTML document. No markdown.`
-      : mode === "iterate"
-        ? `You are Kreluna. Apply the user's change to the HTML app. Keep all visible UI text in ${lang} unless the user asks otherwise. Return ONLY the full updated HTML document. No markdown.`
-        : `You are Kreluna, an expert product engineer. The user describes an app, site, game or template. Return ONLY one complete, self-contained HTML document. No markdown, no commentary. Single file: CSS in <style>, JS in <script>. You may load fonts from fonts.googleapis.com only. No other CDNs or network calls. Beautiful, distinctive, fully interactive and usable at 390px and desktop. ALL visible UI text MUST be in ${lang}. Set <html lang="${locale}">. Games must be playable with keyboard and touch. Keep it under ~80KB.`;
-
-  const userParts = [prompt];
-  if (currentHtml && mode !== "generate") {
-    userParts.push("\n\nCURRENT HTML:\n", currentHtml.slice(0, 60000));
-  }
-
+async function dispatchCommittedBuildJob(jobId: string): Promise<void> {
   try {
-    const res = await fetch("https://api.x.ai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      signal: AbortSignal.timeout(14000),
-      body: JSON.stringify({
-        model: "grok-4.5",
-        temperature: 0.6,
-        max_tokens: 3500,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: userParts.join("") },
-        ],
+    await dispatchBuildJob(jobId);
+  } catch (error) {
+    // The durable row is already committed. Returning an error here would
+    // encourage a new client action/requestId and risk charging twice; the
+    // queue recovery sweep can safely dispatch this queued job later.
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "build_job_dispatch_deferred",
+        jobId,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        errorCode:
+          error && typeof error === "object" && "code" in error
+            ? String(error.code)
+            : undefined,
       }),
-    });
-    if (!res.ok) {
-      return { html: currentHtml ?? htmlForPrompt(prompt, locale), usedAi: false };
-    }
-    const body = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-    const text = body.choices?.[0]?.message?.content ?? "";
-    const html = extractHtml(text);
-    return { html: html ?? currentHtml ?? htmlForPrompt(prompt, locale), usedAi: Boolean(html) };
-  } catch {
-    return { html: currentHtml ?? htmlForPrompt(prompt, locale), usedAi: false };
+    );
   }
 }
 
 export const previewGenerate = createServerFn({ method: "POST" })
-  .validator((input: {
+  .validator((_input: {
     prompt: string;
     locale?: string;
     currentHtml?: string | null;
     mode?: ActionId;
-  }) => ({
-    prompt: input.prompt.trim().slice(0, 2000),
-    locale: normalizeLocale(input.locale),
-    currentHtml: input.currentHtml ?? null,
-    mode:
-      input.mode === "debug" || input.mode === "iterate" || input.mode === "generate"
-        ? input.mode
-        : ("generate" as const),
-  }))
-  .handler(async ({ data }) => {
-    if (!data.prompt) throw new Error(t(data.locale, "err.describe"));
-    return generateHtml(data.prompt, data.currentHtml, data.mode, data.locale);
+  }) => undefined)
+  .handler(async () => {
+    throw new LegacyGeneratorRetiredError();
   });
 
 export const getAccount = createServerFn({ method: "GET" })
@@ -234,7 +232,7 @@ export const listProjects = createServerFn({ method: "GET" })
     await ensureProfile(context.userId);
     const sql = await getSql();
     const rows = await sql<ProjectRow>`
-      select id, user_id, title, prompt, kind, status, html, messages,
+      select id, user_id, title, prompt, kind, build_level, status, html, messages,
              credits_spent, hosted, hosted_until, created_at, updated_at
       from projects
       where user_id = ${context.userId}
@@ -249,7 +247,7 @@ export const getProject = createServerFn({ method: "GET" })
   .handler(async ({ context, data: id }) => {
     const sql = await getSql();
     const rows = await sql<ProjectRow>`
-      select id, user_id, title, prompt, kind, status, html, messages,
+      select id, user_id, title, prompt, kind, build_level, status, html, messages,
              credits_spent, hosted, hosted_until, created_at, updated_at
       from projects
       where id = ${id} and user_id = ${context.userId}
@@ -261,85 +259,393 @@ export const getProject = createServerFn({ method: "GET" })
 
 export const createProject = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: { prompt: string; locale?: string; gear?: "auto" | "house" | "fast"; max?: boolean }) => ({
-    prompt: input.prompt.trim().slice(0, 2000),
-    locale: normalizeLocale(input.locale),
-    gear: (input.gear === "house" || input.gear === "fast" ? input.gear : "auto") as "auto" | "house" | "fast",
-    max: Boolean(input.max),
-  }))
+  .validator(
+    (input: {
+      prompt: string;
+      locale?: string;
+      gear?: "auto" | "house" | "fast";
+      max?: boolean;
+      buildLevel?: BuildLevel;
+      requestId: string;
+    }) => ({
+      prompt: input.prompt.trim().slice(0, 2000),
+      locale: normalizeLocale(input.locale),
+      gear: (input.gear === "house" || input.gear === "fast" ? input.gear : "auto") as
+        | "auto"
+        | "house"
+        | "fast",
+      max: Boolean(input.max),
+      buildLevel: parseBuildLevel(input.buildLevel),
+      requestId: requestId(input.requestId),
+    }),
+  )
   .handler(async ({ context, data }) => {
     const locale = data.locale;
     if (!data.prompt) throw new Error(t(locale, "err.describe"));
+    assertBuildLevelAvailable({
+      buildLevel: data.buildLevel,
+      action: "generate",
+      authenticated: true,
+    });
     await ensureProfile(context.userId);
     const cost = ACTIONS.generate.credits;
-    await spend(context.userId, cost, "generate", null, t(locale, "action.generate"));
-    const id = crypto.randomUUID();
+    const id = data.requestId;
     const title = titleFromPrompt(data.prompt, locale);
     const sql = await getSql();
     const messages: ChatMessage[] = [{ role: "user", content: data.prompt, kind: "build" }];
     const seed = htmlForPrompt(data.prompt, locale);
-    await sql`
-      insert into projects (id, user_id, title, prompt, kind, status, html, messages, credits_spent)
-      values (${id}, ${context.userId}, ${title}, ${data.prompt}, 'web', 'building', ${seed}, ${JSON.stringify(messages)}, ${cost})
-    `;
-    const jobId = enqueueBuild({
+    const { job } = await createBuildJobDraft({
       prompt: data.prompt,
       locale,
       mode: "generate",
+      buildLevel: data.buildLevel,
       currentHtml: seed,
       projectId: id,
       userId: context.userId,
       gear: data.gear,
       max: data.max,
     });
+    const buildIdempotencyKey = `build:generate:${data.requestId}`;
+    const requestFingerprint = await projectBuildFingerprint({
+      requestId: data.requestId,
+      userId: context.userId,
+      projectId: id,
+      prompt: data.prompt,
+      locale,
+      mode: "generate",
+      buildLevel: data.buildLevel,
+      gear: data.gear,
+      max: data.max,
+    });
+    let jobId: string;
+    try {
+      const queued = await sql<{ job_id: string }>`
+        with credit as materialized (
+          select was_applied
+          from apply_credit_entry(
+            ${context.userId},
+            ${-cost},
+            'generate',
+            ${id},
+            ${t(locale, "action.generate")},
+            ${`generate:${data.requestId}`}
+          )
+        ),
+        created as (
+          insert into projects (
+            id, user_id, title, prompt, kind, build_level, status, html, messages, credits_spent
+          )
+          select
+            ${id}, ${context.userId}, ${title}, ${data.prompt}, 'web', ${data.buildLevel}, 'building',
+            ${seed}, ${JSON.stringify(messages)}, ${cost}
+          from credit
+          where credit.was_applied
+          returning projects.id
+        ),
+        project_ready as materialized (
+          select id from created
+          union all
+          select projects.id
+          from projects
+          cross join credit
+          where not credit.was_applied
+            and projects.id = ${id}
+            and projects.user_id = ${context.userId}
+        )
+        , queued as materialized (
+          select queued.job_id
+          from project_ready
+          cross join lateral enqueue_build_job(
+            ${job.id},
+            project_ready.id,
+            ${context.userId},
+            null,
+            null,
+            ${serializeBuildJob(job, requestFingerprint)},
+            ${buildIdempotencyKey},
+            ${requestFingerprint},
+            2
+          ) as queued
+        ), bound as (
+          update projects
+          set current_build_job_id = queued.job_id,
+              updated_at = now()
+          from queued
+          where projects.id = ${id}
+            and projects.user_id = ${context.userId}
+          returning projects.id
+        )
+        select queued.job_id
+        from queued
+        where exists (select 1 from bound)
+      `;
+      if (!queued[0]) throw new Error("BUILD_JOB_ENQUEUE_FAILED");
+      jobId = queued[0].job_id;
+    } catch (error) {
+      rethrowCreditMutationError(error);
+    }
+    await dispatchCommittedBuildJob(jobId);
     return { id, jobId };
   });
 
 export const iterateProject = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: { id: string; prompt: string; mode?: "iterate" | "debug"; locale?: string }) => ({
-    id: input.id,
-    prompt: input.prompt.trim().slice(0, 2000),
-    mode: input.mode === "debug" ? ("debug" as const) : ("iterate" as const),
-    locale: normalizeLocale(input.locale),
-  }))
+  .validator(
+    (input: {
+      id: string;
+      prompt: string;
+      mode?: "iterate" | "debug";
+      locale?: string;
+      requestId: string;
+      sourceJobId?: string;
+    }) => ({
+      id: input.id,
+      prompt: input.prompt.trim().slice(0, 2000),
+      mode: input.mode === "debug" ? ("debug" as const) : ("iterate" as const),
+      locale: normalizeLocale(input.locale),
+      requestId: requestId(input.requestId),
+      sourceJobId:
+        typeof input.sourceJobId === "string"
+          ? input.sourceJobId.trim().slice(0, 128)
+          : undefined,
+    }),
+  )
   .handler(async ({ context, data }) => {
     const locale = data.locale;
     if (!data.prompt) throw new Error(t(locale, "err.change"));
     const sql = await getSql();
     const rows = await sql<ProjectRow>`
-      select id, user_id, title, prompt, kind, status, html, messages,
+      select id, user_id, title, prompt, kind, build_level, status, html, messages,
              credits_spent, hosted, hosted_until, created_at, updated_at
       from projects where id = ${data.id} and user_id = ${context.userId}
     `;
     if (!rows[0]) throw new Error(t(locale, "err.notFound"));
     const project = mapProject(rows[0]);
-    const cost = ACTIONS[data.mode].credits;
-    await spend(context.userId, cost, data.mode, data.id, data.prompt.slice(0, 80));
-    const messages = [
-      ...project.messages,
-      { role: "user" as const, content: data.prompt, kind: data.mode },
-    ];
-    await sql`
-      update projects set status = 'building', messages = ${JSON.stringify(messages)},
-        credits_spent = credits_spent + ${cost}, updated_at = now()
-      where id = ${data.id} and user_id = ${context.userId}
-    `;
-    enqueueBuild({
+    assertBuildLevelAvailable({
+      buildLevel: project.buildLevel,
+      action: data.mode,
+      authenticated: true,
+    });
+    const requestFingerprint = await projectBuildFingerprint({
+      requestId: data.requestId,
+      userId: context.userId,
+      projectId: data.id,
       prompt: data.prompt,
       locale,
       mode: data.mode,
+      buildLevel: project.buildLevel,
+    });
+    let sourceArtifactSha256: string | null = null;
+    if (data.sourceJobId) {
+      const prior = await sql<{
+        decision: string;
+        result_job_id: string | null;
+        request_fingerprint: string | null;
+      }>`
+        select event.decision, event.result_job_id,
+               child.request_fingerprint
+        from build_job_gate_events as event
+        left join build_jobs as child on child.id = event.result_job_id
+        where event.job_id = ${data.sourceJobId}
+          and event.actor_type = 'user'
+          and event.actor_user_id = ${context.userId}
+          and event.request_id = ${data.requestId}
+      `;
+      if (prior[0]) {
+        if (
+          prior[0].decision !== "modify" ||
+          !prior[0].result_job_id ||
+          prior[0].request_fingerprint !== requestFingerprint
+        ) {
+          throw new HumanGateError("HUMAN_GATE_REQUEST_REUSED");
+        }
+        return {
+          project,
+          profile: await ensureProfile(context.userId),
+          jobId: prior[0].result_job_id,
+        };
+      }
+      const source = await loadBuildJob(data.sourceJobId);
+      if (
+        !source ||
+        source.userId !== context.userId ||
+        source.projectId !== data.id ||
+        source.buildLevel !== project.buildLevel
+      ) {
+        throw new HumanGateError("HUMAN_GATE_FORBIDDEN", 403);
+      }
+      if (source.queue?.status !== "awaiting_human_approval") {
+        throw new HumanGateError("HUMAN_GATE_CLOSED");
+      }
+      if (!source.html || !source.queue.artifactSha256) {
+        throw new HumanGateError("HUMAN_GATE_ARTIFACT_NOT_SEALED");
+      }
+      sourceArtifactSha256 = await sha256Hex(source.html);
+      if (sourceArtifactSha256 !== source.queue.artifactSha256) {
+        throw new HumanGateError("HUMAN_GATE_ARTIFACT_NOT_SEALED");
+      }
+      project.html = source.html;
+    }
+    const cost = ACTIONS[data.mode].credits;
+    const message: ChatMessage = { role: "user", content: data.prompt, kind: data.mode };
+    const { job } = await createBuildJobDraft({
+      prompt: data.prompt,
+      locale,
+      mode: data.mode,
+      buildLevel: project.buildLevel,
       currentHtml: project.html,
       projectId: data.id,
       userId: context.userId,
     });
+    const buildIdempotencyKey = `build:${data.mode}:${data.id}:${data.requestId}`;
+    let jobId: string;
+    try {
+      const queued = await sql<{ job_id: string }>`
+        with gate as materialized (
+          select job.id, job.artifact_sha256
+          from build_jobs as job
+          join projects as project on project.id = job.project_id
+          where ${data.sourceJobId ?? null} is not null
+            and job.id = ${data.sourceJobId ?? null}
+            and job.project_id = ${data.id}
+            and job.user_id = ${context.userId}
+            and project.user_id = ${context.userId}
+            and project.current_build_job_id = job.id
+            and job.queue_status = 'awaiting_human_approval'
+            and job.artifact_sha256 = ${sourceArtifactSha256}
+          for update of job
+        ), owned as materialized (
+          select project.id
+          from projects as project
+          where project.id = ${data.id}
+            and project.user_id = ${context.userId}
+            and (
+              ${data.sourceJobId ?? null} is null
+              or exists (select 1 from gate)
+            )
+          for update
+        ),
+        credit as materialized (
+          select owned.id as project_id, mutation.was_applied
+          from owned
+          cross join lateral apply_credit_entry(
+            ${context.userId},
+            ${-cost},
+            ${data.mode},
+            owned.id,
+            ${data.prompt.slice(0, 80)},
+            ${`${data.mode}:${data.id}:${data.requestId}`}
+          ) as mutation
+        ),
+        changed as (
+          update projects
+          set status = 'building',
+              messages = (
+                coalesce(nullif(projects.messages, ''), '[]')::jsonb
+                || jsonb_build_array(${JSON.stringify(message)}::jsonb)
+              )::text,
+              credits_spent = credits_spent + ${cost},
+              current_build_job_id = ${job.id},
+              updated_at = now()
+          from credit
+          where projects.id = credit.project_id
+            and projects.user_id = ${context.userId}
+            and credit.was_applied
+          returning projects.id
+        ),
+        project_ready as materialized (
+          select id from changed
+          union all
+          select project_id as id
+          from credit
+          where not was_applied
+        )
+        , queued as materialized (
+          select queued.job_id
+          from project_ready
+          cross join lateral enqueue_linked_build_job(
+            ${job.id},
+            ${data.sourceJobId ?? null},
+            project_ready.id,
+            ${context.userId},
+            null,
+            null,
+            ${serializeBuildJob(job, requestFingerprint)},
+            ${buildIdempotencyKey},
+            ${requestFingerprint},
+            2
+          ) as queued
+        ), decision as (
+          insert into build_job_gate_events (
+            job_id, project_id, actor_type, actor_user_id, decision,
+            from_status, to_status, request_id, reason, artifact_sha256,
+            result_job_id
+          )
+          select
+            gate.id, ${data.id}, 'user', ${context.userId}, 'modify',
+            'awaiting_human_approval', 'rejected', ${data.requestId},
+            ${data.prompt}, gate.artifact_sha256, queued.job_id
+          from gate
+          cross join queued
+          where ${data.sourceJobId ?? null} is not null
+          returning job_id, result_job_id
+        ), closed as (
+          update build_jobs as source
+          set queue_status = 'rejected',
+              stage = 'modified',
+              updated_at = now()
+          from decision
+          where source.id = decision.job_id
+            and source.queue_status = 'awaiting_human_approval'
+          returning source.id
+        )
+        select queued.job_id
+        from queued
+        where ${data.sourceJobId ?? null} is null
+           or exists (select 1 from closed)
+      `;
+      if (queued[0]) {
+        jobId = queued[0].job_id;
+      } else if (data.sourceJobId) {
+        const replay = await sql<{
+          decision: string;
+          result_job_id: string | null;
+          request_fingerprint: string | null;
+        }>`
+          select event.decision, event.result_job_id,
+                 child.request_fingerprint
+          from build_job_gate_events as event
+          left join build_jobs as child on child.id = event.result_job_id
+          where event.job_id = ${data.sourceJobId}
+            and event.actor_type = 'user'
+            and event.actor_user_id = ${context.userId}
+            and event.request_id = ${data.requestId}
+        `;
+        if (
+          replay[0]?.decision === "modify" &&
+          replay[0].result_job_id &&
+          replay[0].request_fingerprint === requestFingerprint
+        ) {
+          jobId = replay[0].result_job_id;
+        } else if (replay[0]) {
+          throw new HumanGateError("HUMAN_GATE_REQUEST_REUSED");
+        } else {
+          throw new HumanGateError("HUMAN_GATE_CLOSED");
+        }
+      } else {
+        throw new Error(t(locale, "err.notFound"));
+      }
+    } catch (error) {
+      rethrowCreditMutationError(error);
+    }
+    await dispatchCommittedBuildJob(jobId);
     const next = await sql<ProjectRow>`
-      select id, user_id, title, prompt, kind, status, html, messages,
+      select id, user_id, title, prompt, kind, build_level, status, html, messages,
              credits_spent, hosted, hosted_until, created_at, updated_at
       from projects where id = ${data.id} and user_id = ${context.userId}
     `;
     const profile = await ensureProfile(context.userId);
-    return { project: mapProject(next[0]), profile };
+    return { project: mapProject(next[0]), profile, jobId };
   });
 
 export const hostProject = createServerFn({ method: "POST" })
@@ -348,15 +654,27 @@ export const hostProject = createServerFn({ method: "POST" })
   .handler(async ({ context, data: id }) => {
     const sql = await getSql();
     const rows = await sql<ProjectRow>`
-      select id, user_id, title, prompt, kind, status, html, messages,
+      select id, user_id, title, prompt, kind, build_level, status, html, messages,
              credits_spent, hosted, hosted_until, created_at, updated_at
       from projects where id = ${id} and user_id = ${context.userId}
     `;
     if (!rows[0]) throw new Error("Progetto non trovato");
     const project = mapProject(rows[0]);
     if (project.hosted) return { project, profile: await ensureProfile(context.userId) };
+    const current = await sql<{ current_build_job_id: string | null }>`
+      select current_build_job_id
+      from projects
+      where id = ${id} and user_id = ${context.userId}
+    `;
+    if (!current[0]?.current_build_job_id) {
+      throw new HumanGateError("HUMAN_GATE_CLOSED");
+    }
+    await getApprovedOwnedBuild({
+      jobId: current[0].current_build_job_id,
+      projectId: id,
+      userId: context.userId,
+    });
     const cost = ACTIONS.host.credits;
-    await spend(context.userId, cost, "host", id, "Hosting 30 giorni");
     const until = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const messages = [
       ...project.messages,
@@ -366,16 +684,43 @@ export const hostProject = createServerFn({ method: "POST" })
         kind: "host" as const,
       },
     ];
-    await sql`
-      update projects
-      set hosted = true, hosted_until = ${until},
-          credits_spent = credits_spent + ${cost},
-          messages = ${JSON.stringify(messages)},
-          updated_at = now()
-      where id = ${id} and user_id = ${context.userId}
-    `;
+    try {
+      await sql`
+        with owned as materialized (
+          select id
+          from projects
+          where id = ${id}
+            and user_id = ${context.userId}
+            and hosted = false
+        ),
+        credit as (
+          select mutation.was_applied
+          from owned
+          cross join lateral apply_credit_entry(
+            ${context.userId},
+            ${-cost},
+            'host',
+            owned.id,
+            'Hosting 30 giorni',
+            ${initialWebHostingIdempotencyKey(id)}
+          ) as mutation
+        )
+        update projects
+        set hosted = true,
+            hosted_until = ${until},
+            credits_spent = credits_spent + ${cost},
+            messages = ${JSON.stringify(messages)},
+            updated_at = now()
+        from credit
+        where projects.id = ${id}
+          and projects.user_id = ${context.userId}
+          and projects.hosted = false
+      `;
+    } catch (error) {
+      rethrowCreditMutationError(error);
+    }
     const next = await sql<ProjectRow>`
-      select id, user_id, title, prompt, kind, status, html, messages,
+      select id, user_id, title, prompt, kind, build_level, status, html, messages,
              credits_spent, hosted, hosted_until, created_at, updated_at
       from projects where id = ${id} and user_id = ${context.userId}
     `;
@@ -387,35 +732,26 @@ export const choosePlan = createServerFn({ method: "POST" })
   .validator((planId: PlanId) => planId)
   .handler(async ({ context, data: planId }) => {
     const plan = PLANS.find((p) => p.id === planId);
-    if (!plan) throw new Error("Piano non valido");
+    if (!plan) throw new BillingError("INVALID_PLAN");
+    if (plan.id !== "free") throw new BillingError("PAYMENTS_NOT_AVAILABLE");
+
     const profile = await ensureProfile(context.userId);
-    if (profile.plan === planId) return profile;
+    if (profile.plan === "free") return profile;
+
+    // Free is the one plan that can be selected without a payment. It never
+    // grants credits here: the initial 10-credit allowance is created once by
+    // ensureProfile's INSERT ... ON CONFLICT DO NOTHING.
     const sql = await getSql();
     await sql`
       update profiles
-      set plan = ${planId}, credits_balance = credits_balance + ${plan.credits}
+      set plan = 'free'
       where user_id = ${context.userId}
-    `;
-    await sql`
-      insert into credit_ledger (user_id, project_id, action, credits, note)
-      values (${context.userId}, null, 'plan_grant', ${plan.credits}, ${"Piano " + plan.name})
     `;
     return ensureProfile(context.userId);
   });
 
 export const buyExtraCredits = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .handler(async ({ context }) => {
-    await ensureProfile(context.userId);
-    const sql = await getSql();
-    await sql`
-      update profiles
-      set credits_balance = credits_balance + ${EXTRA_PACK.credits}
-      where user_id = ${context.userId}
-    `;
-    await sql`
-      insert into credit_ledger (user_id, project_id, action, credits, note)
-      values (${context.userId}, null, 'topup', ${EXTRA_PACK.credits}, 'Pacchetto extra')
-    `;
-    return ensureProfile(context.userId);
+  .handler(async () => {
+    throw new BillingError("PAYMENTS_NOT_AVAILABLE");
   });

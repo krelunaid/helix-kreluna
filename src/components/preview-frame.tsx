@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import {
+  GENERATED_APP_SANDBOX,
+  protectGeneratedHtml,
+} from "@/lib/generated-content-policy";
 
 const EMPTY = `<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;background:#070914;color:#aab3c5;font-family:Sora,system-ui,sans-serif}
@@ -40,11 +44,9 @@ export function PreviewFrame({
     if (typeof window !== "undefined") {
       const origin = window.location.origin;
       doc = doc.replaceAll('src="/templates/', `src="${origin}/templates/`);
-      if (!/<base /i.test(doc)) {
-        doc = doc.replace(/<\/head>/i, `<base href="${origin}/"/></head>`);
-      }
+      doc = doc.replaceAll('href="/templates/', `href="${origin}/templates/`);
     }
-    node.srcdoc = doc;
+    node.srcdoc = protectGeneratedHtml(doc, { noIndex: true });
   }, [html, on, tab]);
 
   const pretty = useMemo(() => {
@@ -120,7 +122,9 @@ export function PreviewFrame({
             <iframe
               ref={frameRef}
               title="preview"
-              sandbox="allow-scripts allow-forms allow-modals allow-popups"
+              sandbox={GENERATED_APP_SANDBOX}
+              referrerPolicy="no-referrer"
+              allow=""
               className={cn(
                 "border-0 bg-surface",
                 device === "desk" && "absolute inset-0 h-full w-full",
