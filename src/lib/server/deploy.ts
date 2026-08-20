@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { bundleIdFromTitle, expoFiles, slugify, withPwa, windowsFiles } from "@/lib/expo-pack";
-import { toBase64, zipFiles } from "@/lib/zip";
+import { featuredFor, featuredHtml } from "@/lib/templates";
 
 let schemaReady: Promise<void> | null = null;
 
@@ -238,7 +238,16 @@ export const getPublicApp = createServerFn({ method: "GET" })
     const rows = await sql<PublicApp>`
       select slug, title, html, testers_code, project_id from public_apps where slug = ${slug}
     `;
-    return rows[0] ?? null;
+    if (rows[0]) return rows[0];
+    const demo = featuredFor("en").find((x) => x.id === slug);
+    if (!demo) return null;
+    return {
+      slug,
+      title: demo.title,
+      html: featuredHtml(slug, "en"),
+      testers_code: null,
+      project_id: null,
+    };
   });
 
 export const getPublicByCode = createServerFn({ method: "GET" })

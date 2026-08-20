@@ -5,18 +5,6 @@ import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Gear } from "@/lib/house";
 
-const KINDS = ["web", "mobile", "site", "soft", "desk", "plan"] as const;
-type Kind = (typeof KINDS)[number];
-
-const PREFIX: Record<Kind, { it: string; en: string }> = {
-  web: { it: "Tipo: app web. ", en: "Type: web app. " },
-  mobile: { it: "Tipo: app per telefono con tab in basso. ", en: "Type: phone app with bottom tabs. " },
-  site: { it: "Tipo: sito web pubblico. ", en: "Type: public website. " },
-  soft: { it: "Tipo: software gestionale / programma di lavoro. ", en: "Type: business software / operations program. " },
-  desk: { it: "Tipo: programma desktop per Windows, Mac e Linux. ", en: "Type: desktop program for Windows, Mac and Linux. " },
-  plan: { it: "Prima pianifica il prodotto, poi costruisci. ", en: "Plan the product first, then build. " },
-};
-
 export function IdeaDesk({
   value,
   onChange,
@@ -31,21 +19,13 @@ export function IdeaDesk({
   example?: string;
 }) {
   const { t, locale } = useI18n();
-  const [kind, setKind] = useState<Kind>("web");
   const [gear, setGear] = useState<Gear>("auto");
   const [max, setMax] = useState(false);
   const [listening, setListening] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  function compose() {
-    const line = PREFIX[kind][locale === "it" ? "it" : "en"];
-    const body = value.trim();
-    if (!body) return "";
-    return body.toLowerCase().includes(line.trim().toLowerCase().slice(0, 12)) ? body : `${line}${body}`;
-  }
-
   function send() {
-    const prompt = compose();
+    const prompt = value.trim();
     if (!prompt || busy) return;
     onSubmit({ prompt, gear, max });
   }
@@ -74,21 +54,6 @@ export function IdeaDesk({
         send();
       }}
     >
-      <div className="flex gap-1 overflow-x-auto pb-2">
-        {KINDS.map((id) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setKind(id)}
-            className={cn(
-              "h-9 shrink-0 rounded-full px-3 text-sm",
-              kind === id ? "bg-accent text-accent-fg" : "text-muted hairline",
-            )}
-          >
-            {t(`kind.${id}` as "kind.web")}
-          </button>
-        ))}
-      </div>
       <Textarea
         id="idea"
         value={value}
@@ -155,17 +120,9 @@ export function IdeaDesk({
           className="ml-auto grid size-10 place-items-center rounded-full bg-accent text-accent-fg disabled:opacity-40"
           aria-label={t("mkt.cta")}
         >
-          <ArrowUp className="size-4" />
+          <ArrowUp className="size-5" />
         </button>
       </div>
     </form>
   );
 }
-
-type SpeechRecognition = {
-  lang: string;
-  start: () => void;
-  onresult: ((e: SpeechRecognitionEvent) => void) | null;
-  onend: (() => void) | null;
-};
-type SpeechRecognitionEvent = { results: { [i: number]: { [j: number]: { transcript: string } } } };

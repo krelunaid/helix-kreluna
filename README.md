@@ -3,16 +3,16 @@
 Software house AI: dall’idea a un prodotto (sito, app, software, programma desktop).
 
 - Live: https://helix.kreluna.it
-- Codice completo: ramo [`complete`](https://github.com/krelunaid/helix-kreluna/tree/complete)
+- Codice: questo repository, ramo **main**
 - Account: [krelunaid](https://github.com/krelunaid)
 
-`main` era un backup parziale. Il prodotto sta su `complete`.
+Questo è il codice completo dell’app, non un backup parziale.
 
 ## Cosa include
 
 - Interfaccia: home, login, dashboard, studio, vetrina, prezzi, go-live
-- House: Helix + specialisti (Nova, Atlas, Forge, Cedar, Lumen, Twin, Score…)
-- Gems di rifinitura: Sable, Wren, Bramble (collegati al pipeline, non solo etichette)
+- Esempi live: `/a/sonar`, `/a/mixlab`, `/a/actstage`
+- House: Helix + specialisti
 - Auth Better Auth (Google / Apple / email)
 - Preview HTML, Kreluna Score, Council, Digital Twin
 - Pack iOS / Android (Expo) e desktop (Electron)
@@ -37,7 +37,3 @@ npm run build
 ## Stack
 
 TanStack Start, Vite, Better Auth, Neon/PGLite, Grok (xAI).
-
-## Nota
-
-Le foto grandi (`public/helix-orb.png`, `public/templates/*.jpg`) possono mancare in questo ramo se troppo pesanti per l’API GitHub. In locale restano nel workspace Grok.

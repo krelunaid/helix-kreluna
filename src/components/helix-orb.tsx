@@ -1,15 +1,19 @@
 import { cn } from "@/lib/utils";
 
-export function HelixOrb() {
+export function HelixOrb({ className }: { className?: string }) {
   return (
-    <div className="relative mx-auto w-full max-w-lg lg:max-w-xl" aria-hidden>
-      <div className="relative mx-auto aspect-square w-full">
-        <img
-          src="/helix-orb.png"
-          alt=""
-          className="size-full object-contain"
-        />
-      </div>
+    <div
+      className={cn(
+        "relative mx-auto grid w-full min-w-0 place-items-center",
+        className,
+      )}
+      aria-hidden
+    >
+      <img
+        src="/helix-orb.png"
+        alt=""
+        className="mx-auto block h-auto w-[min(72vw,22rem)] max-w-full object-contain lg:w-[min(100%,28rem)]"
+      />
     </div>
   );
 }

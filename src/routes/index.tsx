@@ -79,8 +79,8 @@ function Home() {
       <SiteHeader />
       <main>
         <section id="crea" className="relative">
-          <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 pb-16 pt-10 lg:grid-cols-2 lg:pt-16">
-            <div>
+          <div className="mx-auto grid max-w-6xl items-center gap-8 px-5 pb-16 pt-10 lg:grid-cols-2 lg:gap-12 lg:pt-16">
+            <div className="min-w-0">
               <p className="text-xs font-medium tracking-[0.22em] text-info uppercase">{t("mkt.kicker")}</p>
               <p className="mt-3 text-sm text-accent-soft">{t("mkt.identity")}</p>
               <h1 className="mt-4 text-4xl leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
@@ -150,7 +150,9 @@ function Home() {
                 </ul>
               </div>
             </div>
-            <HelixOrb />
+            <div className="flex min-w-0 justify-center overflow-hidden">
+              <HelixOrb />
+            </div>
           </div>
         </section>
 
@@ -206,19 +208,18 @@ function Home() {
             <div className="mt-10 grid gap-6 md:grid-cols-3">
               {featured.slice(0, 3).map((item) => (
                 <article key={item.id} className="overflow-hidden rounded-2xl bg-white">
-                  <ProjectCard title={item.title} kind={item.kind} meta={item.prompt} cover={item.cover} html={featuredHtml(item.id, locale)} />
+                  <Link to="/a/$slug" params={{ slug: item.id }} className="block">
+                    <ProjectCard title={item.title} kind={item.kind} meta={item.prompt} cover={item.cover} html={featuredHtml(item.id, locale)} />
+                  </Link>
                   <div className="px-5 pb-5">
                     <p className="text-sm text-muted">{item.prompt}</p>
-                    <button
-                      type="button"
-                      className="mt-3 text-sm font-medium text-accent"
-                      onClick={() => {
-                        setPrompt(item.prompt);
-                        void build(item.prompt);
-                      }}
+                    <Link
+                      to="/a/$slug"
+                      params={{ slug: item.id }}
+                      className="mt-3 inline-block text-sm font-medium text-accent"
                     >
-                      {t("mkt.demo.open")}
-                    </button>
+                      {t("vetrina.open")}
+                    </Link>
                   </div>
                 </article>
               ))}

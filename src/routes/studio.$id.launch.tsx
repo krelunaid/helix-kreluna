@@ -208,7 +208,7 @@ function Launch() {
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
           <article className="rounded-2xl bg-surface p-5 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
-            <AppStoreMark className="size-12" />
+            <AppStoreMark className="h-10 w-[135px]" />
             <h2 className="mt-3 text-lg">{t("launch.ios")}</h2>
             <p className="mt-1 text-sm text-muted">{t("launch.iosBody")}</p>
             <label className="mt-4 block text-xs text-subtle">
@@ -244,7 +244,7 @@ function Launch() {
           </article>
 
           <article className="rounded-2xl bg-surface p-5 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
-            <PlayStoreMark className="size-12" />
+            <PlayStoreMark className="h-10 w-[135px]" />
             <h2 className="mt-3 text-lg">{t("launch.and")}</h2>
             <p className="mt-1 text-sm text-muted">{t("launch.andBody")}</p>
             <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.android} cr</p>

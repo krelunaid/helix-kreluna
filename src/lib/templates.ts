@@ -1,7 +1,16 @@
 import { t, type Locale } from "@/lib/i18n-core";
+import { buildAureliaHtml, buildHaloHtml, buildMareaHtml, buildVeloraHtml } from "@/lib/showcase";
+import { buildActstageHtml, buildMixlabHtml, buildSonarHtml } from "@/lib/webapps";
 
 function matchTemplate(prompt: string) {
 	const p = prompt.toLowerCase();
+	if (/sonar|tornado|radar|meteo|storm/.test(p)) return "sonar";
+	if (/remix|mixlab|musica|dj mix/.test(p)) return "mixlab";
+	if (/actstage|teatro|live show|backstage/.test(p)) return "actstage";
+	if (/aurelia|amalfi|villa|resort|hotel di lusso/.test(p)) return "aurelia";
+	if (/marea|yacht|barca a vela|charter|capri/.test(p)) return "marea";
+	if (/velora|lookbook app|skincare|capsule wardrobe/.test(p)) return "velora";
+	if (/halo|meditaz|wellness|sonno|yoga app/.test(p)) return "halo";
 	if (/gestional|fattur|erp|software|programma|magazzino|pos\b|ufficio|clienti e fattur/.test(p)) return "software";
 	if (/moda|fashion|lookbook|maison|couture|abiti|vestit|boutique/.test(p)) return "maison";
 	if (/vino|wine|cantina|degust|cellar|enoteca/.test(p)) return "cantina";
@@ -679,12 +688,75 @@ export function htmlForPrompt(prompt: string, locale: Locale = "en") {
 		case "memory": return buildMemoryHtml(locale);
 		case "dashboard": return buildDashboardHtml(locale);
 		case "software": return buildSoftwareHtml(locale);
+		case "aurelia": return buildAureliaHtml(locale);
+		case "marea": return buildMareaHtml(locale);
+		case "velora": return buildVeloraHtml(locale);
+		case "halo": return buildHaloHtml(locale);
+		case "sonar": return buildSonarHtml();
+		case "mixlab": return buildMixlabHtml();
+		case "actstage": return buildActstageHtml();
 		default: return buildGenericHtml(prompt, locale);
 	}
 }
 export function featuredFor(locale: Locale = "en") {
 	const tx = (k: Parameters<typeof t>[1]) => t(locale, k);
 	return [
+		{
+			id: "sonar",
+			title: tx("app.sonar.title"),
+			kind: tx("app.sonar.kind"),
+			prompt: tx("app.sonar.prompt"),
+			fn: tx("app.sonar.fn"),
+			cover: "https://images.unsplash.com/photo-1500674425229-f692875b0ab7?auto=format&fit=crop&w=900&q=70"
+		},
+		{
+			id: "mixlab",
+			title: tx("app.mix.title"),
+			kind: tx("app.mix.kind"),
+			prompt: tx("app.mix.prompt"),
+			fn: tx("app.mix.fn"),
+			cover: "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=70"
+		},
+		{
+			id: "actstage",
+			title: tx("app.act.title"),
+			kind: tx("app.act.kind"),
+			prompt: tx("app.act.prompt"),
+			fn: tx("app.act.fn"),
+			cover: "https://images.unsplash.com/photo-1507676184212-d03ab45efd58?auto=format&fit=crop&w=900&q=70"
+		},
+		{
+			id: "aurelia",
+			title: tx("app.aur.title"),
+			kind: tx("app.aur.kind"),
+			prompt: tx("app.aur.prompt"),
+			fn: tx("app.aur.fn"),
+			cover: "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=900&q=70"
+		},
+		{
+			id: "marea",
+			title: tx("app.mar.title"),
+			kind: tx("app.mar.kind"),
+			prompt: tx("app.mar.prompt"),
+			fn: tx("app.mar.fn"),
+			cover: "https://images.unsplash.com/photo-1567899378494-47b22a2ae96a?auto=format&fit=crop&w=900&q=70"
+		},
+		{
+			id: "velora",
+			title: tx("app.vel.title"),
+			kind: tx("app.vel.kind"),
+			prompt: tx("app.vel.prompt"),
+			fn: tx("app.vel.fn"),
+			cover: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=70"
+		},
+		{
+			id: "halo",
+			title: tx("app.halo.title"),
+			kind: tx("app.halo.kind"),
+			prompt: tx("app.halo.prompt"),
+			fn: tx("app.halo.fn"),
+			cover: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=900&q=70"
+		},
 		{
 			id: "cafe",
 			title: tx("app.cafe.title"),
@@ -763,6 +835,13 @@ export function featuredHtml(id: string, locale: Locale = "en") {
 		case "memory": return buildMemoryHtml(locale);
 		case "dashboard": return buildDashboardHtml(locale);
 		case "software": return buildSoftwareHtml(locale);
+		case "aurelia": return buildAureliaHtml(locale);
+		case "marea": return buildMareaHtml(locale);
+		case "velora": return buildVeloraHtml(locale);
+		case "halo": return buildHaloHtml(locale);
+		case "sonar": return buildSonarHtml();
+		case "mixlab": return buildMixlabHtml();
+		case "actstage": return buildActstageHtml();
 		default: return buildGenericHtml(id, locale);
 	}
 }
