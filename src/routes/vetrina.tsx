@@ -5,7 +5,8 @@ import { ProjectCard } from "@/components/project-card";
 import { Button } from "@/components/ui/button";
 import { archivedFor, featuredFor, featuredHtml } from "@/lib/templates";
 import { flagshipShowcaseLabels } from "@/lib/flagships";
-import type { FlagshipCategory, FlagshipEntry, FlagshipSurface } from "@/lib/flagships";
+import type { FlagshipEntry, FlagshipSurface } from "@/lib/flagships";
+import { FLAGSHIP_CATEGORY_ORDER } from "@/lib/flagships/catalog";
 import { useI18n } from "@/lib/i18n";
 import { track } from "@/lib/analytics";
 
@@ -15,17 +16,6 @@ export const Route = createFileRoute("/vetrina")({
   }),
   component: Vetrina,
 });
-
-const CATEGORY_ORDER: readonly FlagshipCategory[] = [
-  "professional-management",
-  "appointments",
-  "control-data",
-  "collaboration",
-  "product-design",
-  "professional-sites",
-  "hospitality-commerce",
-  "culture-events",
-];
 
 function Vetrina() {
   const { locale, t } = useI18n();
@@ -160,7 +150,8 @@ function CategoryGroups({
       return byCategory;
     }, new Map<FlagshipEntry["category"], FlagshipEntry[]>()),
   ).sort(
-    ([left], [right]) => CATEGORY_ORDER.indexOf(left) - CATEGORY_ORDER.indexOf(right),
+    ([left], [right]) =>
+      FLAGSHIP_CATEGORY_ORDER.indexOf(left) - FLAGSHIP_CATEGORY_ORDER.indexOf(right),
   );
 
   return (

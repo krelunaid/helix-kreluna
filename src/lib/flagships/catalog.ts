@@ -49,6 +49,17 @@ export type FlagshipCategory =
   | "hospitality-commerce"
   | "culture-events";
 
+export const FLAGSHIP_CATEGORY_ORDER = [
+  "professional-management",
+  "appointments",
+  "control-data",
+  "collaboration",
+  "product-design",
+  "professional-sites",
+  "hospitality-commerce",
+  "culture-events",
+] as const satisfies readonly FlagshipCategory[];
+
 export type FlagshipEntry = {
   id: FlagshipId;
   title: string;

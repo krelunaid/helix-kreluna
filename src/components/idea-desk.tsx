@@ -1,14 +1,10 @@
 import { useRef, useState } from "react";
-import { ArrowUp, Mic, Paperclip } from "lucide-react";
+import { ArrowUp, Mic, Paperclip, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Gear } from "@/lib/house";
-import {
-  getBuildQuote,
-  publicProductionBuildCredits,
-  type BuildLevel,
-} from "@/lib/build-level";
+import { getBuildQuote, publicProductionBuildCredits, type BuildLevel } from "@/lib/build-level";
 
 type SpeechRecognitionResultEvent = Event & {
   results: ArrayLike<ArrayLike<{ transcript?: string }>>;
@@ -30,18 +26,19 @@ export function IdeaDesk({
   busy,
   example,
   authenticated,
+  variant = "default",
+  submitLabel,
+  placeholder,
 }: {
   value: string;
   onChange: (v: string) => void;
-  onSubmit: (payload: {
-    prompt: string;
-    gear: Gear;
-    max: boolean;
-    buildLevel: BuildLevel;
-  }) => void;
+  onSubmit: (payload: { prompt: string; gear: Gear; max: boolean; buildLevel: BuildLevel }) => void;
   busy?: boolean;
   example?: string;
   authenticated?: boolean;
+  variant?: "default" | "dashboard";
+  submitLabel?: string;
+  placeholder?: string;
 }) {
   const { t, locale } = useI18n();
   const [gear, setGear] = useState<Gear>("auto");
@@ -86,7 +83,10 @@ export function IdeaDesk({
 
   return (
     <form
-      className="rounded-2xl bg-elevated p-3 window-shadow sm:p-4"
+      className={cn(
+        "rounded-2xl bg-elevated p-3 window-shadow sm:p-4",
+        variant === "dashboard" && "dashboard-idea-desk",
+      )}
       onSubmit={(e) => {
         e.preventDefault();
         send();
@@ -96,8 +96,11 @@ export function IdeaDesk({
         id="idea"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={t("mkt.ph")}
-        className="min-h-28 border-0 bg-transparent text-base shadow-none sm:min-h-32"
+        placeholder={placeholder ?? t("mkt.ph")}
+        className={cn(
+          "min-h-28 border-0 bg-transparent text-base shadow-none sm:min-h-32",
+          variant === "dashboard" && "min-h-24 sm:min-h-28",
+        )}
       />
       {example ? <p className="px-1 text-xs text-subtle">{example}</p> : null}
       <fieldset className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -109,9 +112,7 @@ export function IdeaDesk({
           onClick={() => setBuildLevel("prototype")}
           className={cn(
             "rounded-xl border px-3 py-2 text-left",
-            buildLevel === "prototype"
-              ? "border-accent/50 bg-accent/10"
-              : "border-border",
+            buildLevel === "prototype" ? "border-accent/50 bg-accent/10" : "border-border",
           )}
         >
           <span className="block text-xs font-medium text-fg">
@@ -130,24 +131,21 @@ export function IdeaDesk({
           onClick={() => setBuildLevel("production")}
           className={cn(
             "rounded-xl border px-3 py-2 text-left",
-            buildLevel === "production"
-              ? "border-accent/50 bg-accent/10"
-              : "border-border",
+            buildLevel === "production" ? "border-accent/50 bg-accent/10" : "border-border",
             !productionQuote.available && "opacity-55",
           )}
           title={productionQuote.reasonCode}
         >
           <span className="block text-xs font-medium text-fg">
-            {t("desk.production")} · {productionQuote.available
-              ? `${productionQuote.credits} cr`
-              : t("desk.unavailable")}
+            {t("desk.production")} ·{" "}
+            {productionQuote.available ? `${productionQuote.credits} cr` : t("desk.unavailable")}
           </span>
           <span className="mt-0.5 block text-[11px] leading-4 text-muted">
             {productionQuote.available
               ? t("desk.productionReadyHint")
               : authenticated
                 ? t("desk.productionHint")
-              : t("desk.productionGuestHint")}
+                : t("desk.productionGuestHint")}
           </span>
         </button>
       </fieldset>
@@ -212,10 +210,22 @@ export function IdeaDesk({
         <button
           type="submit"
           disabled={busy || !value.trim()}
-          className="ml-auto grid size-10 place-items-center rounded-full bg-accent text-accent-fg disabled:opacity-40"
+          className={cn(
+            "ml-auto bg-accent text-accent-fg disabled:opacity-40",
+            variant === "dashboard"
+              ? "inline-flex h-11 items-center justify-center gap-2 rounded-xl px-5 text-sm font-medium"
+              : "grid size-10 place-items-center rounded-full",
+          )}
           aria-label={t("mkt.cta")}
         >
-          <ArrowUp className="size-5" />
+          {variant === "dashboard" ? (
+            <>
+              <Sparkles className="size-4" />
+              <span>{submitLabel ?? t("mkt.cta")}</span>
+            </>
+          ) : (
+            <ArrowUp className="size-5" />
+          )}
         </button>
       </div>
     </form>

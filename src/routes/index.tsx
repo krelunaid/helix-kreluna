@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Building2, LayoutDashboard, Monitor, Smartphone, Store } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
+import { AuthenticatedHome } from "@/components/authenticated-home";
 import { HelixOrb } from "@/components/helix-orb";
 import { HelixMark } from "@/components/kreluna-mark";
 import { ProjectCard } from "@/components/project-card";
@@ -15,7 +16,7 @@ import {
   takePendingBuildPrompt,
 } from "@/lib/build-entry";
 import { PLANS } from "@/lib/plans";
-import { createProject, listProjects, type Project } from "@/lib/server/vetra";
+import { createProject } from "@/lib/server/vetra";
 import { IdeaDesk } from "@/components/idea-desk";
 import { HouseRoster } from "@/components/house-roster";
 import { startGuestBuild } from "@/lib/server/agents";
@@ -77,8 +78,6 @@ function Home() {
   const navigate = useNavigate();
   const [prompt, setPrompt] = useState(routePrompt ?? "");
   const [busy, setBusy] = useState(false);
-  const [mine, setMine] = useState<Project[]>([]);
-  const [filter, setFilter] = useState<"all" | "apps" | "live">("all");
   const featured = homeFlagshipsFor(locale);
   const showcaseLabels = flagshipShowcaseLabels(locale);
 
@@ -95,16 +94,6 @@ function Home() {
       if (routePrompt) setPrompt(routePrompt);
     }
   }, [isPending, routePrompt]);
-
-  useEffect(() => {
-    if (!user?.id) {
-      setMine([]);
-      return;
-    }
-    void listProjects()
-      .then(setMine)
-      .catch(() => setMine([]));
-  }, [user?.id]);
 
   async function build(
     text = prompt,
@@ -178,6 +167,21 @@ function Home() {
     }
   }
 
+  if (user) {
+    return (
+      <AuthenticatedHome
+        key={user.id}
+        user={user}
+        prompt={prompt}
+        onPromptChange={setPrompt}
+        busy={busy}
+        onSubmit={({ prompt: nextPrompt, gear, max, buildLevel }) =>
+          void build(nextPrompt, gear, max, buildLevel)
+        }
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <SiteHeader />
@@ -221,46 +225,6 @@ function Home() {
                     </button>
                   ))}
                 </div>
-                {mine.length ? (
-                  <div className="mt-6">
-                    <div className="flex gap-2">
-                      {(["all", "apps", "live"] as const).map((id) => (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => setFilter(id)}
-                          className={
-                            filter === id
-                              ? "h-9 rounded-full bg-accent px-3 text-xs text-accent-fg"
-                              : "h-9 rounded-full px-3 text-xs hairline text-muted"
-                          }
-                        >
-                          {t(`filter.${id}` as "filter.all")}
-                          {id === "all" ? ` (${mine.length})` : ""}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-                      {(filter === "live"
-                        ? mine.filter((p) => p.hosted)
-                        : filter === "apps"
-                          ? mine.filter((p) => p.kind !== "site")
-                          : mine
-                      )
-                        .slice(0, 8)
-                        .map((p) => (
-                          <Link
-                            key={p.id}
-                            to="/studio/$id"
-                            params={{ id: p.id }}
-                            className="h-10 shrink-0 rounded-full px-3 text-sm hairline"
-                          >
-                            {p.title}
-                          </Link>
-                        ))}
-                    </div>
-                  </div>
-                ) : null}
                 <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs text-subtle">
                   <li>{t("mkt.fact1")}</li>
                   <li>{t("mkt.fact2")}</li>
@@ -475,26 +439,6 @@ function Home() {
             <p className="mt-6 text-sm text-subtle">Helix by Kreluna · {t("mkt.identity")}</p>
           </div>
         </section>
-
-        {mine.length > 0 ? (
-          <section className="border-t border-border">
-            <div className="mx-auto max-w-6xl px-5 py-16">
-              <h2 className="text-3xl tracking-tight">{t("projects.yours")}</h2>
-              <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {mine.slice(0, 6).map((p) => (
-                  <Link key={p.id} to="/studio/$id" params={{ id: p.id }} className="block">
-                    <ProjectCard
-                      title={p.title}
-                      kind={p.hosted ? t("projects.online") : t("projects.yoursBadge")}
-                      meta={p.prompt}
-                      html={p.html}
-                    />
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </section>
-        ) : null}
       </main>
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-5 py-10 sm:flex-row sm:items-center sm:justify-between">
