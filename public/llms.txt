@@ -64,7 +64,7 @@ Approximate costs: generate 8 cr, iterate 3, debug 2, web host 30 days 50 cr.
 
 ## Auth
 
-Email + password works on helix.kreluna.it (sign up, then sign in). Google/X go through the Grok auth broker. Apple Sign In is not offered. GitHub is not a shared Kreluna account: each signed-in user connects THEIR GitHub from the account menu (repo token) and can push their own private repo from Launch.
+Production sign-in on helix.kreluna.it uses Google directly. Password sign-in is restricted to private previews and public password sign-up is disabled. Apple and X Sign In are not offered. GitHub is not a shared Kreluna account: each signed-in user connects THEIR GitHub from the account menu (repo token) and can push their own private repo from Launch.
 
 ## Deploy
 

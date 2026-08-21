@@ -12,12 +12,22 @@ const DESK_KEY: Record<string, "house.desk.ops" | "house.desk.product" | "house.
   growth: "house.desk.growth",
 };
 
+const KIND_LABEL: Record<AgentStep["kind"], string> = {
+  orchestrator: "Orchestrator",
+  ai_agent: "AI Agent",
+  validator: "Validator",
+  scanner: "Scanner",
+  service: "Service",
+  gate: "Gate",
+  rule: "Rule",
+};
+
 export function ControlCenter({
   steps,
   status,
 }: {
   steps: AgentStep[];
-  status?: "running" | "ready" | "error";
+  status?: "running" | "ready" | "error" | "cancelled";
 }) {
   const { t, locale } = useI18n();
   const [openHouse, setOpenHouse] = useState(false);
@@ -25,17 +35,25 @@ export function ControlCenter({
   const bench = steps.filter((s) => s.status === "standby" && HOUSE_BY_ID[s.id]?.role !== "—");
   const running = live.find((s) => s.status === "running");
   const gemini = steps.find((s) => s.id === "gemini");
+  const statusText =
+    status === "running"
+      ? running
+        ? `${running.agent} · ${HOUSE_BY_ID[running.id]?.[locale === "it" ? "craftIt" : "craft"] ?? running.role}`
+        : gemini?.detail || t("gemini.directs")
+      : status === "ready"
+        ? t("agent.ready")
+        : status === "error"
+          ? t("agent.error")
+          : status === "cancelled"
+            ? t("gate.held")
+            : t("agent.queued");
 
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] tracking-[0.16em] text-subtle uppercase">{t("house.floor")}</p>
         <p className="truncate text-xs text-muted">
-          {status === "running"
-            ? running
-              ? `${running.agent} · ${HOUSE_BY_ID[running.id]?.[locale === "it" ? "craftIt" : "craft"] ?? running.role}`
-              : gemini?.detail || t("gemini.directs")
-            : t("agent.ready")}
+          {statusText}
         </p>
       </div>
       {running ? (
@@ -59,7 +77,7 @@ export function ControlCenter({
                   return (
                     <span
                       key={s.id}
-                      title={`${s.agent} — ${a ? (locale === "it" ? a.briefIt : a.brief) : s.role}`}
+                      title={`${KIND_LABEL[s.kind]} · ${s.agent} — ${a ? (locale === "it" ? a.briefIt : a.brief) : s.role}`}
                       className={cn(
                         "rounded-full px-2 py-0.5 text-[10px]",
                         s.status === "running" && "bg-accent/20 text-accent",
@@ -70,6 +88,7 @@ export function ControlCenter({
                       )}
                     >
                       {s.agent}
+                      <span className="ml-1 opacity-50">{KIND_LABEL[s.kind]}</span>
                       <span className="ml-1 opacity-70">{craft || s.role}</span>
                     </span>
                   );

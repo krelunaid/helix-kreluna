@@ -25,11 +25,18 @@ export const authClient = createAuthClient({
 });
 
 /**
- * True when sign-in UI should be shown. On by default (preview via the baked
- * preview client, deployed apps via the injected per-app client); set
- * `VITE_AUTH_ENABLED=false` to force it off (dev user — see `use-current-user`).
+ * True when sign-in UI should be shown. Auth is explicitly opt-in so a local
+ * checkout without broker credentials never advertises a login that cannot
+ * work. Netlify validation requires this to be true.
  */
-export const authEnabled = import.meta.env.VITE_AUTH_ENABLED !== "false";
+export const authEnabled = import.meta.env.VITE_AUTH_ENABLED === "true";
+
+/** Federated broker buttons are opt-in and independent from password auth. */
+export const grokAuthEnabled = authEnabled && import.meta.env.VITE_GROK_AUTH_ENABLED === "true";
+
+/** Password sign-in exists only for the operator-pinned Netlify PR preview. */
+export const previewPasswordSignInEnabled =
+  authEnabled && import.meta.env.VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED === "true";
 
 /** The upstream providers to render sign-in buttons for. */
 export { GROK_PROVIDERS };
@@ -47,10 +54,8 @@ function setBearerToken(token: string | null): void {
   try {
     if (token) {
       window.sessionStorage.setItem(BEARER_KEY, token);
-      window.localStorage.setItem(BEARER_KEY, token);
     } else {
       window.sessionStorage.removeItem(BEARER_KEY);
-      window.localStorage.removeItem(BEARER_KEY);
     }
   } catch {
     /* storage unavailable — ignore */
@@ -64,7 +69,7 @@ export function keepSession(token: string | null | undefined) {
 export function getBearerToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return window.sessionStorage.getItem(BEARER_KEY) || window.localStorage.getItem(BEARER_KEY);
+    return window.sessionStorage.getItem(BEARER_KEY);
   } catch {
     return null;
   }
@@ -76,10 +81,7 @@ export function getBearerToken(): string | null {
  * popup there and a normal redirect everywhere else.
  */
 function inLivePreview(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.location.hostname.endsWith(".grok-sandbox.com")
-  );
+  return typeof window !== "undefined" && window.location.hostname.endsWith(".grok-sandbox.com");
 }
 
 /** Message the popup posts back to the opener once sign-in completes. */
@@ -140,7 +142,11 @@ export async function signIn(
     if (typeof window !== "undefined") {
       const dest = new URL(callbackURL, window.location.origin);
       const here = window.location;
-      if (dest.origin !== here.origin || dest.pathname !== here.pathname || dest.search !== here.search) {
+      if (
+        dest.origin !== here.origin ||
+        dest.pathname !== here.pathname ||
+        dest.search !== here.search
+      ) {
         window.location.href = callbackURL;
       }
     }

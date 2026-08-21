@@ -1,6 +1,28 @@
 [build]
   command = "npm run build"
-  publish = ".vercel/output/static"
+  publish = "dist/client"
 
 [build.environment]
   NODE_VERSION = "22"
+
+[context.production]
+  command = "npm run build:netlify:production"
+
+# Netlify Database supplies an isolated branch for these contexts. The artifact
+# must build successfully before migrations can mutate that branch database.
+[context.deploy-preview]
+  # Functions expose only the stable site identity at runtime. Embed these
+  # build-provided, non-secret PR markers into the exact preview artifact so
+  # cold starts can verify them against operator-owned review/SHA pins.
+  command = "VITE_HELIX_PREVIEW_BUILD_CONTEXT=$CONTEXT VITE_HELIX_PREVIEW_BUILD_PULL_REQUEST=$PULL_REQUEST VITE_HELIX_PREVIEW_BUILD_REVIEW_ID=$REVIEW_ID VITE_HELIX_PREVIEW_BUILD_COMMIT_REF=$COMMIT_REF VITE_HELIX_PREVIEW_BUILD_DEPLOY_ID=$DEPLOY_ID VITE_HELIX_PREVIEW_BUILD_DEPLOY_PRIME_URL=$DEPLOY_PRIME_URL npm run build:netlify:branch"
+
+[context.branch-deploy]
+  command = "npm run build:netlify:branch"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://images.unsplash.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    Permissions-Policy = "camera=(), geolocation=(), usb=()"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Content-Type-Options = "nosniff"

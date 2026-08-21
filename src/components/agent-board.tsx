@@ -11,12 +11,22 @@ const DESK_LABEL: Record<string, string> = {
   growth: "Growth",
 };
 
+const KIND_LABEL: Record<AgentStep["kind"], string> = {
+  orchestrator: "Orchestrator",
+  ai_agent: "AI Agent",
+  validator: "Validator",
+  scanner: "Scanner",
+  service: "Service",
+  gate: "Gate",
+  rule: "Rule",
+};
+
 export function AgentBoard({
   steps,
   status,
 }: {
   steps: AgentStep[];
-  status?: "running" | "ready" | "error";
+  status?: "running" | "ready" | "error" | "cancelled";
 }) {
   const { t } = useI18n();
   const [openHouse, setOpenHouse] = useState(false);
@@ -42,6 +52,9 @@ export function AgentBoard({
                 <p className="text-sm text-fg">
                   {step.agent}
                   <span className="ml-2 text-xs text-muted">{step.role}</span>
+                  <span className="ml-2 text-[9px] tracking-wide text-subtle uppercase">
+                    {KIND_LABEL[step.kind]}
+                  </span>
                 </p>
                 {step.detail ? <p className="mt-0.5 truncate text-xs text-subtle">{step.detail}</p> : null}
               </div>

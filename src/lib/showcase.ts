@@ -4,13 +4,17 @@ function photo(id: string, w = 1400) {
   return `https://images.unsplash.com/${id}?auto=format&fit=crop&w=${w}&q=80`;
 }
 
+function escapeHtml(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+
 function shell(title: string, css: string, body: string, script = "", locale: Locale = "en") {
   return `<!DOCTYPE html>
 <html lang="${locale}">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${title.replaceAll("<", "")}</title>
+<title>${escapeHtml(title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=Outfit:wght@400;500;600&display=swap"/>
 <style>
@@ -21,17 +25,17 @@ function shell(title: string, css: string, body: string, script = "", locale: Lo
   ${css}
 </style>
 </head>
-<body>${body}${script ? `<script>${script}<\/script>` : ""}</body></html>`;
+<body>${body}${script ? `<script>${script}</script>` : ""}</body></html>`;
 }
 
 export function buildAureliaHtml(locale: Locale = "en") {
-  const tx = (k: Parameters<typeof t>[1]) => t(locale, k);
+  const tx = (k: Parameters<typeof t>[1]) => escapeHtml(t(locale, k));
   const hero = photo("photo-1613490493576-7fde63acd811");
   const room = photo("photo-1582719478250-c89cae4dc85b");
   const pool = photo("photo-1542314831-068cd1dbfeeb");
   const table = photo("photo-1414235077428-338989a2e8c0");
   return shell(
-    tx("app.aur.title"),
+    t(locale, "app.aur.title"),
     `
     body{background:#100c09;color:#f4ece3}
     header{position:absolute;z-index:2;inset:0 0 auto;display:flex;justify-content:space-between;padding:22px 24px;font-size:13px;letter-spacing:.18em;text-transform:uppercase}
@@ -72,26 +76,27 @@ export function buildAureliaHtml(locale: Locale = "en") {
     </section>
     <section id="stay">
       <h2>${tx("app.aur.book")}</h2>
-      <form onsubmit="event.preventDefault();document.getElementById('ok').textContent='${tx("app.aur.ok").replaceAll("'", "\\'")}';">
+      <form id="booking-form">
         <input required placeholder="${tx("app.aur.name")}"/>
         <select><option>${tx("app.aur.s1")}</option><option>${tx("app.aur.s2")}</option><option>${tx("app.aur.s3")}</option></select>
         <button class="cta" type="submit">${tx("app.aur.cta")}</button>
         <div class="ok" id="ok"></div>
+        <span id="booking-success-copy" hidden>${tx("app.aur.ok")}</span>
       </form>
     </section>
   `,
-    "",
+    `document.getElementById("booking-form").addEventListener("submit",event=>{event.preventDefault();document.getElementById("ok").textContent=document.getElementById("booking-success-copy").textContent;});`,
     locale,
   );
 }
 
 export function buildMareaHtml(locale: Locale = "en") {
-  const tx = (k: Parameters<typeof t>[1]) => t(locale, k);
+  const tx = (k: Parameters<typeof t>[1]) => escapeHtml(t(locale, k));
   const sea = photo("photo-1567899378494-47b22a2ae96a");
   const deck = photo("photo-1544551763-46a013bb70d5");
   const night = photo("photo-1507525428034-b723cf961d3e");
   return shell(
-    tx("app.mar.title"),
+    t(locale, "app.mar.title"),
     `
     body{background:#061018;color:#e8f2f6}
     header{display:flex;justify-content:space-between;padding:20px 22px;letter-spacing:.2em;text-transform:uppercase;font-size:12px}
@@ -127,21 +132,22 @@ export function buildMareaHtml(locale: Locale = "en") {
         <article class="boat" onclick="pick(this,'Vela')"><img src="${sea}" alt=""/><div><b>Vela</b><span>${tx("app.mar.b3")}</span></div><b>890€</b></article>
       </div>
       <p class="ok" id="ok"></p>
+      <span id="selection-success-copy" hidden>${tx("app.mar.ok")}</span>
     </section>
   `,
-    `function pick(el,name){document.querySelectorAll('.boat').forEach(b=>b.classList.remove('on'));el.classList.add('on');ok.textContent=${JSON.stringify(tx("app.mar.ok"))}+' '+name;}`,
+    `function pick(el,name){document.querySelectorAll('.boat').forEach(b=>b.classList.remove('on'));el.classList.add('on');document.getElementById("ok").textContent=document.getElementById("selection-success-copy").textContent+' '+name;}`,
     locale,
   );
 }
 
 export function buildVeloraHtml(locale: Locale = "en") {
-  const tx = (k: Parameters<typeof t>[1]) => t(locale, k);
+  const tx = (k: Parameters<typeof t>[1]) => escapeHtml(t(locale, k));
   const a = photo("photo-1515886657613-9f3515b0c78f");
   const b = photo("photo-1490481651871-ab68de25d43d");
   const c = photo("photo-1483985988355-763728e1935b");
   const d = photo("photo-1469334031218-e382a71b716b");
   return shell(
-    tx("app.vel.title"),
+    t(locale, "app.vel.title"),
     `
     body{background:#140e12;color:#f7eef2}
     header{display:flex;justify-content:space-between;align-items:center;padding:16px 18px}
@@ -167,19 +173,19 @@ export function buildVeloraHtml(locale: Locale = "en") {
       <button class="card" onclick="openLook('City coat')"><img src="${c}" alt=""/><span>City coat</span></button>
       <button class="card" onclick="openLook('Rose set')"><img src="${d}" alt=""/><span>Rose set</span></button>
     </div>
-    <div class="sheet" id="sheet"><p id="look"></p><button class="cta" onclick="hold()">${tx("app.vel.hold")}</button></div>
+    <div class="sheet" id="sheet"><p id="look"></p><button class="cta" onclick="hold()">${tx("app.vel.hold")}</button><span id="hold-success-copy" hidden>${tx("app.vel.ok")}</span></div>
     <nav class="bar"><span>${tx("app.vel.tab1")}</span><b>${tx("app.vel.tab2")}</b><span>${tx("app.vel.tab3")}</span></nav>
   `,
-    `function openLook(n){sheet.classList.add('on');look.textContent=n;} function hold(){look.textContent=${JSON.stringify(tx("app.vel.ok"))};}`,
+    `function openLook(n){document.getElementById("sheet").classList.add('on');document.getElementById("look").textContent=n;} function hold(){document.getElementById("look").textContent=document.getElementById("hold-success-copy").textContent;}`,
     locale,
   );
 }
 
 export function buildHaloHtml(locale: Locale = "en") {
-  const tx = (k: Parameters<typeof t>[1]) => t(locale, k);
+  const tx = (k: Parameters<typeof t>[1]) => escapeHtml(t(locale, k));
   const sky = photo("photo-1506126613408-eca07ce68773");
   return shell(
-    tx("app.halo.title"),
+    t(locale, "app.halo.title"),
     `
     body{background:#0b1020;color:#eef2ff}
     .hero{position:relative;min-height:46vh}
@@ -207,6 +213,7 @@ export function buildHaloHtml(locale: Locale = "en") {
       <div class="orb"></div>
       <button class="cta" id="go">${tx("app.halo.start")}</button>
       <p class="note" id="note"></p>
+      <span id="meditation-success-copy" hidden>${tx("app.halo.ok")}</span>
     </div>
   `,
     `
@@ -215,9 +222,8 @@ export function buildHaloHtml(locale: Locale = "en") {
       document.querySelectorAll('.mins button').forEach(x=>x.classList.remove('on'));
       b.classList.add('on'); m=+b.dataset.m;
     });
-    go.onclick=()=>{note.textContent=${JSON.stringify(tx("app.halo.ok"))}.replace('{n}',m);};
+    document.getElementById("go").onclick=()=>{document.getElementById("note").textContent=document.getElementById("meditation-success-copy").textContent.replace('{n}',m);};
   `,
     locale,
   );
 }
-

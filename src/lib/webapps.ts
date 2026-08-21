@@ -18,7 +18,7 @@ ${css}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
-<body>${body}<script>${script}<\/script></body></html>`;
+<body>${body}<script>${script}</script></body></html>`;
 }
 
 export function buildSonarHtml() {

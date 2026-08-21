@@ -1,4 +1,4 @@
-/** Store-only ZIP (no compression). Fine for text source packs. */
+/** Shared Store/Harbor ZIP (no compression). Fine for text source packs. */
 export function zipFiles(files: Record<string, string>): Uint8Array {
   const encoder = new TextEncoder();
   const chunks: Uint8Array[] = [];
@@ -6,13 +6,18 @@ export function zipFiles(files: Record<string, string>): Uint8Array {
   let offset = 0;
 
   for (const [name, body] of Object.entries(files)) {
-    const nameBytes = encoder.encode(name.replaceAll("\\", "/"));
+    const normalizedName = name.replaceAll("\\", "/");
+    const nameBytes = encoder.encode(normalizedName);
+    const utf8Filename = Array.from(normalizedName).some(
+      (character) => (character.codePointAt(0) ?? 0) > 0x7f,
+    );
     const data = encoder.encode(body);
     const crc = crc32(data);
     const local = new Uint8Array(30 + nameBytes.length);
     const lv = new DataView(local.buffer);
     lv.setUint32(0, 0x04034b50, true);
     lv.setUint16(4, 20, true);
+    if (utf8Filename) lv.setUint16(6, 0x0800, true);
     lv.setUint16(8, 0, true);
     lv.setUint16(10, 0, true);
     lv.setUint16(12, 0, true);
@@ -28,6 +33,7 @@ export function zipFiles(files: Record<string, string>): Uint8Array {
     cv.setUint32(0, 0x02014b50, true);
     cv.setUint16(4, 20, true);
     cv.setUint16(6, 20, true);
+    if (utf8Filename) cv.setUint16(8, 0x0800, true);
     cv.setUint32(16, crc, true);
     cv.setUint32(20, data.length, true);
     cv.setUint32(24, data.length, true);

@@ -1,9 +1,20 @@
 import { t, type Locale } from "@/lib/i18n-core";
 import { buildAureliaHtml, buildHaloHtml, buildMareaHtml, buildVeloraHtml } from "@/lib/showcase";
 import { buildActstageHtml, buildMixlabHtml, buildSonarHtml } from "@/lib/webapps";
+import {
+	buildFlagshipHtml,
+	flagshipFor,
+	isFlagshipId,
+} from "@/lib/flagships";
 
 function matchTemplate(prompt: string) {
 	const p = prompt.toLowerCase();
+	if (/orbit command|orbital mission|satellite fleet|mission control/.test(p)) return "orbit-command";
+	if (/neura\b|neural systems|neural twin|biotech visualization/.test(p)) return "neura";
+	if (/synapse\b|collaborative intelligence|knowledge canvas/.test(p)) return "synapse";
+	if (/vanta\b|market risk terminal|trading workstation/.test(p)) return "vanta";
+	if (/arc city|urban systems twin|smart.city twin/.test(p)) return "arc-city";
+	if (/morph\b|material configurator|automotive configurator/.test(p)) return "morph";
 	if (/sonar|tornado|radar|meteo|storm/.test(p)) return "sonar";
 	if (/remix|mixlab|musica|dj mix/.test(p)) return "mixlab";
 	if (/actstage|teatro|live show|backstage/.test(p)) return "actstage";
@@ -51,7 +62,7 @@ ${origin ? `<base href="${origin}/"/>` : ""}
 </head>
 <body>
 ${body}
-${script ? `<script>${script}<\/script>` : ""}
+${script ? `<script>${script}</script>` : ""}
 </body>
 </html>`;
 }
@@ -680,6 +691,12 @@ function buildSoftwareHtml(locale: Locale = "en") {
 }
 export function htmlForPrompt(prompt: string, locale: Locale = "en") {
 	switch (matchTemplate(prompt)) {
+		case "orbit-command": return buildFlagshipHtml("orbit-command", locale);
+		case "neura": return buildFlagshipHtml("neura", locale);
+		case "synapse": return buildFlagshipHtml("synapse", locale);
+		case "vanta": return buildFlagshipHtml("vanta", locale);
+		case "arc-city": return buildFlagshipHtml("arc-city", locale);
+		case "morph": return buildFlagshipHtml("morph", locale);
 		case "cafe": return buildCafeHtml(locale);
 		case "maison": return buildMaisonHtml(locale);
 		case "portfolio": return buildPortfolioHtml(locale);
@@ -698,7 +715,7 @@ export function htmlForPrompt(prompt: string, locale: Locale = "en") {
 		default: return buildGenericHtml(prompt, locale);
 	}
 }
-export function featuredFor(locale: Locale = "en") {
+export function archivedFor(locale: Locale = "en") {
 	const tx = (k: Parameters<typeof t>[1]) => t(locale, k);
 	return [
 		{
@@ -823,8 +840,12 @@ export function featuredFor(locale: Locale = "en") {
 		}
 	];
 }
+export function featuredFor(locale: Locale = "en") {
+	return flagshipFor(locale);
+}
 export const FEATURED = featuredFor("it");
 export function featuredHtml(id: string, locale: Locale = "en") {
+	if (isFlagshipId(id)) return buildFlagshipHtml(id, locale);
 	switch (id) {
 		case "cafe": return buildCafeHtml(locale);
 		case "maison": return buildMaisonHtml(locale);

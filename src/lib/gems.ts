@@ -31,4 +31,9 @@ export type GemRun = {
   id: GemId;
   name: string;
   did: string;
+  validation?: {
+    checks: readonly string[];
+    artifactSha256: string;
+    aegisPassed: boolean;
+  };
 };

@@ -65,7 +65,7 @@ export const HOUSE: HouseAgent[] = [
   { id: "atlas", name: "Atlas", role: "Chief Architect", roleIt: "Capo architetto", craft: "Architecture", craftIt: "Architettura", desk: "product", brief: "Screens and data before any code.", briefIt: "Schermate e dati prima di qualsiasi codice." },
   { id: "sol", name: "Sol", role: "Solution Architect", roleIt: "Solution architect", craft: "Stack", craftIt: "Stack", desk: "product", brief: "Stack vs cost, speed and scale.", briefIt: "Stack rispetto a costo, velocità e scala." },
   { id: "reed", name: "Reed", role: "UX Researcher", roleIt: "Ricercatore UX", craft: "UX research", craftIt: "Ricerca UX", desk: "product", brief: "Journeys, personas, friction.", briefIt: "Percorsi, persone, attriti." },
-  { id: "lumen", name: "Lumen", role: "Chief of graphics", roleIt: "Capo della grafica", craft: "Graphics", craftIt: "Grafica", desk: "product", brief: "Looks you can feel. Four directions. You pick.", briefIt: "Aspetto che si sente. Quattro direzioni. Scegli tu." },
+  { id: "lumen", name: "Lumen", role: "Chief of graphics", roleIt: "Capo della grafica", craft: "Graphics", craftIt: "Grafica", desk: "product", brief: "Looks you can feel. Three distinct directions. You pick.", briefIt: "Aspetto che si sente. Tre direzioni distinte. Scegli tu." },
   { id: "glyph", name: "Glyph", role: "Design System", roleIt: "Design system", craft: "Visual system", craftIt: "Sistema visivo", desk: "product", brief: "One language of components.", briefIt: "Un solo linguaggio di componenti." },
   { id: "flint", name: "Flint", role: "—", roleIt: "—", craft: "—", craftIt: "—", desk: "eng", brief: "Let go. Did not ship the interior.", briefIt: "Licenziato. Non consegnava l’interno." },
   { id: "forge", name: "Forge", role: "Frontend", roleIt: "Frontend", craft: "Building the app", craftIt: "Scrittura dell’app", desk: "eng", brief: "Writes the product you see and tap.", briefIt: "Scrive il prodotto che vedi e tocchi." },
@@ -84,8 +84,8 @@ export const HOUSE: HouseAgent[] = [
   { id: "kiln", name: "Kiln", role: "Test Engineer", roleIt: "Ingegnere test", craft: "Tests", craftIt: "Test", desk: "quality", brief: "Unit, API, e2e, browsers.", briefIt: "Unit, API, e2e, browser." },
   { id: "moth", name: "Moth", role: "Bug Hunter", roleIt: "Cacciatore di bug", craft: "Bugs", craftIt: "Bug", desk: "quality", brief: "What tests miss.", briefIt: "Quello che i test non vedono." },
   { id: "quill", name: "Quill", role: "Code Review", roleIt: "Revisione codice", craft: "Review", craftIt: "Revisione", desk: "quality", brief: "Nobody approves their own work.", briefIt: "Nessuno approva il proprio lavoro." },
-  { id: "swift", name: "Swift", role: "Performance", roleIt: "Prestazioni", craft: "Speed", craftIt: "Velocità", desk: "quality", brief: "Load, memory, bundle, cache.", briefIt: "Carico, memoria, bundle, cache." },
-  { id: "echo", name: "Echo", role: "Accessibility", roleIt: "Accessibilità", craft: "Accessibility", craftIt: "Accessibilità", desk: "quality", brief: "Anyone can use it.", briefIt: "Chiunque deve poterlo usare." },
+  { id: "swift", name: "Swift", role: "Performance", roleIt: "Prestazioni", craft: "Speed", craftIt: "Velocità", desk: "quality", brief: "Browser timings only when the runner executes.", briefIt: "Tempi browser solo quando il runner viene eseguito." },
+  { id: "echo", name: "Echo", role: "Accessibility", roleIt: "Accessibilità", craft: "Accessibility", craftIt: "Accessibilità", desk: "quality", brief: "Measured labels, contrast, keyboard, landmarks and focus.", briefIt: "Misura label, contrasto, tastiera, landmark e focus." },
   { id: "beacon", name: "Beacon", role: "SEO / ASO", roleIt: "SEO / ASO", craft: "Visibility", craftIt: "Visibilità", desk: "growth", brief: "Web and store visibility.", briefIt: "Visibilità web e store." },
   { id: "ledger", name: "Ledger", role: "Cost", roleIt: "Costi", craft: "Cost", craftIt: "Costi", desk: "ops", brief: "Three configs, real tradeoffs.", briefIt: "Tre configurazioni, tradeoff veri." },
   { id: "harbor", name: "Harbor", role: "DevOps", roleIt: "DevOps", craft: "Publish", craftIt: "Pubblicazione", desk: "ops", brief: "CI, staging, rollback.", briefIt: "CI, staging, rollback." },
@@ -94,13 +94,13 @@ export const HOUSE: HouseAgent[] = [
   { id: "folio", name: "Folio", role: "Docs", roleIt: "Documenti", craft: "Docs", craftIt: "Documenti", desk: "growth", brief: "README, API, changelog.", briefIt: "README, API, changelog." },
   { id: "sage", name: "Sage", role: "Business", roleIt: "Business", craft: "Business", craftIt: "Business", desk: "growth", brief: "Pricing, premium, markets.", briefIt: "Prezzi, premium, mercati." },
   { id: "pulsar", name: "Pulsar", role: "Growth", roleIt: "Crescita", craft: "Growth", craftIt: "Crescita", desk: "growth", brief: "Landing, onboarding, conversion.", briefIt: "Landing, onboarding, conversione." },
-  { id: "senate", name: "Senate", role: "AI Council", roleIt: "Council AI", craft: "Council vote", craftIt: "Voto del council", desk: "ops", brief: "Specialists vote. Helix decides.", briefIt: "Gli specialisti votano. Helix decide." },
-  { id: "twin", name: "Twin", role: "Digital Twin", roleIt: "Digital twin", craft: "Simulation", craftIt: "Simulazione", desk: "quality", brief: "Clicks, forms, failed payments.", briefIt: "Click, form, pagamenti falliti." },
-  { id: "storm", name: "Storm", role: "Stress", roleIt: "Stress", craft: "Stress test", craftIt: "Stress test", desk: "quality", brief: "100 to 1,000,000 requests.", briefIt: "Da 100 a 1.000.000 di richieste." },
-  { id: "augur", name: "Augur", role: "Future", roleIt: "Futuro", craft: "6-month forecast", craftIt: "Previsione 6 mesi", desk: "ops", brief: "Where it breaks at 80k users.", briefIt: "Dove si rompe a 80mila utenti." },
+  { id: "senate", name: "Senate", role: "Automated Council", roleIt: "Council automatizzato", craft: "Formula score", craftIt: "Punteggio a formula", desk: "ops", brief: "Named heuristics, not simulated specialist votes.", briefIt: "Euristiche dichiarate, non voti simulati di specialisti." },
+  { id: "twin", name: "Twin", role: "Browser QA", roleIt: "QA browser", craft: "Runtime evidence", craftIt: "Prove runtime", desk: "quality", brief: "Real browser actions only; never HTML inference.", briefIt: "Solo azioni browser reali; mai inferenze dall'HTML." },
+  { id: "storm", name: "Storm", role: "Load test", roleIt: "Load test", craft: "Bounded load test", craftIt: "Load test limitato", desk: "quality", brief: "Opt-in bounded HTTP load test with measured latency and RPS.", briefIt: "Load test HTTP limitato e autorizzato, con latenza e RPS misurati." },
+  { id: "augur", name: "Augur", role: "Capacity", roleIt: "Capacità", craft: "Capacity forecast", craftIt: "Previsione capacità", desk: "ops", brief: "Ranges only from benchmarks and infrastructure data.", briefIt: "Intervalli solo da benchmark e dati infrastrutturali." },
   { id: "archive", name: "Archive", role: "Memory", roleIt: "Memoria", craft: "Memory", craftIt: "Memoria", desk: "ops", brief: "Why we chose this, months later.", briefIt: "Perché abbiamo scelto così, mesi dopo." },
   { id: "mend", name: "Mend", role: "Improvement", roleIt: "Miglioramento", craft: "Improvements", craftIt: "Migliorie", desk: "ops", brief: "Score up. You approve.", briefIt: "Alza lo score. Approvi tu." },
-  { id: "warden", name: "Warden", role: "Maintenance", roleIt: "Manutenzione", craft: "Maintenance", craftIt: "Manutenzione", desk: "ops", brief: "Find, fix in Twin, ship.", briefIt: "Trova, sistema nel Twin, pubblica." },
+  { id: "warden", name: "Warden", role: "Maintenance", roleIt: "Manutenzione", craft: "Maintenance", craftIt: "Manutenzione", desk: "ops", brief: "Monitor and propose fixes; publishing still needs policy approval.", briefIt: "Monitora e propone fix; la pubblicazione richiede comunque approvazione." },
   { id: "patch", name: "Superior", role: "Principal closer", roleIt: "Principal closer", craft: "Closing", craftIt: "Chiusura", desk: "eng", brief: "Every brief. If the first screen is empty, the job is not done.", briefIt: "Ogni brief. Se la prima schermata è vuota, il lavoro non è finito." },
 ];
 
@@ -158,7 +158,8 @@ export function orchestrate(
   phases: string[];
 } {
   const needs = detectNeeds(prompt);
-  const active: HouseId[] = ["gemini"];
+  // Aegis is a mandatory deterministic release scanner, not an optional AI desk.
+  const active: HouseId[] = ["gemini", "aegis"];
 
   if (mode !== "generate" || gear === "fast") {
     active.push("forge", "iris", "patch");
@@ -209,16 +210,124 @@ export function orchestrate(
 
 export type LocalFinding = { agent: HouseId; must: boolean; note: string };
 
+type HtmlTag = { closing: boolean; end: number; name: string; selfClosing: boolean };
+
+function isHtmlTagNameCharacter(value: string): boolean {
+  const code = value.charCodeAt(0);
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || value === ":" || value === "-";
+}
+
+function readHtmlTag(source: string, start: number): HtmlTag | null {
+  if (source[start] !== "<") return null;
+  let cursor = start + 1;
+  const closing = source[cursor] === "/";
+  if (closing) cursor += 1;
+  const nameStart = cursor;
+  while (cursor < source.length && isHtmlTagNameCharacter(source[cursor] ?? "")) cursor += 1;
+  if (cursor === nameStart) return null;
+  const delimiter = source[cursor];
+  if (delimiter !== undefined && !/\s/u.test(delimiter) && delimiter !== "/" && delimiter !== ">") return null;
+  const name = source.slice(nameStart, cursor).toLocaleLowerCase("en-US");
+  let quote: '"' | "'" | null = null;
+  for (; cursor < source.length; cursor += 1) {
+    const character = source[cursor];
+    if (quote) {
+      if (character === quote) quote = null;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === ">") {
+      let suffix = cursor - 1;
+      while (suffix > nameStart && /\s/u.test(source[suffix] ?? "")) suffix -= 1;
+      return { closing, end: cursor + 1, name, selfClosing: !closing && source[suffix] === "/" };
+    }
+  }
+  return null;
+}
+
+function findClosingHtmlTag(source: string, name: string, start: number): HtmlTag | null {
+  const lowerSource = source.toLocaleLowerCase("en-US");
+  let cursor = start;
+  while (cursor < source.length) {
+    const candidate = lowerSource.indexOf(`</${name}`, cursor);
+    if (candidate === -1) return null;
+    const tag = readHtmlTag(source, candidate);
+    if (tag?.closing && tag.name === name) return tag;
+    cursor = candidate + name.length + 2;
+  }
+  return null;
+}
+
+function visibleHtmlText(source: string): string {
+  const text: string[] = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    if (source.startsWith("<!--", cursor)) {
+      const commentEnd = source.indexOf("-->", cursor + 4);
+      cursor = commentEnd === -1 ? source.length : commentEnd + 3;
+      text.push(" ");
+    } else if (source[cursor] !== "<") {
+      text.push(source[cursor] ?? "");
+      cursor += 1;
+    } else {
+      const tag = readHtmlTag(source, cursor);
+      if (!tag) {
+        text.push("<");
+        cursor += 1;
+        continue;
+      }
+      cursor = tag.end;
+      text.push(" ");
+      if (!tag.closing && (tag.name === "script" || tag.name === "style")) {
+        cursor = findClosingHtmlTag(source, tag.name, cursor)?.end ?? source.length;
+      }
+    }
+  }
+  return text.join("").replace(/\s+/gu, " ").trim();
+}
+
+function markupImageUrlCandidates(source: string): string[] {
+  const candidates: string[] = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    const opening = source.indexOf("<", cursor);
+    if (opening === -1) break;
+    if (source.startsWith("<!--", opening)) {
+      const commentEnd = source.indexOf("-->", opening + 4);
+      cursor = commentEnd === -1 ? source.length : commentEnd + 3;
+      continue;
+    }
+    const tag = readHtmlTag(source, opening);
+    cursor = tag?.end ?? opening + 1;
+    if (!tag || tag.closing || tag.name !== "img") continue;
+    for (const match of source.slice(opening, tag.end).matchAll(/https?:\/\/[^\s"'`<>]+/giu)) {
+      candidates.push(match[0]);
+    }
+  }
+  return candidates;
+}
+
+function hasExactUnsplashImage(source: string): boolean {
+  return markupImageUrlCandidates(source).some((candidate) => {
+    try {
+      const url = new URL(candidate);
+      return url.protocol === "https:" && url.hostname === "images.unsplash.com" && url.port === "" && url.username === "" && url.password === "";
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function localExperts(html: string, prompt: string): LocalFinding[] {
   const out: LocalFinding[] = [];
   const h = html.toLowerCase();
+  const normalizedPrompt = prompt.toLowerCase();
   if (/localStorage|sessionStorage|document\.cookie/.test(html)) {
     out.push({ agent: "aegis", must: true, note: "Storage APIs break in the sandbox. Use memory." });
   }
   if (/eval\(|innerhtml\s*=/.test(h)) {
     out.push({ agent: "aegis", must: true, note: "Dangerous HTML injection / eval." });
   }
-  if (!/https:\/\/images\.unsplash\.com/.test(html) && /sito|site|caff|cafe|studio|landing/.test(prompt.toLowerCase())) {
+  if (!hasExactUnsplashImage(html) && ["sito", "site", "caff", "cafe", "studio", "landing"].some((term) => normalizedPrompt.includes(term))) {
     out.push({ agent: "lumen", must: false, note: "No photography. Brand sites need real photos." });
   }
   if (!/<label/i.test(html) && /<input/i.test(html)) {
@@ -233,18 +342,13 @@ export function localExperts(html: string, prompt: string): LocalFinding[] {
   if (!/<title>/i.test(html) || /<title>\s*<\/title>/i.test(html)) {
     out.push({ agent: "beacon", must: true, note: "Empty or missing title." });
   }
-  if (!/privacy|gdpr|dati/i.test(html) && /account|login|email|prenot/.test(prompt.toLowerCase())) {
+  if (!/privacy|gdpr|dati/i.test(html) && /account|login|email|prenot/.test(normalizedPrompt)) {
     out.push({ agent: "veil", must: false, note: "Collects data without a privacy note." });
   }
   if (!/<button|<a /i.test(html)) {
     out.push({ agent: "moth", must: true, note: "No clickable actions." });
   }
-  const visible = html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const visible = visibleHtmlText(html);
   const photos = (html.match(/<img\b/gi) ?? []).length;
   if (visible.length < 520 || ((/nav|tabbar|bottom-nav|tab-bar/i.test(html) || (html.match(/<button/gi) ?? []).length >= 4) && photos < 2 && visible.length < 900)) {
     out.push({
@@ -259,7 +363,7 @@ export function localExperts(html: string, prompt: string): LocalFinding[] {
   if (!/addEventListener|onclick/i.test(html)) {
     out.push({ agent: "storm", must: false, note: "Little interactivity under load of real use." });
   }
-  if (!/localStorage/.test(html) && /prenot|booking|lista|note/.test(prompt.toLowerCase())) {
+  if (!/localStorage/.test(html) && /prenot|booking|lista|note/.test(normalizedPrompt)) {
     out.push({ agent: "augur", must: false, note: "Data dies on refresh. Plan persistence after launch." });
   }
   return out;
@@ -277,7 +381,9 @@ export function knowledgeHints(prompt: string): string[] {
     hints.push("Marketplace: 8 listings on first screen with photo, price, place. Search filters the list. Tap = detail. Not a CRM. Not appointments.");
   }
   if (/pagament|stripe|pay|checkout|shop|negozio|e-?commerc/.test(p) && !/ebay|marketplace|annunci/.test(p)) {
-    hints.push("Shop/pay: 4+ products visible, add to bag, bag total, fake checkout success. No live keys.");
+    hints.push(
+      "Shop/pay: 4+ products visible, add to bag, and recompute the bag total locally. Checkout must stay disabled and say that payments are not configured; never simulate payment success or use live keys.",
+    );
   }
   if (/todo|lista|habit|task/.test(p)) {
     hints.push("Lists: seed 5 items. Add, toggle, remove in memory.");
@@ -295,7 +401,7 @@ export function knowledgeHints(prompt: string): string[] {
     hints.push("Program/software: window layout (sidebar + main). Seed clients, invoices, items. Search works. New record form. Totals recompute. Keyboard: / focuses search.");
   }
   if (/desktop|windows|macos|electron|pc\b/.test(p)) {
-    hints.push("Desktop program: title bar, menu, sidebar, status bar. Dense tables. Feels installed. Cedar packs Windows/macOS later.");
+    hints.push("Desktop program: title bar, menu, sidebar, status bar. Dense tables. Feels installed. Cedar can prepare Electron source later; no desktop binary is built here.");
   }
   if (/social|feed|chat|messagg/.test(p)) {
     hints.push("Feed/chat: 6 seeded posts or threads. Composer adds one. Heart/reply works.");
@@ -322,14 +428,14 @@ export function aftercare(title: string, prompt: string, needs: Need[]) {
       : "A €38  B €18  C €8 — C is the PWA on Kreluna. B adds analytics. A adds a backend.",
     harbor: "Web + TestTrack from Launch. Rollback = previous version.",
     seal: "Ship web when Score ≥ 80 and Aegis has no blockers.",
-    warden: "After launch: errors, cost, deps. Fix in Twin, then ask you.",
-    nimbus: "Preview on Kreluna. Production: Cloudflare or Vercel. Stores via Expo.",
+    warden: "Monitoring is not configured yet. Any future release still requires policy approval.",
+    nimbus: "No infrastructure provider is selected until the project requirements are known.",
   };
 }
 
 export function stackFor(needs: Need[]) {
   const front = needs.includes("desktop")
-    ? "Working program UI now (HTML). Cedar packs Electron/Tauri for Windows, macOS, Linux."
+    ? "Working program UI now (HTML). Cedar can prepare a source-only Electron wrapper later; no desktop binary or Tauri project is generated."
     : "Single HTML app (CSS + JS). Later: React if the product outgrows it.";
   const back = needs.includes("data") || needs.includes("auth") || needs.includes("payments")
     ? "In-memory now. Next: Postgres + a thin API."
