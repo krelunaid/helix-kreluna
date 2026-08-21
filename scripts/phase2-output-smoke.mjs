@@ -10,6 +10,7 @@ import { fromCrossJSON, toJSONAsync } from "seroval";
 const auth401Mode = process.argv.includes("--auth-401");
 delete process.env.NETLIFY;
 delete process.env.DATABASE_URL;
+delete process.env.NETLIFY_DB_URL;
 delete process.env.XAI_API_KEY;
 process.env.BETTER_AUTH_URL = "http://localhost:8080";
 if (auth401Mode) {

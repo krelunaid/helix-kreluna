@@ -18,12 +18,14 @@ test("an unavailable configured database fails closed without a PGLite fallback"
   const previous = {
     DATABASE_URL: process.env.DATABASE_URL,
     NETLIFY: process.env.NETLIFY,
+    AWS_LAMBDA_FUNCTION_NAME: process.env.AWS_LAMBDA_FUNCTION_NAME,
   };
   const forbiddenValue = `fixture-${randomUUID()}`;
   const unavailableUrl = new URL("postgresql://helix@127.0.0.1:1/helix_unavailable");
   unavailableUrl.password = forbiddenValue;
   process.env.DATABASE_URL = unavailableUrl.toString();
-  process.env.NETLIFY = "true";
+  delete process.env.NETLIFY;
+  process.env.AWS_LAMBDA_FUNCTION_NAME = "helix-database-unavailable-test";
   t.after(() => {
     for (const [name, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[name];

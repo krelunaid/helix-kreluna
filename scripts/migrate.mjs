@@ -2,10 +2,12 @@
 /**
  * Explicit database migrator (node-postgres, `pg`).
  *
- * Applies pending files in ../migrations to DATABASE_URL. Each file is applied
+ * Applies pending files in ../migrations to a resolved Postgres URL. Each file is applied
  * in one transaction and recorded in a `_migrations` table, so it runs once and
  * is safe to re-run. A production Netlify build must opt into strict mode with
- * `--netlify-production`; CI and preview builds never mutate a database.
+ * `--netlify-production`. Netlify deploy previews and branch deploys use the
+ * separate `--netlify-branch` gate, which requires the context-isolated
+ * Netlify Database URL and refuses production before opening a connection.
  *
  * The ordinary manual command keeps the local no-DATABASE_URL skip because the
  * PGLite fallback applies the same files at startup (see src/lib/db.ts).
@@ -13,18 +15,90 @@
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { getConnectionString as getNetlifyDatabaseConnectionString } from "@netlify/database";
 import pg from "pg";
 
-const databaseUrl = process.env.DATABASE_URL?.trim();
 const strictNetlifyProduction = process.argv.includes("--netlify-production");
+const strictNetlifyBranch = process.argv.includes("--netlify-branch");
+const directDatabaseUrl = process.env.DATABASE_URL?.trim();
+const configuredNetlifyDatabaseUrl = process.env.NETLIFY_DB_URL?.trim();
+
+if (strictNetlifyProduction && strictNetlifyBranch) {
+  console.error("[migrate] choose exactly one Netlify migration context");
+  process.exit(1);
+}
+
+let databaseUrl = directDatabaseUrl;
+let databaseUrlName = "DATABASE_URL";
+
+function validPostgresUrl(value) {
+  if (!value) return true;
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "postgres:" || protocol === "postgresql:";
+  } catch {
+    return false;
+  }
+}
+
+function requireNetlifyDatabaseUrl() {
+  let sdkDatabaseUrl;
+  try {
+    sdkDatabaseUrl = getNetlifyDatabaseConnectionString().trim();
+  } catch (error) {
+    console.error(
+      `[migrate] Netlify Database SDK failed: ${error?.message || "connection unavailable"}`,
+    );
+    process.exit(1);
+  }
+  if (!sdkDatabaseUrl || !validPostgresUrl(sdkDatabaseUrl)) {
+    console.error("[migrate] Netlify Database SDK returned an invalid PostgreSQL URL");
+    process.exit(1);
+  }
+  for (const [name, value] of [
+    ["DATABASE_URL", directDatabaseUrl],
+    ["NETLIFY_DB_URL", configuredNetlifyDatabaseUrl],
+  ]) {
+    if (value && !validPostgresUrl(value)) {
+      console.error(`[migrate] ${name} must be a valid PostgreSQL URL`);
+      process.exit(1);
+    }
+    if (value && value !== sdkDatabaseUrl) {
+      console.error(`[migrate] ${name} diverges from the authoritative Netlify Database SDK URL`);
+      process.exit(1);
+    }
+  }
+  return sdkDatabaseUrl;
+}
 
 if (strictNetlifyProduction) {
   if (process.env.NETLIFY !== "true" || process.env.CONTEXT !== "production") {
     console.error("[migrate] --netlify-production requires NETLIFY=true and CONTEXT=production");
     process.exit(1);
   }
-  if (!databaseUrl) {
-    console.error("[migrate] missing required environment variable: DATABASE_URL");
+  databaseUrl = requireNetlifyDatabaseUrl();
+  databaseUrlName = "Netlify Database SDK URL";
+}
+
+if (strictNetlifyBranch) {
+  const context = process.env.CONTEXT?.trim();
+  if (
+    process.env.NETLIFY !== "true" ||
+    (context !== "deploy-preview" && context !== "branch-deploy")
+  ) {
+    console.error(
+      "[migrate] --netlify-branch requires NETLIFY=true and CONTEXT=deploy-preview or branch-deploy",
+    );
+    process.exit(1);
+  }
+
+  databaseUrl = requireNetlifyDatabaseUrl();
+  databaseUrlName = "Netlify Database SDK URL";
+}
+
+if (!strictNetlifyProduction && !strictNetlifyBranch && directDatabaseUrl) {
+  if (!validPostgresUrl(directDatabaseUrl)) {
+    console.error("[migrate] DATABASE_URL must be a valid PostgreSQL URL");
     process.exit(1);
   }
 }
@@ -38,7 +112,7 @@ try {
   const parsedDatabaseUrl = new URL(databaseUrl);
   if (!["postgres:", "postgresql:"].includes(parsedDatabaseUrl.protocol)) throw new Error();
 } catch {
-  console.error("[migrate] DATABASE_URL must be a valid PostgreSQL URL");
+  console.error(`[migrate] ${databaseUrlName} must be a valid PostgreSQL URL`);
   process.exit(1);
 }
 

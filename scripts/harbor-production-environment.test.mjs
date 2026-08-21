@@ -51,6 +51,25 @@ test("manual hosted runtimes fail closed without NETLIFY=true", async (t) => {
   assert.equal(hosted.isHostedRuntime, true);
   assert.equal(hosted.isNetlify, true);
   assert.equal(hosted.isProduction, true);
+
+  const netlifyDatabaseHosted = environment.validateServerEnvironment({
+    ...hosted,
+    AWS_LAMBDA_FUNCTION_NAME: undefined,
+    NETLIFY: "true",
+    CONTEXT: "deploy-preview",
+    DATABASE_URL: undefined,
+    NETLIFY_DB_URL: "postgresql://branch:fixture@database.example.test/helix",
+  });
+  assert.equal(netlifyDatabaseHosted.databaseConfigured, true);
+  assert.equal(netlifyDatabaseHosted.databaseSource, "netlify");
+  assert.throws(
+    () =>
+      environment.validateServerEnvironment({
+        ...netlifyDatabaseHosted,
+        DATABASE_URL: "postgresql://production:fixture@database.example.test/helix",
+      }),
+    /DATABASE_URL.*NETLIFY_DB_URL/u,
+  );
 });
 
 test("Harbor runner environment is optional as a complete HTTPS pair", async (t) => {

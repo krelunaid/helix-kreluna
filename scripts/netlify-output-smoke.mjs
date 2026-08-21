@@ -29,6 +29,7 @@ delete missingEnv.NETLIFY;
 delete missingEnv.CONTEXT;
 for (const name of [
   "DATABASE_URL",
+  "NETLIFY_DB_URL",
   "XAI_API_KEY",
   "BETTER_AUTH_SECRET",
   "BETTER_AUTH_URL",

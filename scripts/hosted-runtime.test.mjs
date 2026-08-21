@@ -21,13 +21,18 @@ const HOSTED_NAMES = [
 function childEnvironment(overrides = {}) {
   const environment = { ...process.env, ...overrides };
   delete environment.DATABASE_URL;
+  delete environment.NETLIFY_DB_URL;
   for (const name of HOSTED_NAMES) delete environment[name];
   return { ...environment, ...overrides };
 }
 
-function importDatabase(environment) {
+function importDatabase(environment, options = {}) {
   const cacheDir = mkdtempSync(join(tmpdir(), "helix-hosted-runtime-vite-"));
+  const netlifyBootstrap = options.netlifyDatabaseUrl
+    ? `globalThis.Netlify = { env: { get: (name) => name === "NETLIFY_DB_URL" ? ${JSON.stringify(options.netlifyDatabaseUrl)} : undefined } };`
+    : "";
   const source = `
+    ${netlifyBootstrap}
     import { createServer } from "vite";
     const vite = await createServer({
       root: process.cwd(), configFile: false, appType: "custom", logLevel: "silent",
@@ -36,6 +41,17 @@ function importDatabase(environment) {
     });
     const db = await vite.ssrLoadModule("/src/lib/db.ts");
     process.stdout.write("dbSource=" + db.dbSource + "\\n");
+    if (process.env.HELIX_TEST_EXPECTED_DB_URL) {
+      process.stdout.write(
+        "databaseMatchesExpected=" +
+          String(db.getDatabaseConnectionString() === process.env.HELIX_TEST_EXPECTED_DB_URL) +
+          "\\n"
+      );
+    }
+    if (process.env.HELIX_TEST_OPEN_DB === "true") {
+      await db.getSql();
+      process.stdout.write("sqlReady=true\\n");
+    }
     await vite.close();
   `;
   try {
@@ -43,7 +59,9 @@ function importDatabase(environment) {
       cwd: ROOT,
       env: { ...environment, HELIX_TEST_VITE_CACHE_DIR: cacheDir },
       encoding: "utf8",
-      timeout: 30_000,
+      // The local PGLite bootstrap can contend with the full parallel test
+      // suite on CI; this remains a bounded child-process guard, not a runtime SLA.
+      timeout: 60_000,
     });
   } finally {
     rmSync(cacheDir, { recursive: true, force: true });
@@ -70,8 +88,71 @@ test("a direct database import fails closed in a manual hosted runtime", () => {
   );
   const output = `${hosted.stdout}\n${hosted.stderr}`;
   assert.notEqual(hosted.status, 0, output);
-  assert.match(output, /DATABASE_URL \(PGLite is local-only\)/u);
+  assert.match(output, /DATABASE_URL, NETLIFY_DB_URL.*PGLite is local-only/u);
   assert.doesNotMatch(output, /dbSource=pglite/u);
+});
+
+test("a direct hosted database import resolves Netlify Database without PGLite", () => {
+  const authoritative = "postgresql://netlify:fixture@database.example.test/helix";
+  const hosted = importDatabase(
+    childEnvironment({
+      NETLIFY: "true",
+      CONTEXT: "production",
+      NETLIFY_DB_URL: authoritative,
+      HELIX_TEST_OPEN_DB: "true",
+      HELIX_TEST_EXPECTED_DB_URL: authoritative,
+    }),
+    { netlifyDatabaseUrl: authoritative },
+  );
+  const output = `${hosted.stdout}\n${hosted.stderr}`;
+  assert.equal(hosted.status, 0, output);
+  assert.match(hosted.stdout, /dbSource=netlify/u);
+  assert.match(hosted.stdout, /sqlReady=true/u);
+  assert.match(hosted.stdout, /databaseMatchesExpected=true/u);
+  assert.doesNotMatch(output, /dbSource=pglite/u);
+});
+
+test("non-Netlify DATABASE_URL works and SDK/process divergence fails closed", () => {
+  const direct = "postgresql://explicit:fixture@database.example.test/helix";
+  const hosted = importDatabase(
+    childEnvironment({
+      AWS_LAMBDA_FUNCTION_NAME: "manual-hosted-runtime",
+      DATABASE_URL: direct,
+    }),
+  );
+  assert.equal(hosted.status, 0, `${hosted.stdout}\n${hosted.stderr}`);
+  assert.match(hosted.stdout, /dbSource=neon/u);
+
+  const branch = importDatabase(
+    childEnvironment({
+      NETLIFY: "true",
+      CONTEXT: "deploy-preview",
+      DATABASE_URL: direct,
+      NETLIFY_DB_URL: direct,
+    }),
+    { netlifyDatabaseUrl: "postgresql://authoritative:fixture@database.example.test/helix" },
+  );
+  const branchOutput = `${branch.stdout}\n${branch.stderr}`;
+  assert.notEqual(branch.status, 0, branchOutput);
+  assert.match(branchOutput, /diverges from the authoritative Netlify Database SDK/u);
+  assert.doesNotMatch(branchOutput, /dbSource=pglite/u);
+});
+
+test("app SQL and Better Auth consume the same authoritative resolver", async () => {
+  const [databaseSource, dbSource, authSource] = await Promise.all(
+    [
+      "src/lib/database-connection.server.ts",
+      "src/lib/db.ts",
+      "src/lib/auth/server.ts",
+    ].map((path) => readFile(join(ROOT, path), "utf8")),
+  );
+  assert.match(databaseSource, /getConnectionString as getNetlifyDatabaseConnectionString/u);
+  assert.match(databaseSource, /getRuntimeDatabaseConnection/u);
+  assert.match(dbSource, /getRuntimeDatabaseConnection\(\)/u);
+  assert.match(dbSource, /connectionString: databaseUrl/u);
+  assert.doesNotMatch(dbSource, /process\.env\.(?:DATABASE_URL|NETLIFY_DB_URL)/u);
+  assert.match(authSource, /getDatabaseConnectionString\(\)/u);
+  assert.doesNotMatch(authSource, /serverEnv\.(?:DATABASE_URL|NETLIFY_DB_URL)/u);
 });
 
 test("a direct local database import retains the PGLite development fallback", () => {

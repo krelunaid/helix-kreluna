@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getRuntimeDatabaseConnection } from "@/lib/database-connection.server";
 import { isHostedRuntimeEnvironment } from "@/lib/hosted-runtime";
 import { normalizePublicHostname, publicOriginFromHostname } from "@/lib/env.shared";
 import { WardenPolicySchema } from "@/lib/server/operations/warden";
@@ -11,6 +12,7 @@ const optionalText = z.preprocess(
 const rawEnvironmentSchema = z.object({
   XAI_API_KEY: optionalText,
   DATABASE_URL: optionalText,
+  NETLIFY_DB_URL: optionalText,
   BETTER_AUTH_SECRET: optionalText,
   BETTER_AUTH_URL: optionalText,
   GUEST_RATE_LIMIT_SALT: optionalText,
@@ -131,6 +133,16 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
 
   const values = parsed.data;
   const invalid: string[] = [];
+  let runtimeDatabaseConnection:
+    | ReturnType<typeof getRuntimeDatabaseConnection>
+    | undefined;
+  if (input === process.env) {
+    try {
+      runtimeDatabaseConnection = getRuntimeDatabaseConnection();
+    } catch {
+      invalid.push("DATABASE_URL", "NETLIFY_DB_URL");
+    }
+  }
   const required = (name: keyof typeof values, condition = true) => {
     if (condition && !values[name]) invalid.push(name);
   };
@@ -163,6 +175,20 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
 
   if (values.DATABASE_URL && !isPostgresUrl(values.DATABASE_URL)) {
     invalid.push("DATABASE_URL");
+  }
+  if (values.NETLIFY_DB_URL && !isPostgresUrl(values.NETLIFY_DB_URL)) {
+    invalid.push("NETLIFY_DB_URL");
+  }
+  const isolatedNetlifyBranch =
+    values.CONTEXT === "deploy-preview" || values.CONTEXT === "branch-deploy";
+  const netlifyDeployContext = isolatedNetlifyBranch || values.CONTEXT === "production";
+  if (
+    netlifyDeployContext &&
+    values.DATABASE_URL &&
+    values.NETLIFY_DB_URL &&
+    values.DATABASE_URL !== values.NETLIFY_DB_URL
+  ) {
+    invalid.push("DATABASE_URL", "NETLIFY_DB_URL");
   }
   if (values.BETTER_AUTH_URL && !isOriginOnly(values.BETTER_AUTH_URL, isHostedRuntime)) {
     invalid.push("BETTER_AUTH_URL");
@@ -523,7 +549,16 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   }
 
   if (isHostedRuntime) {
-    required("DATABASE_URL");
+    if (!runtimeDatabaseConnection && !values.DATABASE_URL && !values.NETLIFY_DB_URL) {
+      invalid.push("DATABASE_URL", "NETLIFY_DB_URL");
+    }
+    if (
+      isolatedNetlifyBranch &&
+      runtimeDatabaseConnection?.source !== "netlify" &&
+      !values.NETLIFY_DB_URL
+    ) {
+      invalid.push("NETLIFY_DB_URL");
+    }
     required("VITE_PUBLIC_HOSTNAME");
     required("VITE_AUTH_ENABLED");
     required("BETTER_AUTH_SECRET");
@@ -568,6 +603,12 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
 
   return Object.freeze({
     ...values,
+    databaseConfigured: Boolean(
+      runtimeDatabaseConnection ?? values.DATABASE_URL ?? values.NETLIFY_DB_URL,
+    ),
+    databaseSource:
+      runtimeDatabaseConnection?.source ??
+      (values.DATABASE_URL ? "postgres" : values.NETLIFY_DB_URL ? "netlify" : null),
     authEnabled,
     stripeBillingEnabled,
     wardenEnabled,

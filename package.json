@@ -10,7 +10,9 @@
     "dev": "vite dev --host 0.0.0.0 --port 8080",
     "build": "vite build",
     "build:netlify:production": "npm run build && npm run db:migrate:netlify:production",
+    "build:netlify:branch": "npm run build && npm run db:migrate:netlify:branch",
     "db:migrate": "node scripts/migrate.mjs",
+    "db:migrate:netlify:branch": "node scripts/migrate.mjs --netlify-branch",
     "db:migrate:netlify:production": "node scripts/migrate.mjs --netlify-production",
     "build:dev": "vite build --mode development",
     "preview": "vite preview --host 0.0.0.0 --port 8080",
@@ -30,6 +32,7 @@
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
     "@hookform/resolvers": "^5.7.0",
+    "@netlify/database": "2.0.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.11",

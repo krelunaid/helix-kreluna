@@ -13,7 +13,7 @@
  *
  * Tri-mode:
  *   - Deployed: Netlify injects a per-app `GROK_AUTH_*` + `BETTER_AUTH_URL`
- *     + `DATABASE_URL`, so real federated auth is persisted in Postgres.
+ *     + Netlify Database URL, so real federated auth is persisted in Postgres.
  *   - Sandbox live preview: broker sign-in is available only when GROK_AUTH_*
  *     credentials are injected. No credential is baked into the source.
  *   - Explicitly off (`VITE_AUTH_ENABLED=false`): no providers; per-user server
@@ -30,7 +30,7 @@ import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
-import { ensureDbReady, getPglite } from "../db";
+import { ensureDbReady, getDatabaseConnectionString, getPglite } from "../db";
 import { serverEnv } from "../env.server";
 import { emailAndPasswordEnabled } from "./email-password";
 import { GROK_PROVIDERS } from "./providers";
@@ -106,7 +106,7 @@ const trustedOrigins: string[] = [
   ...previewAllowedHosts.map((host) => `https://${host}`),
 ];
 
-const databaseUrl = serverEnv.DATABASE_URL;
+const databaseUrl = getDatabaseConnectionString();
 
 // Static broker OAuth endpoints (skip OIDC discovery on every sign-in / callback).
 // Discovery would cost an extra network hop to the broker before the popup can
@@ -117,7 +117,7 @@ const grokAuthorizationUrl = `${issuerBase}/api/auth/oauth2/authorize`;
 const grokTokenUrl = `${issuerBase}/api/auth/oauth2/token`;
 const grokUserInfoUrl = `${issuerBase}/api/auth/oauth2/userinfo`;
 
-// Real Postgres when `DATABASE_URL` is set (deployed apps), else the app's
+// Real Postgres when a durable URL is configured (including Netlify Database), else the app's
 // embedded PGLite (preview) via a Kysely dialect — so Better Auth persists to the
 // SAME DB as app data, including email/password users. Both use the Better Auth
 // schema from `migrations/0001_auth.sql`.

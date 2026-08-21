@@ -8,6 +8,14 @@
 [context.production]
   command = "npm run build:netlify:production"
 
+# Netlify Database supplies an isolated branch for these contexts. The artifact
+# must build successfully before migrations can mutate that branch database.
+[context.deploy-preview]
+  command = "npm run build:netlify:branch"
+
+[context.branch-deploy]
+  command = "npm run build:netlify:branch"
+
 [[headers]]
   for = "/*"
   [headers.values]

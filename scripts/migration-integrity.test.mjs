@@ -432,6 +432,11 @@ test("the deploy migrator serializes and guards production migration passes", as
   assert.match(source, /--netlify-production/);
   assert.match(source, /NETLIFY !== "true"/);
   assert.match(source, /CONTEXT !== "production"/);
+  assert.match(source, /--netlify-branch/);
+  assert.match(source, /context !== "deploy-preview" && context !== "branch-deploy"/);
+  assert.match(source, /diverges from the authoritative Netlify Database SDK URL/);
+  assert.match(source, /getNetlifyDatabaseConnectionString/);
+  assert.doesNotMatch(source, /catch\s*\{\s*return configuredNetlifyDatabaseUrl/u);
   assert.match(source, /pg_advisory_lock/);
   assert.match(source, /pg_advisory_unlock/);
   assert.match(source, /ON CONFLICT \(name\) DO NOTHING/);
