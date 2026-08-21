@@ -272,7 +272,12 @@ export const getBuildJob = createServerFn({ method: "GET" })
     const { getOwnedBuildJob } = await import(
       "@/lib/server/jobs/access.server"
     );
-    return getOwnedBuildJob({ userId: context.userId, ...data });
+    const job = await getOwnedBuildJob({ userId: context.userId, ...data });
+    const { recoverPolledBuildJob } = await import(
+      "@/lib/server/jobs/recovery"
+    );
+    await recoverPolledBuildJob(job);
+    return job;
   });
 
 // POST keeps the bearer-style guest token out of URLs, access logs and referrers.
@@ -289,5 +294,10 @@ export const getGuestBuildJob = createServerFn({ method: "POST" })
     const { getGuestAccessibleBuildJob } = await import(
       "@/lib/server/jobs/access.server"
     );
-    return getGuestAccessibleBuildJob(data);
+    const job = await getGuestAccessibleBuildJob(data);
+    const { recoverPolledBuildJob } = await import(
+      "@/lib/server/jobs/recovery"
+    );
+    await recoverPolledBuildJob(job);
+    return job;
   });

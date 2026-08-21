@@ -53,6 +53,7 @@ export const PREVIEW_TEST_REQUIRED_MIGRATIONS = Object.freeze([
   "0023_augur_capacity_evidence.sql",
   "0024_harbor_production_release.sql",
   "0025_store_production_provenance.sql",
+  "0026_atomic_project_build_enqueue.sql",
 ] as const);
 
 type PreviewCreditGrantEnvironment = NodeJS.ProcessEnv &
@@ -187,7 +188,7 @@ export function previewCreditGrantMode(
   return "forbidden";
 }
 
-/** Verify the target branch has exactly the reviewed 0001-0025 migration set. */
+/** Verify the target branch has exactly the reviewed 0001-0026 migration set. */
 export async function assertPreviewTestDatabaseMigrationsComplete(): Promise<void> {
   try {
     const sql = await getSql();

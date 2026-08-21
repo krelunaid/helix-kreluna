@@ -4,6 +4,7 @@ import {
   dispatchBuildJobFromNetlify,
   HELIX_QUEUE_HEADER,
 } from "../../src/lib/server/jobs/recovery";
+import { HELIX_PREVIEW_ORIGIN_HEADER } from "../../src/lib/server/jobs/netlify-preview-dispatch";
 
 type BuildJobRequest = { jobId?: unknown };
 
@@ -45,10 +46,7 @@ export default async function helixJobBackground(request: Request): Promise<void
   }
 
   const presentedSecret = request.headers.get(HELIX_QUEUE_HEADER);
-  if (
-    !presentedSecret ||
-    !constantTimeTokenEqual(presentedSecret, expectedSecret)
-  ) {
+  if (!presentedSecret || !constantTimeTokenEqual(presentedSecret, expectedSecret)) {
     logRejected("authorization");
     return;
   }
@@ -66,16 +64,16 @@ export default async function helixJobBackground(request: Request): Promise<void
   }
 
   // Keep the expensive worker and its model/DB dependencies behind auth.
-  const { processBuildJob } = await import(
-    "../../src/lib/server/jobs/worker"
-  );
+  const { processBuildJob } = await import("../../src/lib/server/jobs/worker");
   const result = await processBuildJob(body.jobId);
   if (result === "retry") {
-    await dispatchBuildJobFromNetlify(
-      body.jobId,
-      new URL(request.url).origin,
-      expectedSecret,
-    );
+    await dispatchBuildJobFromNetlify(body.jobId, new URL(request.url).origin, expectedSecret, {
+      requestUrl: request.url,
+      cookieHeader: request.headers.get("cookie"),
+      // Read only after the queue token gate. The initial server dispatch sets
+      // this from verifyNetlifyPullRequestDeploy(), never from a browser header.
+      verifiedDeployPrimeUrl: request.headers.get(HELIX_PREVIEW_ORIGIN_HEADER),
+    });
   }
 }
 

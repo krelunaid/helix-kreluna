@@ -142,7 +142,7 @@ test("unconfigured Production requests stop before quota, job and credit work", 
   );
   assert.ok(
     createHandler.indexOf("assertBuildLevelAvailable") <
-      createHandler.indexOf("apply_credit_entry"),
+      createHandler.indexOf("create_project_and_enqueue_build_job"),
   );
 
   assert.match(deskSource, /disabled=\{!productionQuote\.available\}/);

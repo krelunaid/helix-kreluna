@@ -101,9 +101,9 @@ test("operator-only preview tester provisioning is exact and replay-safe", async
     );
   }
 
-  await t.test("migration 0001-0025 proof precedes every identity mutation", async () => {
+  await t.test("migration 0001-0026 proof precedes every identity mutation", async () => {
     await pg.query("delete from _migrations where name = $1", [
-      "0025_store_production_provenance.sql",
+      "0026_atomic_project_build_enqueue.sql",
     ]);
     await assert.rejects(
       provisioner.provisionConfiguredPreviewTester(TEST_PASSWORD, { allowTestRuntime: true }),
@@ -111,7 +111,7 @@ test("operator-only preview tester provisioning is exact and replay-safe", async
     );
     assert.deepEqual(await counts(), [0, 0, 0, 0, 0]);
     await pg.query("insert into _migrations (name) values ($1)", [
-      "0025_store_production_provenance.sql",
+      "0026_atomic_project_build_enqueue.sql",
     ]);
   });
 

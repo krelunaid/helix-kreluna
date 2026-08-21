@@ -102,6 +102,7 @@ test("the complete ordered migration chain applies on a clean database", async (
     "0023_augur_capacity_evidence.sql",
     "0024_harbor_production_release.sql",
     "0025_store_production_provenance.sql",
+    "0026_atomic_project_build_enqueue.sql",
   ]) {
     await pg.exec(await migration(name));
   }

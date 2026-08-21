@@ -352,64 +352,24 @@ export const createProject = createServerFn({ method: "POST" })
     let jobId: string;
     try {
       const queued = await sql<{ job_id: string }>`
-        with credit as materialized (
-          select was_applied
-          from apply_credit_entry(
-            ${context.userId},
-            ${-cost},
-            'generate',
-            ${id},
-            ${t(locale, "action.generate")},
-            ${`generate:${data.requestId}`}
-          )
-        ),
-        created as (
-          insert into projects (
-            id, user_id, title, prompt, kind, build_level, status, html, messages, credits_spent
-          )
-          select
-            ${id}, ${context.userId}, ${title}, ${data.prompt}, 'web', ${data.buildLevel}, 'building',
-            ${seed}, ${JSON.stringify(messages)}, ${cost}
-          from credit
-          where credit.was_applied
-          returning projects.id
-        ),
-        project_ready as materialized (
-          select id from created
-          union all
-          select projects.id
-          from projects
-          cross join credit
-          where not credit.was_applied
-            and projects.id = ${id}
-            and projects.user_id = ${context.userId}
+        select job_id
+        from create_project_and_enqueue_build_job(
+          ${id},
+          ${context.userId},
+          ${title},
+          ${data.prompt},
+          ${data.buildLevel},
+          ${seed},
+          ${JSON.stringify(messages)},
+          ${cost},
+          ${t(locale, "action.generate")},
+          ${`generate:${data.requestId}`},
+          ${job.id},
+          ${serializeBuildJob(job, requestFingerprint)},
+          ${buildIdempotencyKey},
+          ${requestFingerprint},
+          2
         )
-        , queued as materialized (
-          select queued.job_id
-          from project_ready
-          cross join lateral enqueue_build_job(
-            ${job.id},
-            project_ready.id,
-            ${context.userId},
-            null,
-            null,
-            ${serializeBuildJob(job, requestFingerprint)},
-            ${buildIdempotencyKey},
-            ${requestFingerprint},
-            2
-          ) as queued
-        ), bound as (
-          update projects
-          set current_build_job_id = queued.job_id,
-              updated_at = now()
-          from queued
-          where projects.id = ${id}
-            and projects.user_id = ${context.userId}
-          returning projects.id
-        )
-        select queued.job_id
-        from queued
-        where exists (select 1 from bound)
       `;
       if (!queued[0]) throw new Error("BUILD_JOB_ENQUEUE_FAILED");
       jobId = queued[0].job_id;
