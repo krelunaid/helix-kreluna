@@ -12,9 +12,14 @@ import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SiteHeader } from "@/components/site-header";
+import { buildPromptDestination } from "@/lib/build-entry";
 import { useI18n } from "@/lib/i18n";
 
 type Search = { next?: string; prompt?: string };
+
+const googleAuthEnabled =
+  import.meta.env.VITE_AUTH_ENABLED === "true" &&
+  import.meta.env.VITE_GOOGLE_AUTH_ENABLED === "true";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (s: Record<string, unknown>): Search => ({
@@ -34,19 +39,17 @@ function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (!isPending && user) {
-      void navigate({ to: next || "/" });
-    }
-  }, [isPending, user, next, navigate]);
-
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const destPath = prompt
-    ? `${next && next !== "/" ? next : "/studio"}?prompt=${encodeURIComponent(prompt)}`
-    : next || "/";
+  const destPath = buildPromptDestination(next, prompt);
   const callbackURL = origin
     ? `${origin}${destPath.startsWith("/") ? destPath : `/${destPath}`}`
     : destPath;
+
+  useEffect(() => {
+    if (!isPending && user) {
+      void navigate({ to: destPath });
+    }
+  }, [isPending, user, destPath, navigate]);
 
   async function onEmail() {
     setError(null);
@@ -57,11 +60,28 @@ function Login() {
       keepSession((res.data as { token?: string } | null)?.token);
       if (prompt) sessionStorage.setItem("kreluna.prompt", prompt);
       await authClient.getSession();
-      void navigate({ to: next && next !== "/" ? next : "/studio" });
+      void navigate({ to: destPath });
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("login.err");
       setError(msg);
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onGoogle() {
+    setError(null);
+    setBusy(true);
+    try {
+      if (prompt) sessionStorage.setItem("kreluna.prompt", prompt);
+      const result = await authClient.signIn.social({
+        provider: "google",
+        callbackURL,
+        errorCallbackURL: `${origin}/login`,
+      });
+      if (result.error) throw new Error(result.error.message || t("login.errSignin"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("login.err"));
       setBusy(false);
     }
   }
@@ -80,7 +100,19 @@ function Login() {
           <h1 className="font-display mt-3 text-4xl italic tracking-tight">{t("login.title")}</h1>
           <p className="mt-2 text-sm text-muted">{t("login.lead")}</p>
 
-          {grokAuthEnabled ? (
+          {googleAuthEnabled ? (
+            <div className="mt-6 grid gap-2">
+              <Button
+                variant="secondary"
+                className="h-12 w-full bg-fg text-bg hover:opacity-95"
+                disabled={busy}
+                onClick={() => void onGoogle()}
+              >
+                <GoogleMark />
+                {busy ? t("login.wait") : t("login.continueWith", { name: "Google" })}
+              </Button>
+            </div>
+          ) : grokAuthEnabled ? (
             <div className="mt-6 grid gap-2">
               <Button
                 variant="secondary"
@@ -120,6 +152,8 @@ function Login() {
             <p className="mt-6 text-sm text-muted">{t("login.disabled")}</p>
           ) : null}
 
+          {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
+
           {previewPasswordSignInEnabled ? (
             <form className="mt-6 grid gap-3" onSubmit={onSubmit}>
               <Input
@@ -139,7 +173,6 @@ function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
               />
-              {error ? <p className="text-sm text-danger">{error}</p> : null}
               <Button type="submit" className="w-full" disabled={busy}>
                 {busy ? t("login.wait") : t("login.signin")}
               </Button>

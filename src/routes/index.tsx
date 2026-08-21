@@ -6,7 +6,14 @@ import { HelixOrb } from "@/components/helix-orb";
 import { HelixMark } from "@/components/kreluna-mark";
 import { ProjectCard } from "@/components/project-card";
 import { Button } from "@/components/ui/button";
+import { authClient, authEnabled, previewPasswordSignInEnabled } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import {
+  buildLoginSearch,
+  decideBuildEntry,
+  preservePendingBuildPrompt,
+  takePendingBuildPrompt,
+} from "@/lib/build-entry";
 import { PLANS } from "@/lib/plans";
 import { createProject, listProjects, type Project } from "@/lib/server/vetra";
 import { IdeaDesk } from "@/components/idea-desk";
@@ -20,21 +27,55 @@ import { featuredHtml } from "@/lib/templates";
 import { homeFlagshipsFor } from "@/lib/flagships";
 import type { BuildLevel } from "@/lib/build-level";
 
-export const Route = createFileRoute("/")({ component: Home });
+type HomeSearch = { prompt?: string };
+
+export const Route = createFileRoute("/")({
+  validateSearch: (search: Record<string, unknown>): HomeSearch => ({
+    prompt:
+      typeof search.prompt === "string"
+        ? search.prompt.trim().slice(0, 2_000) || undefined
+        : undefined,
+  }),
+  component: Home,
+});
 
 const SUGGEST = [
-  { id: "site", icon: Store, prompt: "Voglio un sito per la mia attività locale, con menu, prenotazioni e contatti." },
-  { id: "app", icon: Smartphone, prompt: "Voglio un’app mobile: tab in basso, elenco, dettaglio e profilo. Non è un sito e non è un e-commerce." },
-  { id: "soft", icon: LayoutDashboard, prompt: "Voglio un software gestionale: clienti, fatture, articoli, ricerca e nuovi record. È un programma di lavoro, non un sito." },
-  { id: "desk", icon: Monitor, prompt: "Voglio un programma per computer (Windows e Mac): finestra, menu laterale, tabelle, scorciatoie. Software da installare." },
-  { id: "shop", icon: Building2, prompt: "Voglio un e-commerce con catalogo, carrello e checkout di prova." },
+  {
+    id: "site",
+    icon: Store,
+    prompt: "Voglio un sito per la mia attività locale, con menu, prenotazioni e contatti.",
+  },
+  {
+    id: "app",
+    icon: Smartphone,
+    prompt:
+      "Voglio un’app mobile: tab in basso, elenco, dettaglio e profilo. Non è un sito e non è un e-commerce.",
+  },
+  {
+    id: "soft",
+    icon: LayoutDashboard,
+    prompt:
+      "Voglio un software gestionale: clienti, fatture, articoli, ricerca e nuovi record. È un programma di lavoro, non un sito.",
+  },
+  {
+    id: "desk",
+    icon: Monitor,
+    prompt:
+      "Voglio un programma per computer (Windows e Mac): finestra, menu laterale, tabelle, scorciatoie. Software da installare.",
+  },
+  {
+    id: "shop",
+    icon: Building2,
+    prompt: "Voglio un e-commerce con catalogo, carrello e checkout di prova.",
+  },
 ] as const;
 
 function Home() {
-  const { user } = useCurrentUserState();
+  const { user, isPending } = useCurrentUserState();
+  const { prompt: routePrompt } = Route.useSearch();
   const { locale, t } = useI18n();
   const navigate = useNavigate();
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(routePrompt ?? "");
   const [busy, setBusy] = useState(false);
   const [mine, setMine] = useState<Project[]>([]);
   const [filter, setFilter] = useState<"all" | "apps" | "live">("all");
@@ -43,6 +84,16 @@ function Home() {
   useEffect(() => {
     track("home_view");
   }, []);
+
+  useEffect(() => {
+    if (isPending || typeof window === "undefined") return;
+    try {
+      const resumedPrompt = takePendingBuildPrompt(window.sessionStorage, routePrompt);
+      if (resumedPrompt) setPrompt(resumedPrompt);
+    } catch {
+      if (routePrompt) setPrompt(routePrompt);
+    }
+  }, [isPending, routePrompt]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -62,28 +113,60 @@ function Home() {
   ) {
     const value = text.trim();
     if (!value) return;
+    let entry = decideBuildEntry({
+      authEnabled,
+      previewPasswordSignInEnabled,
+      isPending,
+      userPresent: Boolean(user),
+    });
+    if (entry === "wait_for_session") {
+      setBusy(true);
+      setPrompt(value);
+      const resolved = await authClient.getSession().catch(() => null);
+      entry = decideBuildEntry({
+        authEnabled,
+        previewPasswordSignInEnabled,
+        isPending: false,
+        userPresent: Boolean(resolved?.data?.user),
+      });
+    }
+    if (entry === "login") {
+      if (typeof window !== "undefined") {
+        try {
+          preservePendingBuildPrompt(window.sessionStorage, value);
+        } catch {
+          // The login URL still carries the prompt when storage is unavailable.
+        }
+      }
+      void navigate({
+        to: "/login",
+        search: buildLoginSearch(value),
+      });
+      setBusy(false);
+      return;
+    }
     setBusy(true);
     track("first_prompt");
     toast.message(t("think.started"));
     try {
-      if (user) {
-				const { id } = await createProject({
-					data: {
-						prompt: value,
-						locale,
-						gear,
-						max,
-						buildLevel,
-						requestId: crypto.randomUUID(),
-					},
-				});
+      if (entry === "authenticated") {
+        const { id } = await createProject({
+          data: {
+            prompt: value,
+            locale,
+            gear,
+            max,
+            buildLevel,
+            requestId: crypto.randomUUID(),
+          },
+        });
         track("project_created");
         void navigate({ to: "/studio/$id", params: { id } });
       } else {
-				const { jobId, guestAccessToken, expiresAt } = await startGuestBuild({
-					data: { prompt: value, locale, mode: "generate", buildLevel, gear, max },
-				});
-				saveGuestBuildAccess(jobId, guestAccessToken, expiresAt);
+        const { jobId, guestAccessToken, expiresAt } = await startGuestBuild({
+          data: { prompt: value, locale, mode: "generate", buildLevel, gear, max },
+        });
+        saveGuestBuildAccess(jobId, guestAccessToken, expiresAt);
         void navigate({ to: "/try", search: { job: jobId } });
       }
     } catch (err) {
@@ -101,7 +184,9 @@ function Home() {
         <section id="crea" className="relative">
           <div className="mx-auto grid max-w-6xl items-center gap-8 px-5 pb-16 pt-10 lg:grid-cols-2 lg:gap-12 lg:pt-16">
             <div className="min-w-0">
-              <p className="text-xs font-medium tracking-[0.22em] text-info uppercase">{t("mkt.kicker")}</p>
+              <p className="text-xs font-medium tracking-[0.22em] text-info uppercase">
+                {t("mkt.kicker")}
+              </p>
               <p className="mt-3 text-sm text-accent-soft">{t("mkt.identity")}</p>
               <h1 className="mt-4 text-4xl leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
                 {user ? t("hero.title1") : t("mkt.title")}
@@ -143,7 +228,11 @@ function Home() {
                           key={id}
                           type="button"
                           onClick={() => setFilter(id)}
-                          className={filter === id ? "h-9 rounded-full bg-accent px-3 text-xs text-accent-fg" : "h-9 rounded-full px-3 text-xs hairline text-muted"}
+                          className={
+                            filter === id
+                              ? "h-9 rounded-full bg-accent px-3 text-xs text-accent-fg"
+                              : "h-9 rounded-full px-3 text-xs hairline text-muted"
+                          }
                         >
                           {t(`filter.${id}` as "filter.all")}
                           {id === "all" ? ` (${mine.length})` : ""}
@@ -151,7 +240,12 @@ function Home() {
                       ))}
                     </div>
                     <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-                      {(filter === "live" ? mine.filter((p) => p.hosted) : filter === "apps" ? mine.filter((p) => p.kind !== "site") : mine)
+                      {(filter === "live"
+                        ? mine.filter((p) => p.hosted)
+                        : filter === "apps"
+                          ? mine.filter((p) => p.kind !== "site")
+                          : mine
+                      )
                         .slice(0, 8)
                         .map((p) => (
                           <Link
@@ -193,7 +287,8 @@ function Home() {
                     type="button"
                     className="mt-5 text-sm font-medium text-accent"
                     onClick={() => {
-                      const s = SUGGEST[id === "web" ? 0 : id === "app" ? 1 : id === "soft" ? 2 : 3];
+                      const s =
+                        SUGGEST[id === "web" ? 0 : id === "app" ? 1 : id === "soft" ? 2 : 3];
                       setPrompt(s.prompt);
                       document.getElementById("idea")?.focus();
                       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -214,7 +309,9 @@ function Home() {
               {[1, 2, 3, 4, 5].map((i) => (
                 <li key={i}>
                   <p className="text-info">{String(i).padStart(2, "0")}</p>
-                  <h3 className="mt-2 text-lg font-medium">{t(`mkt.how.${i}.t` as "mkt.how.1.t")}</h3>
+                  <h3 className="mt-2 text-lg font-medium">
+                    {t(`mkt.how.${i}.t` as "mkt.how.1.t")}
+                  </h3>
                   <p className="mt-2 text-sm text-muted">{t(`mkt.how.${i}.b` as "mkt.how.1.b")}</p>
                 </li>
               ))}
@@ -295,18 +392,30 @@ function Home() {
             <p className="mt-3 max-w-xl text-muted">{t("mkt.price.lead")}</p>
             <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {PLANS.map((p) => (
-                <div key={p.id} className={p.highlight ? "rounded-xl bg-elevated p-6 window-shadow" : "rounded-xl bg-surface p-6 hairline"}>
+                <div
+                  key={p.id}
+                  className={
+                    p.highlight
+                      ? "rounded-xl bg-elevated p-6 window-shadow"
+                      : "rounded-xl bg-surface p-6 hairline"
+                  }
+                >
                   <p className="text-sm text-muted">{p.name}</p>
                   <p className="mt-3 text-4xl tracking-tight">
                     {p.price === 0 ? "0" : `${p.currency}${p.price}`}
                     <span className="ml-1 text-sm text-subtle">{t("plans.month")}</span>
                   </p>
-                  <p className="mt-2 font-mono text-sm text-accent-soft">{t("plans.credits", { n: p.credits })}</p>
+                  <p className="mt-2 font-mono text-sm text-accent-soft">
+                    {t("plans.credits", { n: p.credits })}
+                  </p>
                 </div>
               ))}
             </div>
             <p className="mt-6 text-sm text-subtle">{t("mkt.price.tax")}</p>
-            <Link to="/pricing" className="mt-4 inline-flex items-center gap-2 text-sm text-accent-soft">
+            <Link
+              to="/pricing"
+              className="mt-4 inline-flex items-center gap-2 text-sm text-accent-soft"
+            >
               {t("plans.more")} <ArrowRight className="size-4" />
             </Link>
           </div>
@@ -332,7 +441,9 @@ function Home() {
             <div className="mt-8 space-y-3">
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                 <details key={i} className="rounded-xl bg-elevated px-5 py-4 hairline">
-                  <summary className="cursor-pointer font-medium">{t(`mkt.faq.${i}.q` as "mkt.faq.1.q")}</summary>
+                  <summary className="cursor-pointer font-medium">
+                    {t(`mkt.faq.${i}.q` as "mkt.faq.1.q")}
+                  </summary>
                   <p className="mt-3 text-sm text-muted">{t(`mkt.faq.${i}.a` as "mkt.faq.1.a")}</p>
                 </details>
               ))}
@@ -360,7 +471,12 @@ function Home() {
               <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {mine.slice(0, 6).map((p) => (
                   <Link key={p.id} to="/studio/$id" params={{ id: p.id }} className="block">
-                    <ProjectCard title={p.title} kind={p.hosted ? t("projects.online") : t("projects.yoursBadge")} meta={p.prompt} html={p.html} />
+                    <ProjectCard
+                      title={p.title}
+                      kind={p.hosted ? t("projects.online") : t("projects.yoursBadge")}
+                      meta={p.prompt}
+                      html={p.html}
+                    />
                   </Link>
                 ))}
               </div>

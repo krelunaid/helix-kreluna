@@ -62,12 +62,15 @@ const rawEnvironmentSchema = z.object({
   HELIX_AUGUR_EVIDENCE_MAX_AGE_MS: optionalText,
   VITE_AUTH_ENABLED: z.enum(["true", "false"]).optional(),
   VITE_GROK_AUTH_ENABLED: z.enum(["true", "false"]).optional(),
+  VITE_GOOGLE_AUTH_ENABLED: z.enum(["true", "false"]).optional(),
   VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED: z.enum(["true", "false"]).optional(),
   VITE_PUBLIC_HOSTNAME: optionalText,
   VITE_PUBLIC_ORIGIN: optionalText,
   GROK_AUTH_ISSUER: optionalText,
   GROK_AUTH_CLIENT_ID: optionalText,
   GROK_AUTH_CLIENT_SECRET: optionalText,
+  GOOGLE_CLIENT_ID: optionalText,
+  GOOGLE_CLIENT_SECRET: optionalText,
   GITHUB_TOKEN_ENCRYPTION_KEY: optionalText,
   GITHUB_TOKEN_KEY_VERSION: optionalText,
   HELIX_BROWSER_RUNNER_URL: optionalText,
@@ -178,11 +181,13 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
       (!values.CONTEXT && values.NODE_ENV === "production"));
   const authEnabled = values.VITE_AUTH_ENABLED === "true";
   const grokAuthEnabled = values.VITE_GROK_AUTH_ENABLED === "true";
+  const googleAuthEnabled = values.VITE_GOOGLE_AUTH_ENABLED === "true";
   const previewPasswordSignInRequested = values.VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED === "true";
   const previewPasswordSignInEnabled =
     previewPasswordSignInRequested &&
     authEnabled &&
     !grokAuthEnabled &&
+    !googleAuthEnabled &&
     verifiedNetlifyPullRequestDeploy !== null;
   const aiGatewayEnabled = values.HELIX_AI_GATEWAY_ENABLED === "true";
   const previewCreditGrantEnabled = values.HELIX_PREVIEW_CREDIT_GRANT_ENABLED === "true";
@@ -194,6 +199,9 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
     : null;
 
   if (values.VITE_PUBLIC_ORIGIN) invalid.push("VITE_PUBLIC_ORIGIN (deprecated)");
+  for (const name of ["VITE_GOOGLE_CLIENT_ID", "VITE_GOOGLE_CLIENT_SECRET"] as const) {
+    if (input[name]?.trim()) invalid.push(`${name} (server-only)`);
+  }
 
   let hostname = "";
   try {
@@ -303,8 +311,12 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   if (previewPasswordSignInRequested) {
     for (const name of previewPasswordExpectationNames) required(name);
     if (!authEnabled) invalid.push("VITE_AUTH_ENABLED");
-    if (grokAuthEnabled) {
-      invalid.push("VITE_GROK_AUTH_ENABLED", "VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED");
+    if (grokAuthEnabled || googleAuthEnabled) {
+      invalid.push(
+        ...(grokAuthEnabled ? ["VITE_GROK_AUTH_ENABLED"] : []),
+        ...(googleAuthEnabled ? ["VITE_GOOGLE_AUTH_ENABLED"] : []),
+        "VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED",
+      );
     }
     if (!verifiedNetlifyPullRequestDeploy) {
       invalid.push(
@@ -346,8 +358,32 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   } else if (configuredGrokAuthCredentials.length > 0) {
     invalid.push("VITE_GROK_AUTH_ENABLED");
   }
-  if (authEnabled && !previewPasswordSignInEnabled && !grokAuthEnabled) {
-    invalid.push("VITE_GROK_AUTH_ENABLED", "VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED");
+  const googleAuthCredentialNames = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] as const;
+  const configuredGoogleAuthCredentials = googleAuthCredentialNames.filter((name) =>
+    Boolean(values[name]),
+  );
+  if (
+    configuredGoogleAuthCredentials.length > 0 &&
+    configuredGoogleAuthCredentials.length !== googleAuthCredentialNames.length
+  ) {
+    for (const name of googleAuthCredentialNames) required(name);
+  }
+  if (googleAuthEnabled) {
+    for (const name of googleAuthCredentialNames) required(name);
+    if (!authEnabled) invalid.push("VITE_AUTH_ENABLED");
+    if (!isProduction) invalid.push("VITE_GOOGLE_AUTH_ENABLED");
+  } else if (configuredGoogleAuthCredentials.length > 0) {
+    invalid.push("VITE_GOOGLE_AUTH_ENABLED");
+  }
+  if (grokAuthEnabled && googleAuthEnabled) {
+    invalid.push("VITE_GROK_AUTH_ENABLED", "VITE_GOOGLE_AUTH_ENABLED");
+  }
+  if (authEnabled && !previewPasswordSignInEnabled && !grokAuthEnabled && !googleAuthEnabled) {
+    invalid.push(
+      "VITE_GROK_AUTH_ENABLED",
+      "VITE_GOOGLE_AUTH_ENABLED",
+      "VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED",
+    );
   }
   if (
     values.GITHUB_TOKEN_ENCRYPTION_KEY &&
@@ -759,6 +795,9 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
       (values.DATABASE_URL ? "postgres" : values.NETLIFY_DB_URL ? "netlify" : null),
     authEnabled,
     grokAuthEnabled,
+    googleAuthEnabled,
+    googleAuthCallbackUrl:
+      googleAuthEnabled && publicOrigin ? `${publicOrigin}/api/auth/callback/google` : null,
     previewPasswordSignInEnabled,
     verifiedNetlifyPullRequestDeploy,
     aiGatewayEnabled,

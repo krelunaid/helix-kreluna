@@ -5,10 +5,7 @@ import { ACTIONS, PLANS, type ActionId, type PlanId } from "@/lib/plans";
 import { htmlForPrompt } from "@/lib/templates";
 import { titleFromPrompt } from "@/lib/utils";
 import { normalizeLocale, t, type Locale } from "@/lib/i18n-core";
-import {
-  CreditMutationError,
-  rethrowCreditMutationError,
-} from "@/lib/server/credits";
+import { CreditMutationError, rethrowCreditMutationError } from "@/lib/server/credits";
 import { createBuildJobDraft } from "@/lib/server/jobs/create";
 import { dispatchBuildJob } from "@/lib/server/jobs/dispatch.server";
 import { serializeBuildJob } from "@/lib/server/jobs/queue";
@@ -34,6 +31,7 @@ import {
   type BillingAccountSnapshot,
   type CheckoutResult,
 } from "@/lib/server/billing/types";
+import { assertAiGenerationEnabled } from "@/lib/server/ai/availability";
 
 export type Profile = {
   user_id: string;
@@ -113,10 +111,7 @@ export class LegacyHostingRetiredError extends Error {
   }
 }
 
-type ProjectRow = Omit<
-  Project,
-  "messages" | "hosted" | "status" | "buildLevel"
-> & {
+type ProjectRow = Omit<Project, "messages" | "hosted" | "status" | "buildLevel"> & {
   build_level: string | null;
   messages: string;
   hosted: boolean | number;
@@ -215,21 +210,17 @@ async function dispatchCommittedBuildJob(jobId: string): Promise<void> {
         jobId,
         errorName: error instanceof Error ? error.name : "UnknownError",
         errorCode:
-          error && typeof error === "object" && "code" in error
-            ? String(error.code)
-            : undefined,
+          error && typeof error === "object" && "code" in error ? String(error.code) : undefined,
       }),
     );
   }
 }
 
 export const previewGenerate = createServerFn({ method: "POST" })
-  .validator((_input: {
-    prompt: string;
-    locale?: string;
-    currentHtml?: string | null;
-    mode?: ActionId;
-  }) => undefined)
+  .validator(
+    (_input: { prompt: string; locale?: string; currentHtml?: string | null; mode?: ActionId }) =>
+      undefined,
+  )
   .handler(async () => {
     throw new LegacyGeneratorRetiredError();
   });
@@ -295,9 +286,7 @@ export const createProject = createServerFn({ method: "POST" })
       prompt: input.prompt.trim().slice(0, 2000),
       locale: normalizeLocale(input.locale),
       gear: (input.gear === "house" || input.gear === "fast" ? input.gear : "auto") as
-        | "auto"
-        | "house"
-        | "fast",
+        "auto" | "house" | "fast",
       max: Boolean(input.max),
       buildLevel: parseBuildLevel(input.buildLevel),
       requestId: requestId(input.requestId),
@@ -306,6 +295,7 @@ export const createProject = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const locale = data.locale;
     if (!data.prompt) throw new Error(t(locale, "err.describe"));
+    assertAiGenerationEnabled();
     const productionCredits =
       data.buildLevel === "production"
         ? await import("@/lib/server/production/config").then((module) =>
@@ -397,14 +387,13 @@ export const iterateProject = createServerFn({ method: "POST" })
       locale: normalizeLocale(input.locale),
       requestId: requestId(input.requestId),
       sourceJobId:
-        typeof input.sourceJobId === "string"
-          ? input.sourceJobId.trim().slice(0, 128)
-          : undefined,
+        typeof input.sourceJobId === "string" ? input.sourceJobId.trim().slice(0, 128) : undefined,
     }),
   )
   .handler(async ({ context, data }) => {
     const locale = data.locale;
     if (!data.prompt) throw new Error(t(locale, "err.change"));
+    assertAiGenerationEnabled();
     const sql = await getSql();
     const rows = await sql<ProjectRow>`
       select id, user_id, title, prompt, kind, build_level, status, html, messages,

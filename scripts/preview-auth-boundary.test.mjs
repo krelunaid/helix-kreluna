@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
@@ -37,6 +38,7 @@ function hostedPreview(overrides = {}) {
     VITE_PUBLIC_HOSTNAME: PREVIEW_HOSTNAME,
     VITE_AUTH_ENABLED: "true",
     VITE_GROK_AUTH_ENABLED: "false",
+    VITE_GOOGLE_AUTH_ENABLED: "false",
     VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED: "true",
     BETTER_AUTH_SECRET: "A".repeat(32),
     BETTER_AUTH_URL: PREVIEW_ORIGIN,
@@ -44,6 +46,28 @@ function hostedPreview(overrides = {}) {
     HELIX_QUEUE_DISPATCH_SECRET: "Q".repeat(32),
     GITHUB_TOKEN_ENCRYPTION_KEY: "1".repeat(64),
     GITHUB_TOKEN_KEY_VERSION: "preview-v1",
+    ...overrides,
+  };
+}
+
+function productionGoogle(overrides = {}) {
+  return {
+    NETLIFY: "true",
+    CONTEXT: "production",
+    DATABASE_URL: "postgresql://production:fixture@database.example.test/helix",
+    VITE_PUBLIC_HOSTNAME: "helix.kreluna.it",
+    VITE_AUTH_ENABLED: "true",
+    VITE_GROK_AUTH_ENABLED: "false",
+    VITE_GOOGLE_AUTH_ENABLED: "true",
+    VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED: "false",
+    BETTER_AUTH_SECRET: "A".repeat(32),
+    BETTER_AUTH_URL: "https://helix.kreluna.it",
+    GOOGLE_CLIENT_ID: "production.apps.googleusercontent.com",
+    GOOGLE_CLIENT_SECRET: "S".repeat(32),
+    HELIX_AI_GATEWAY_ENABLED: "false",
+    HELIX_QUEUE_DISPATCH_SECRET: "Q".repeat(32),
+    GITHUB_TOKEN_ENCRYPTION_KEY: "1".repeat(64),
+    GITHUB_TOKEN_KEY_VERSION: "v1",
     ...overrides,
   };
 }
@@ -361,6 +385,17 @@ test("server enables password sign-in only for the exact preview and keeps OAuth
   assert.throws(
     () =>
       environment.validateServerEnvironment(
+        hostedPreview({
+          VITE_GOOGLE_AUTH_ENABLED: "true",
+          GOOGLE_CLIENT_ID: "preview.apps.googleusercontent.com",
+          GOOGLE_CLIENT_SECRET: "S".repeat(32),
+        }),
+      ),
+    /VITE_GOOGLE_AUTH_ENABLED.*VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED/u,
+  );
+  assert.throws(
+    () =>
+      environment.validateServerEnvironment(
         hostedPreview({ VITE_PUBLIC_HOSTNAME: "wrong.example.test" }),
       ),
     /VITE_PUBLIC_HOSTNAME/u,
@@ -385,6 +420,7 @@ test("server enables password sign-in only for the exact preview and keeps OAuth
   });
   assert.equal(productionOAuth.previewPasswordSignInEnabled, false);
   assert.equal(productionOAuth.grokAuthEnabled, true);
+  assert.equal(productionOAuth.googleAuthEnabled, false);
 
   assert.throws(
     () =>
@@ -396,24 +432,154 @@ test("server enables password sign-in only for the exact preview and keeps OAuth
       }),
     /VITE_GROK_AUTH_ENABLED.*VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED/u,
   );
+
+  const directGoogle = environment.validateServerEnvironment(productionGoogle());
+  assert.equal(directGoogle.authEnabled, true);
+  assert.equal(directGoogle.grokAuthEnabled, false);
+  assert.equal(directGoogle.googleAuthEnabled, true);
+  assert.equal(directGoogle.previewPasswordSignInEnabled, false);
+  assert.equal(directGoogle.publicOrigin, "https://helix.kreluna.it");
+  assert.equal(
+    directGoogle.googleAuthCallbackUrl,
+    "https://helix.kreluna.it/api/auth/callback/google",
+  );
+
+  for (const override of [
+    { GOOGLE_CLIENT_ID: undefined },
+    { GOOGLE_CLIENT_SECRET: undefined },
+    { VITE_AUTH_ENABLED: "false" },
+    { CONTEXT: "deploy-preview" },
+    { VITE_PUBLIC_HOSTNAME: "wrong.example.test" },
+    { BETTER_AUTH_URL: "https://wrong.example.test" },
+    { VITE_GOOGLE_CLIENT_ID: "must-not-be-public" },
+    { VITE_GOOGLE_CLIENT_SECRET: "placeholder-not-public" },
+  ]) {
+    assert.throws(() => environment.validateServerEnvironment(productionGoogle(override)));
+  }
+
+  assert.throws(
+    () =>
+      environment.validateServerEnvironment(
+        productionGoogle({
+          VITE_GROK_AUTH_ENABLED: "true",
+          GROK_AUTH_CLIENT_ID: "production-broker",
+          GROK_AUTH_CLIENT_SECRET: "B".repeat(32),
+        }),
+      ),
+    /VITE_GOOGLE_AUTH_ENABLED.*VITE_GROK_AUTH_ENABLED|VITE_GROK_AUTH_ENABLED.*VITE_GOOGLE_AUTH_ENABLED/u,
+  );
+  assert.throws(
+    () =>
+      environment.validateServerEnvironment(
+        productionGoogle({
+          VITE_GOOGLE_AUTH_ENABLED: "false",
+        }),
+      ),
+    /VITE_GOOGLE_AUTH_ENABLED/u,
+  );
+});
+
+test("native Google config resolves the exact Production callback without enabling passwords", () => {
+  const environment = { ...process.env };
+  for (const name of [
+    "DATABASE_URL",
+    "NETLIFY_DB_URL",
+    "HELIX_RUNTIME_ENV",
+    "NETLIFY",
+    "CONTEXT",
+    "VITE_AUTH_ENABLED",
+    "VITE_GROK_AUTH_ENABLED",
+    "VITE_GOOGLE_AUTH_ENABLED",
+    "VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED",
+    "GROK_AUTH_CLIENT_ID",
+    "GROK_AUTH_CLIENT_SECRET",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "BETTER_AUTH_SECRET",
+    "BETTER_AUTH_URL",
+  ]) {
+    delete environment[name];
+  }
+  Object.assign(environment, productionGoogle());
+  // Use the explicit non-Netlify production marker so this isolated config
+  // test does not depend on Netlify Database's runtime SDK injection.
+  delete environment.NETLIFY;
+  delete environment.CONTEXT;
+  environment.HELIX_RUNTIME_ENV = "production";
+
+  const source = `
+    import { createServer } from "vite";
+    const vite = await createServer({
+      root: process.cwd(), configFile: false, appType: "custom", logLevel: "silent",
+      resolve: { alias: { "@": process.cwd() + "/src" } },
+      server: { middlewareMode: true, hmr: false },
+    });
+    try {
+      const { auth, authConfigured } = await vite.ssrLoadModule("/src/lib/auth/server.ts");
+      const context = await auth.$context;
+      const google = auth.options.socialProviders?.google;
+      process.stdout.write(JSON.stringify({
+        authConfigured,
+        baseURL: context.baseURL,
+        callbackURL: context.baseURL + "/callback/google",
+        providers: context.socialProviders.map((provider) => provider.id),
+        clientId: google?.clientId,
+        hasClientSecret: Boolean(google?.clientSecret),
+        emailAndPasswordEnabled: Boolean(auth.options.emailAndPassword?.enabled),
+        requireLocalEmailVerified:
+          auth.options.account?.accountLinking?.requireLocalEmailVerified,
+      }));
+    } finally {
+      await vite.close();
+    }
+  `;
+  const child = spawnSync(process.execPath, ["--input-type=module", "--eval", source], {
+    cwd: ROOT,
+    env: environment,
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  assert.equal(child.status, 0, `${child.stdout}\n${child.stderr}`);
+  assert.deepEqual(JSON.parse(child.stdout), {
+    authConfigured: true,
+    baseURL: "https://helix.kreluna.it/api/auth",
+    callbackURL: "https://helix.kreluna.it/api/auth/callback/google",
+    providers: ["google"],
+    clientId: "production.apps.googleusercontent.com",
+    hasClientSecret: true,
+    emailAndPasswordEnabled: false,
+    requireLocalEmailVerified: true,
+  });
+  assert.doesNotMatch(child.stdout, /S{16,}/u, "the server-only secret must not be printed");
 });
 
 test("Better Auth and login expose sign-in only with no HTTP sign-up", async () => {
-  const [server, client, login, authRoute, verify] = await Promise.all([
+  const [server, client, login, authRoute, verify, exampleEnvironment] = await Promise.all([
     readFile(join(ROOT, "src/lib/auth/server.ts"), "utf8"),
     readFile(join(ROOT, "src/lib/auth/client.ts"), "utf8"),
     readFile(join(ROOT, "src/routes/login.tsx"), "utf8"),
     readFile(join(ROOT, "src/routes/api/auth/$.ts"), "utf8"),
     readFile(join(ROOT, "src/lib/auth/verify.server.ts"), "utf8"),
+    readFile(join(ROOT, ".env.example"), "utf8"),
   ]);
 
   assert.match(server, /serverEnv\.previewPasswordSignInEnabled/u);
   assert.match(server, /disableSignUp:\s*true/u);
   assert.match(server, /minPasswordLength:\s*16/u);
+  assert.match(server, /socialProviders:\s*\{\s*google:/u);
+  assert.match(server, /clientId:\s*googleClientId/u);
+  assert.match(server, /clientSecret:\s*googleClientSecret/u);
+  assert.match(server, /trustedOAuthProviders/u);
+  assert.match(server, /requireLocalEmailVerified:\s*googleAuthConfigured/u);
+  assert.match(server, /serverEnv\.isProduction/u);
   assert.doesNotMatch(server, /emailAndPasswordEnabled/u);
   assert.match(client, /VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED/u);
   assert.doesNotMatch(client, /email-password/u);
   assert.match(login, /authClient\.signIn\.email/u);
+  assert.match(login, /authClient\.signIn\.social/u);
+  assert.match(login, /provider:\s*"google"/u);
+  assert.match(login, /VITE_GOOGLE_AUTH_ENABLED/u);
+  assert.doesNotMatch(login, /GOOGLE_CLIENT_(?:ID|SECRET)/u);
   assert.match(login, /minLength=\{16\}/u);
   assert.doesNotMatch(login, /authClient\.signUp\.email/u);
   assert.doesNotMatch(login, /login\.name/u);
@@ -421,4 +587,8 @@ test("Better Auth and login expose sign-in only with no HTTP sign-up", async () 
   assert.match(authRoute, /handlePreviewPasswordAuthRequest\(request, auth\.handler\)/u);
   assert.match(verify, /getSessionUserFromRequest\(request, \{ bearerToken \}\)/u);
   assert.match(verify, /requireUserIdFromRequest\(request, \{ bearerToken \}\)/u);
+  assert.match(exampleEnvironment, /^GOOGLE_CLIENT_ID=$/mu);
+  assert.match(exampleEnvironment, /^GOOGLE_CLIENT_SECRET=$/mu);
+  assert.match(exampleEnvironment, /https:\/\/helix\.kreluna\.it\/api\/auth\/callback\/google/u);
+  assert.doesNotMatch(exampleEnvironment, /^VITE_GOOGLE_CLIENT_(?:ID|SECRET)=/mu);
 });

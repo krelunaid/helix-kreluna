@@ -29,6 +29,7 @@ import {
   settleAiCallTelemetry,
 } from "@/lib/server/ai/telemetry";
 import { persistBuildJob } from "@/lib/server/persistence/build-jobs";
+import { assertAiGenerationEnabled } from "@/lib/server/ai/availability";
 
 const configuredPolicy = defineAiJobBudgetPolicy({
   maxCalls: 16,
@@ -62,9 +63,7 @@ export type AgentCompletionInput = Readonly<{
 function configuredProviders(): AiProviderRegistry {
   const configuration = resolveOpenAiGatewayConfiguration();
   return new AiProviderRegistry(
-    configuration
-      ? [createOpenAiGatewayChatCompletionProvider(configuration)]
-      : [],
+    configuration ? [createOpenAiGatewayChatCompletionProvider(configuration)] : [],
   );
 }
 
@@ -144,18 +143,16 @@ function contentPassesValidator(validator: AiContentValidator, content: string):
 export async function requestAgentCompletion(
   input: AgentCompletionInput,
 ): Promise<AiCompletionResult> {
+  // Defense in depth for already-queued work: disabled means no cache,
+  // telemetry reservation or provider activity either.
+  assertAiGenerationEnabled();
   const { job } = input;
   const runtime = job.runtime;
   if (!runtime) throw new AiBudgetError("BUILD_JOB_WORKER_CONTEXT_MISSING");
   runtime.abortSignal.throwIfAborted();
 
-  const {
-    model,
-    maximumCostUsdTicks,
-    retryIndex,
-    maxOutputTokens,
-    providerMaxOutputTokens,
-  } = assertContractInput(input);
+  const { model, maximumCostUsdTicks, retryIndex, maxOutputTokens, providerMaxOutputTokens } =
+    assertContractInput(input);
   const providerId = input.providerId ?? "openai";
   const safetyIdentifier = job.userId
     ? await sha256Hex(`helix-openai-safety:${job.userId}`)
@@ -237,9 +234,6 @@ export async function requestAgentCompletion(
 
   // Configuration is validated before reserving a call because no provider
   // request (and therefore no charge) can occur without a configured adapter.
-  if (providerId === "openai" && process.env.HELIX_AI_GATEWAY_ENABLED !== "true") {
-    throw new AiProviderError("HELIX_AI_DISABLED", { retryable: false });
-  }
   const providers = configuredProviders();
   if (providerId === "openai" && !providers.ids().includes("openai")) {
     throw new AiProviderError("NETLIFY_AI_GATEWAY_CONFIGURATION_MISSING", {

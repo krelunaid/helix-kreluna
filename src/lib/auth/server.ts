@@ -5,15 +5,16 @@
  * sign-in is restricted to an operator-pinned Netlify PR Deploy Preview.
  *
  * The app runs its own Better Auth at `/api/auth/*`, so the session cookie stays
- * on this app's own origin. Sign-in federates to the shared **Grok auth broker**
- * (`GROK_AUTH_ISSUER`) via the `genericOAuth` plugin — the broker brokers the
- * upstream sign-in methods (Google, X, …) and holds their shared secrets; this
- * app only holds its own client id/secret and names the upstream it wants via
- * each provider's `idp` hint.
+ * on this app's own origin. Production may use Better Auth's native Google
+ * provider, whose fixed callback is `/api/auth/callback/google`. Existing
+ * previews may instead federate through the shared **Grok auth broker**
+ * (`GROK_AUTH_ISSUER`) via the `genericOAuth` plugin. These modes are mutually
+ * exclusive and every provider secret remains server-only.
  *
  * Tri-mode:
- *   - Deployed: Netlify injects a per-app `GROK_AUTH_*` + `BETTER_AUTH_URL`
- *     + Netlify Database URL, so real federated auth is persisted in Postgres.
+ *   - Production: Netlify injects `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+ *     `BETTER_AUTH_URL` and a Netlify Database URL, so native Google auth is
+ *     persisted in Postgres.
  *   - Sandbox live preview: broker sign-in is available only when GROK_AUTH_*
  *     credentials are injected. No credential is baked into the source.
  *   - Explicitly off (`VITE_AUTH_ENABLED=false`): no providers; per-user server
@@ -61,14 +62,24 @@ const authDisabled = !serverEnv.authEnabled;
 const grokIssuer = serverEnv.GROK_AUTH_ISSUER ?? GROK_ISSUER_DEFAULT;
 const grokClientId = serverEnv.GROK_AUTH_CLIENT_ID;
 const grokClientSecret = serverEnv.GROK_AUTH_CLIENT_SECRET;
+const googleClientId = serverEnv.GOOGLE_CLIENT_ID;
+const googleClientSecret = serverEnv.GOOGLE_CLIENT_SECRET;
 
 /** True only when the optional federated broker is explicitly enabled. */
 const grokAuthConfigured =
   !authDisabled && serverEnv.grokAuthEnabled && Boolean(grokClientId && grokClientSecret);
 
+/** True only for the native Google provider in a validated Production runtime. */
+const googleAuthConfigured =
+  !authDisabled &&
+  serverEnv.googleAuthEnabled &&
+  Boolean(googleClientId && googleClientSecret) &&
+  serverEnv.isProduction;
+
 /** True when at least one real sign-in method is active. */
 export const authConfigured =
-  !authDisabled && (serverEnv.previewPasswordSignInEnabled || grokAuthConfigured);
+  !authDisabled &&
+  (serverEnv.previewPasswordSignInEnabled || grokAuthConfigured || googleAuthConfigured);
 
 // This app's own Better Auth origin. When deployed the deployer injects the
 // public URL. In the sandbox live preview there's no fixed URL (each preview gets
@@ -156,12 +167,32 @@ const grokOAuthPlugin = grokAuthConfigured
     })
   : null;
 
+const trustedOAuthProviders = [
+  ...(grokAuthConfigured ? GROK_PROVIDERS.map((provider) => provider.providerId) : []),
+  ...(googleAuthConfigured ? ["google"] : []),
+];
+
 export const auth = betterAuth({
   baseURL,
   // Deployed apps inject BETTER_AUTH_SECRET. Preview: process-stable secret on
   // globalThis so HMR doesn't invalidate PGLite-backed sessions (see above).
   secret: serverEnv.BETTER_AUTH_SECRET ?? previewAuthSecret(),
   database,
+
+  // Better Auth derives the provider callback from this app's validated
+  // baseURL, yielding exactly `${BETTER_AUTH_URL}/api/auth/callback/google`.
+  // No Google credential is ever exposed through a VITE-prefixed variable.
+  ...(googleAuthConfigured
+    ? {
+        socialProviders: {
+          google: {
+            clientId: googleClientId as string,
+            clientSecret: googleClientSecret as string,
+            prompt: "select_account" as const,
+          },
+        },
+      }
+    : {}),
 
   // CSRF / origin check for credentialed auth POSTs (email sign-up/sign-in, …).
   // See `trustedOrigins` construction above — must cover live preview hosts AND
@@ -178,10 +209,13 @@ export const auth = betterAuth({
     encryptOAuthTokens: true,
     accountLinking: {
       enabled: true,
-      trustedProviders: GROK_PROVIDERS.map((p) => p.providerId),
-      // X's synthetic email is never "verified", so don't gate linking on the
-      // local user's email-verified state.
-      requireLocalEmailVerified: false,
+      trustedProviders: trustedOAuthProviders,
+      // Native Google Production auth may share an address with an old local
+      // account. Require that local identity to be verified before linking so
+      // a trusted Google assertion cannot take over an unverified legacy row.
+      // Grok keeps its existing behavior because X's synthetic email is never
+      // verified and the two auth modes are mutually exclusive.
+      requireLocalEmailVerified: googleAuthConfigured,
     },
   },
 

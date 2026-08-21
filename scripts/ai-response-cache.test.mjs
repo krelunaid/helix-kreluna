@@ -193,6 +193,9 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
   assert.equal(unexpectedProviderCalls, 0);
   assert.equal(legacyBoundaryJob.aiUsage, undefined);
 
+  // The feature flag is an operator kill switch for cache and provider work.
+  // Cache-hit behavior is exercised only after AI is explicitly re-enabled.
+  process.env.HELIX_AI_GATEWAY_ENABLED = "true";
   const ownerJob = await claimedJob({ userId: "cache-owner-a" });
   const hit = await gateway.requestAgentCompletion({
     job: ownerJob,
@@ -245,7 +248,6 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
   assert.equal(evidence.rows[0].request_sha256, cacheKey.requestSha256);
   assert.equal(evidence.rows[0].provider_calls, 0);
 
-  process.env.HELIX_AI_GATEWAY_ENABLED = "true";
   const otherOwnerJob = await claimedJob({ userId: "cache-owner-b" });
   await assert.rejects(
     gateway.requestAgentCompletion({

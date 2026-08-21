@@ -12,12 +12,7 @@ import {
   markBuildJobReady,
 } from "@/lib/server/jobs/queue";
 
-export type ProcessBuildJobResult =
-  | "completed"
-  | "retry"
-  | "failed"
-  | "cancelled"
-  | "not_claimed";
+export type ProcessBuildJobResult = "completed" | "retry" | "failed" | "cancelled" | "not_claimed";
 
 const HEARTBEAT_MS = 20_000;
 const LEASE_MS = 90_000;
@@ -30,9 +25,10 @@ function errorCode(error: unknown): string {
     typeof error === "object" && error !== null && "code" in error
       ? (error as { code?: unknown }).code
       : undefined;
-  return String(
-    rawCode ?? (error instanceof Error ? error.name : "UNKNOWN_BUILD_ERROR"),
-  ).slice(0, 80);
+  return String(rawCode ?? (error instanceof Error ? error.name : "UNKNOWN_BUILD_ERROR")).slice(
+    0,
+    80,
+  );
 }
 
 function isRetryable(error: unknown): boolean {
@@ -52,12 +48,7 @@ async function releaseGuestLease(job: BuildJob): Promise<void> {
   job.guestBudgetLease = undefined;
 }
 
-function logWorkerFailure(
-  event: string,
-  jobId: string,
-  workerId: string,
-  error: unknown,
-): void {
+function logWorkerFailure(event: string, jobId: string, workerId: string, error: unknown): void {
   console.error(
     JSON.stringify({
       level: "error",
@@ -109,6 +100,15 @@ export async function processBuildJob(jobId: string): Promise<ProcessBuildJobRes
   }, HEARTBEAT_MS);
 
   try {
+    // The public request boundary blocks new Production guest jobs, but an old
+    // or restored queue row can bypass that boundary. We must claim before the
+    // payload exposes userId; keep this non-retryable guard inside the fenced
+    // failure path so the row is terminalized and any reserved guest lease is
+    // released without ever entering the orchestrator/provider pipeline.
+    if (!job.userId) {
+      const { assertGuestAiGenerationAllowed } = await import("@/lib/server/ai/guest-availability");
+      assertGuestAiGenerationAllowed();
+    }
     const result = await runCrew(job);
     controller.signal.throwIfAborted();
     if (!result.usedAi || !isValidHtmlArtifact(result.html)) {
@@ -127,12 +127,7 @@ export async function processBuildJob(jobId: string): Promise<ProcessBuildJobRes
       {
         role: "assistant",
         content: t(job.locale, "agent.ready"),
-        kind:
-          job.mode === "debug"
-            ? "debug"
-            : job.mode === "iterate"
-              ? "iterate"
-              : "build",
+        kind: job.mode === "debug" ? "debug" : job.mode === "iterate" ? "iterate" : "build",
         agent: "Helix",
       },
     ]);
@@ -150,12 +145,7 @@ export async function processBuildJob(jobId: string): Promise<ProcessBuildJobRes
         try {
           await releaseGuestLease(job);
         } catch (releaseError) {
-          logWorkerFailure(
-            "guest_budget_lease_release_failed",
-            job.id,
-            workerId,
-            releaseError,
-          );
+          logWorkerFailure("guest_budget_lease_release_failed", job.id, workerId, releaseError);
         }
         return "cancelled";
       } catch (cancelError) {
@@ -211,24 +201,14 @@ export async function processBuildJob(jobId: string): Promise<ProcessBuildJobRes
         try {
           await releaseGuestLease(job);
         } catch (releaseError) {
-          logWorkerFailure(
-            "guest_budget_lease_release_failed",
-            job.id,
-            workerId,
-            releaseError,
-          );
+          logWorkerFailure("guest_budget_lease_release_failed", job.id, workerId, releaseError);
         }
       }
       logWorkerFailure("build_job_attempt_failed", job.id, workerId, error);
       return outcome.retry ? "retry" : "failed";
     } catch (persistenceError) {
       if (persistenceError instanceof BuildJobLeaseLostError) return "not_claimed";
-      logWorkerFailure(
-        "build_job_failure_persistence_failed",
-        job.id,
-        workerId,
-        persistenceError,
-      );
+      logWorkerFailure("build_job_failure_persistence_failed", job.id, workerId, persistenceError);
       throw persistenceError;
     }
   } finally {
