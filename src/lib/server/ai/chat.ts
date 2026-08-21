@@ -1,14 +1,14 @@
 import type { BuildJob } from "@/lib/agent-types";
 import { craftOf } from "@/lib/house";
 import type { AgentContractId } from "@/lib/server/agents/contracts";
-import type { ChatGrokOptions } from "@/lib/server/agents/types";
+import type { ChatModelOptions } from "@/lib/server/agents/types";
 import { requestAgentCompletion } from "@/lib/server/ai/gateway";
 import { AiProviderError } from "@/lib/server/ai/types";
 import { BuildJobLeaseLostError } from "@/lib/server/jobs/queue";
 import { think } from "@/lib/server/orchestrator/state";
 import { persistBuildJob } from "@/lib/server/persistence/build-jobs";
 
-export type TrackedChatOptions = ChatGrokOptions & {
+export type TrackedChatOptions = ChatModelOptions & {
   job: BuildJob;
   agent: string;
   contractId: Exclude<AgentContractId, "helix">;
@@ -20,7 +20,7 @@ export type TrackedChatOptions = ChatGrokOptions & {
 /** Provider-neutral tracked model call. Provider selection remains explicit in the gateway. */
 export async function chatModel(options: TrackedChatOptions): Promise<string> {
   const { job, agent } = options;
-  const model = options.model ?? "grok-4.5";
+  const model = options.model ?? "gpt-5.6-terra";
   const startedAt = Date.now();
   const craft = craftOf(agent, job.locale);
   job.beat = startedAt;
@@ -85,7 +85,7 @@ export async function chatModel(options: TrackedChatOptions): Promise<string> {
       JSON.stringify({
         level: "error",
         event: "ai_provider_request_failed",
-        provider: "xai",
+        provider: "openai",
         jobId: job.id,
         agent,
         model,

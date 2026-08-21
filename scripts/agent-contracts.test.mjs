@@ -106,7 +106,7 @@ test("agent contracts describe the real Helix executions", async (t) => {
       assert.ok(contract.allowedTools.length > 0, `${id} must explicitly allow its tools`);
       assert.ok(Number.isSafeInteger(contract.timeoutMs) && contract.timeoutMs > 0);
       assert.ok(Number.isSafeInteger(contract.maxRetries) && contract.maxRetries >= 0);
-      assert.ok(contract.model === null || /^grok-\d/.test(contract.model));
+      assert.ok(contract.model === null || contract.model === "gpt-5.6-terra");
       assert.ok(Number.isSafeInteger(contract.maxTokens) && contract.maxTokens >= 0);
       assert.ok(Number.isFinite(contract.maxCostUsd) && contract.maxCostUsd >= 0);
       assert.match(contract.maxCostUsdTicks, /^(?:0|[1-9]\d*)$/);

@@ -111,6 +111,45 @@ test("scanner finds deleted reachable blobs without printing the secret", (t) =>
   assert.equal(findingRecords(result, "SECRET_WORKTREE_FINDING").length, 0);
 });
 
+test("scanner detects AI Gateway credential names without printing their values", (t) => {
+  const repo = fixture(t);
+  const netlifyGatewaySecret = randomBytes(32).toString("base64url");
+  const genericGatewaySecret = randomBytes(32).toString("base64url");
+  writeFileSync(
+    join(repo, "gateway.env"),
+    `NETLIFY_AI_GATEWAY_KEY=${netlifyGatewaySecret}\n`,
+    "utf8",
+  );
+  writeFileSync(
+    join(repo, "gateway-config.js"),
+    `const AI_GATEWAY_KEY = ${JSON.stringify(genericGatewaySecret)};\n`,
+    "utf8",
+  );
+
+  const result = runScanner(repo, {}, ["--worktree-only"]);
+  const combined = output(result);
+  assert.equal(result.status, 1, combined);
+  assert.equal(combined.includes(netlifyGatewaySecret), false);
+  assert.equal(combined.includes(genericGatewaySecret), false);
+  const findings = findingRecords(result, "SECRET_WORKTREE_FINDING");
+  assert.ok(
+    findings.some(
+      (finding) =>
+        finding.file === "gateway.env" &&
+        finding.rule === "dotenv-credential" &&
+        /^sha256:[a-f0-9]{64}$/.test(finding.fingerprint),
+    ),
+  );
+  assert.ok(
+    findings.some(
+      (finding) =>
+        finding.file === "gateway-config.js" &&
+        finding.rule === "hardcoded-credential" &&
+        /^sha256:[a-f0-9]{64}$/.test(finding.fingerprint),
+    ),
+  );
+});
+
 test("documented allowlists apply only to historical fingerprints", (t) => {
   const repo = fixture(t);
   const historicalSecret = makeProviderSecret("allowlist");

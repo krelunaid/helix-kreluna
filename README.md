@@ -19,7 +19,7 @@ Questo è il codice completo dell’app, non un backup parziale.
 - Preparazione sorgenti Expo/Electron; nessun build firmato o upload agli store viene simulato
 - Crediti atomici; i piani a pagamento restano disabilitati finché Stripe non è configurato
 - Release web interna Kreluna solo dopo Human Gate e report Aegis misurato
-- Unico gateway AI provider-neutral: ogni chiamata xAI prenota prima un budget persistente e registra modello, token, cache, latenza, hash del risultato e costo provider effettivo quando disponibile
+- Unico gateway AI provider-neutral: ogni chiamata a OpenAI `gpt-5.6-terra` tramite Netlify AI Gateway prenota prima un budget persistente e registra modello, token, cache, latenza, hash del risultato e costo effettivo solo quando esiste evidence autorevole
 - Prototype e Production sono livelli distinti: il Prototype HTML è disponibile; Production resta fail-closed finché non esiste una pipeline multi-file compilata e testata
 - candidate, adapter firmato e core provider-neutral del runner workspace Production sono definiti; nessun provider sandbox è collegato o distribuito e Production resta disabilitata
 
@@ -82,23 +82,33 @@ Tutte le esecuzioni model-backed (Nova, Atlas, Lumen, Forge, Gemme, Iris e
 Superior) passano dallo stesso gateway. Il database riserva atomicamente il
 tetto della chiamata prima del traffico provider e applica per job un massimo di
 16 chiamate, 2 retry model-level, 10 minuti e 9 USD di costo contabilizzato.
-Il costo usa tick interi (`1 USD = 10^10 tick`): `provider_actual` proviene da
-`usage.cost_in_usd_ticks`; se il provider non restituisce la misura, il costo
-effettivo resta sconosciuto e il budget contabilizza conservativamente la
-prenotazione massima. Prompt, risposte e chiavi API non sono salvati nella
-telemetria; restano soltanto hash SHA-256 e metadati tecnici.
+Il costo usa tick interi (`1 USD = 10^10 tick`): `provider_actual` è accettato
+solo da evidence di costo autorevole. Netlify AI Gateway/OpenAI non restituisce
+questa misura nella risposta usata da Helix, quindi il costo effettivo resta
+sconosciuto e il budget contabilizza conservativamente la prenotazione massima.
+Prompt, risposte e chiavi API non sono salvati nella telemetria; restano soltanto
+hash SHA-256 e metadati tecnici.
 
 ## Stack
 
-TanStack Start, Vite, Netlify Functions, Better Auth, Neon/PGLite, Grok (xAI).
+TanStack Start, Vite, Netlify Functions, Better Auth, Neon/PGLite, OpenAI
+`gpt-5.6-terra` tramite Netlify AI Gateway. Il broker Grok resta separato ed è
+usato soltanto per OAuth Google/X, non per la generazione.
 
 ## Configurazione
 
 In locale `VITE_AUTH_ENABLED=false` usa il solo utente di sviluppo e PGLite.
 Su Netlify Helix non degrada a dati in memoria o output AI finti: sono richieste
-`DATABASE_URL`, `XAI_API_KEY`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
+la connessione Netlify Database, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
 `VITE_AUTH_ENABLED=true`, `VITE_PUBLIC_HOSTNAME` e la coppia
 `GROK_AUTH_CLIENT_ID` / `GROK_AUTH_CLIENT_SECRET`.
+
+Le chiamate AI sono disabilitate per default con
+`HELIX_AI_GATEWAY_ENABLED=false`. Per abilitarle il runtime server deve ricevere
+insieme `NETLIFY_AI_GATEWAY_KEY` e `NETLIFY_AI_GATEWAY_BASE_URL`, iniettati a
+runtime per Netlify AI Gateway; non sono variabili browser e non sostituiscono
+le credenziali del broker OAuth. Se lo switch o la coppia mancano, la
+generazione fallisce chiusa senza traffico provider.
 
 `VITE_PUBLIC_HOSTNAME` è l’unica convenzione pubblica per l’host e non contiene
 schema o percorso (esempio: `helix.kreluna.it`). Le credenziali OAuth upstream

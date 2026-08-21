@@ -1,7 +1,7 @@
 import { AGENT_CONTRACTS } from "@/lib/server/agents/contracts";
 import { extractHtml } from "@/lib/server/agents/html";
 import { AgentOutputError, type AgentBuildInput } from "@/lib/server/agents/types";
-import { chatModel } from "@/lib/server/grok/chat";
+import { chatModel } from "@/lib/server/ai/chat";
 import { forgeLogicSystemPrompt, forgeUiSystemPrompt } from "@/lib/server/prompts/helix";
 
 export async function agentBuild(

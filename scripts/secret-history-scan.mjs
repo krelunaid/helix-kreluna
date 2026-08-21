@@ -52,7 +52,7 @@ const detectors = [
   {
     rule: "hardcoded-credential",
     pattern:
-      /(?:client[_-]?secret|api[_-]?key|access[_-]?token|auth[_-]?token|password|private[_-]?key|database[_-]?url)\s*[:=]\s*(?:"([^"\r\n]{16,})"|'([^'\r\n]{16,})')/gi,
+      /(?:client[_-]?secret|api[_-]?key|ai[_-]?gateway[_-]?key|access[_-]?token|auth[_-]?token|password|private[_-]?key|database[_-]?url)\s*[:=]\s*(?:"([^"\r\n]{16,})"|'([^'\r\n]{16,})')/gi,
     value(match) {
       return match[1] ?? match[2] ?? "";
     },
@@ -60,7 +60,7 @@ const detectors = [
   {
     rule: "dotenv-credential",
     pattern:
-      /^(?:export[ \t]+)?[A-Z][A-Z0-9_]*(?:SECRET|API_KEY|ACCESS_TOKEN|AUTH_TOKEN|PASSWORD|PRIVATE_KEY|DATABASE_URL)[A-Z0-9_]*[ \t]*=[ \t]*([^"'\s#][^\s#]{15,})[ \t]*(?:#.*)?$/gim,
+      /^(?:export[ \t]+)?[A-Z][A-Z0-9_]*(?:SECRET|API_KEY|AI_GATEWAY_KEY|ACCESS_TOKEN|AUTH_TOKEN|PASSWORD|PRIVATE_KEY|DATABASE_URL)[A-Z0-9_]*[ \t]*=[ \t]*([^"'\s#][^\s#]{15,})[ \t]*(?:#.*)?$/gim,
     value(match) {
       return match[1] ?? "";
     },

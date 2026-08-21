@@ -125,7 +125,7 @@ test("Netlify startup requires a valid GitHub envelope key and version", async (
     BETTER_AUTH_URL: "https://helix.example",
     GROK_AUTH_CLIENT_ID: "runtime-client-id",
     GROK_AUTH_CLIENT_SECRET: "C".repeat(32),
-    XAI_API_KEY: randomBytes(24).toString("base64url"),
+    HELIX_AI_GATEWAY_ENABLED: "false",
     HELIX_QUEUE_DISPATCH_SECRET: "Q".repeat(32),
     GITHUB_TOKEN_ENCRYPTION_KEY: randomBytes(32).toString("base64url"),
     GITHUB_TOKEN_KEY_VERSION: "v1",

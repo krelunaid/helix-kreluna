@@ -10,7 +10,9 @@ const optionalText = z.preprocess(
 );
 
 const rawEnvironmentSchema = z.object({
-  XAI_API_KEY: optionalText,
+  HELIX_AI_GATEWAY_ENABLED: z.enum(["true", "false"]).optional(),
+  NETLIFY_AI_GATEWAY_KEY: optionalText,
+  NETLIFY_AI_GATEWAY_BASE_URL: optionalText,
   DATABASE_URL: optionalText,
   NETLIFY_DB_URL: optionalText,
   BETTER_AUTH_SECRET: optionalText,
@@ -157,6 +159,7 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
       values.HELIX_RUNTIME_ENV === "production" ||
       (!values.CONTEXT && values.NODE_ENV === "production"));
   const authEnabled = values.VITE_AUTH_ENABLED === "true";
+  const aiGatewayEnabled = values.HELIX_AI_GATEWAY_ENABLED === "true";
   const stripeBillingEnabled = values.STRIPE_BILLING_ENABLED === "true";
   const productionBuildsEnabled = values.VITE_PRODUCTION_BUILDS_ENABLED === "true";
   const wardenEnabled = values.HELIX_WARDEN_ENABLED === "true";
@@ -178,6 +181,36 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   }
   if (values.NETLIFY_DB_URL && !isPostgresUrl(values.NETLIFY_DB_URL)) {
     invalid.push("NETLIFY_DB_URL");
+  }
+  const aiGatewayNames = [
+    "NETLIFY_AI_GATEWAY_KEY",
+    "NETLIFY_AI_GATEWAY_BASE_URL",
+  ] as const;
+  const configuredAiGatewayNames = aiGatewayNames.filter((name) => Boolean(values[name]));
+  if (
+    configuredAiGatewayNames.length > 0 &&
+    configuredAiGatewayNames.length !== aiGatewayNames.length
+  ) {
+    for (const name of aiGatewayNames) required(name);
+  }
+  if (values.NETLIFY_AI_GATEWAY_BASE_URL) {
+    try {
+      const gatewayUrl = new URL(values.NETLIFY_AI_GATEWAY_BASE_URL);
+      const loopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(
+        gatewayUrl.hostname,
+      );
+      if (
+        (gatewayUrl.protocol !== "https:" && !(loopback && gatewayUrl.protocol === "http:")) ||
+        gatewayUrl.username ||
+        gatewayUrl.password ||
+        gatewayUrl.search ||
+        gatewayUrl.hash
+      ) {
+        invalid.push("NETLIFY_AI_GATEWAY_BASE_URL");
+      }
+    } catch {
+      invalid.push("NETLIFY_AI_GATEWAY_BASE_URL");
+    }
   }
   const isolatedNetlifyBranch =
     values.CONTEXT === "deploy-preview" || values.CONTEXT === "branch-deploy";
@@ -565,7 +598,6 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
     required("BETTER_AUTH_URL");
     required("GROK_AUTH_CLIENT_ID");
     required("GROK_AUTH_CLIENT_SECRET");
-    required("XAI_API_KEY");
     required("HELIX_QUEUE_DISPATCH_SECRET");
     required("GITHUB_TOKEN_ENCRYPTION_KEY");
     required("GITHUB_TOKEN_KEY_VERSION");
@@ -610,6 +642,7 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
       runtimeDatabaseConnection?.source ??
       (values.DATABASE_URL ? "postgres" : values.NETLIFY_DB_URL ? "netlify" : null),
     authEnabled,
+    aiGatewayEnabled,
     stripeBillingEnabled,
     wardenEnabled,
     productionBuildsEnabled,

@@ -130,20 +130,32 @@ const forgeUiHtml = `<!doctype html><html lang="en"><head><title>Field Notes Hab
 const forgeLogicHtml = `<!doctype html><html lang="en"><head><title>Field Notes Habitat Atlas</title><style>body{font-family:serif;background:#08120d;color:#f8f4df}main{max-width:70rem;margin:auto;padding:3rem}button{min-height:44px}</style></head><body><main><p>Approved field collection</p><h1>Habitat atlas</h1><h2 id="active-habitat">All observations</h2><p>${"Product-specific interactive observation evidence. ".repeat(18)}</p><button id="filter-wetland" data-action="filter-wetland">Show wetland notes</button></main><script>const button=document.querySelector("#filter-wetland");const output=document.querySelector("#active-habitat");button.addEventListener("click",()=>{output.textContent="Wetland observations";});</script></body></html>`;
 
 test("Production runs and resumes Lumen, Forge UI and Forge Logic as hash-bound phases", async (t) => {
-  const priorKey = process.env.XAI_API_KEY;
+  const priorEnabled = process.env.HELIX_AI_GATEWAY_ENABLED;
+  const priorKey = process.env.NETLIFY_AI_GATEWAY_KEY;
+  const priorBaseUrl = process.env.NETLIFY_AI_GATEWAY_BASE_URL;
   const priorRunnerUrl = process.env.HELIX_WORKSPACE_RUNNER_URL;
   const priorRunnerSecret = process.env.HELIX_WORKSPACE_RUNNER_SECRET;
   const priorFetch = globalThis.fetch;
-  process.env.XAI_API_KEY = ["controlled", "production", "phases", "test", "key"].join("-");
+  process.env.HELIX_AI_GATEWAY_ENABLED = "true";
+  process.env.NETLIFY_AI_GATEWAY_KEY = [
+    "controlled",
+    "production",
+    "phases",
+    "gateway",
+    "key",
+  ].join("-");
+  process.env.NETLIFY_AI_GATEWAY_BASE_URL = "https://gateway.test";
   delete process.env.HELIX_WORKSPACE_RUNNER_URL;
   delete process.env.HELIX_WORKSPACE_RUNNER_SECRET;
 
   const calls = [];
   globalThis.fetch = async (url, init) => {
-    if (String(url) !== "https://api.x.ai/v1/chat/completions") {
+    if (String(url) !== "https://gateway.test/v1/chat/completions") {
       return priorFetch(url, init);
     }
     const request = JSON.parse(String(init?.body ?? "{}"));
+    assert.equal(request.model, "gpt-5.6-terra");
+    assert.equal(request.store, false);
     const system = String(request.messages?.[0]?.content ?? "");
     const user = String(request.messages?.[1]?.content ?? "");
     let phase;
@@ -167,13 +179,12 @@ test("Production runs and resumes Lumen, Forge UI and Forge Logic as hash-bound 
       JSON.stringify({
         id: `controlled-${phase}-${calls.length}`,
         model: request.model,
-        choices: [{ message: { content } }],
+        choices: [{ finish_reason: "stop", message: { content, refusal: null } }],
         usage: {
           prompt_tokens: 30,
           completion_tokens: 20,
           total_tokens: 50,
           prompt_tokens_details: { cached_tokens: 0 },
-          cost_in_usd_ticks: "1000",
         },
       }),
       { status: 200, headers: { "content-type": "application/json" } },
@@ -198,8 +209,12 @@ test("Production runs and resumes Lumen, Forge UI and Forge Logic as hash-bound 
   const pg = await db.getPglite();
   t.after(async () => {
     globalThis.fetch = priorFetch;
-    if (priorKey === undefined) delete process.env.XAI_API_KEY;
-    else process.env.XAI_API_KEY = priorKey;
+    if (priorEnabled === undefined) delete process.env.HELIX_AI_GATEWAY_ENABLED;
+    else process.env.HELIX_AI_GATEWAY_ENABLED = priorEnabled;
+    if (priorKey === undefined) delete process.env.NETLIFY_AI_GATEWAY_KEY;
+    else process.env.NETLIFY_AI_GATEWAY_KEY = priorKey;
+    if (priorBaseUrl === undefined) delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+    else process.env.NETLIFY_AI_GATEWAY_BASE_URL = priorBaseUrl;
     if (priorRunnerUrl === undefined) delete process.env.HELIX_WORKSPACE_RUNNER_URL;
     else process.env.HELIX_WORKSPACE_RUNNER_URL = priorRunnerUrl;
     if (priorRunnerSecret === undefined) delete process.env.HELIX_WORKSPACE_RUNNER_SECRET;
@@ -254,7 +269,10 @@ test("Production runs and resumes Lumen, Forge UI and Forge Logic as hash-bound 
   assert.deepEqual(calls.map((call) => call.phase), ["lumen", "forgeUi", "forgeLogic"]);
   assert.equal(job.aiUsage.callCount, 3);
   assert.equal(job.aiUsage.succeededCallCount, 3);
-  assert.equal(job.aiUsage.accountedCostUsdTicks, "3000");
+  assert.equal(job.aiUsage.unknownCostCallCount, 3);
+  assert.equal(job.aiUsage.providerActualCostUsdTicks, "0");
+  assert.equal(job.aiUsage.accountedCostUsdTicks, "33500000000");
+  assert.equal(job.aiUsage.actualCostComplete, false);
 
   const artifacts = job.checkpoint.artifacts;
   assert.equal(artifacts.designSelection.directions.length, 3);

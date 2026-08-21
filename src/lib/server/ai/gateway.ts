@@ -9,7 +9,10 @@ import {
   writeAiResponseCache,
 } from "@/lib/server/ai/cache";
 import { AiProviderRegistry } from "@/lib/server/ai/provider";
-import { createXaiChatCompletionProvider } from "@/lib/server/ai/providers/xai";
+import {
+  createOpenAiGatewayChatCompletionProvider,
+  MIN_REASONING_PROVIDER_OUTPUT_TOKENS,
+} from "@/lib/server/ai/providers/openai";
 import {
   AiProviderError,
   parseUsdTicks,
@@ -56,8 +59,13 @@ export type AgentCompletionInput = Readonly<{
 }>;
 
 function configuredProviders(): AiProviderRegistry {
-  const apiKey = process.env.XAI_API_KEY?.trim();
-  return new AiProviderRegistry(apiKey ? [createXaiChatCompletionProvider({ apiKey })] : []);
+  const gatewayKey = process.env.NETLIFY_AI_GATEWAY_KEY?.trim();
+  const baseUrl = process.env.NETLIFY_AI_GATEWAY_BASE_URL?.trim();
+  return new AiProviderRegistry(
+    gatewayKey && baseUrl
+      ? [createOpenAiGatewayChatCompletionProvider({ gatewayKey, baseUrl })]
+      : [],
+  );
 }
 
 function errorCode(error: unknown): string {
@@ -82,11 +90,22 @@ function assertContractInput(input: AgentCompletionInput): {
   model: string;
   maximumCostUsdTicks: UsdTicks;
   retryIndex: number;
+  maxOutputTokens: number;
+  providerMaxOutputTokens: number;
 } {
   const contract = AGENT_CONTRACTS[input.contractId];
   const model = contract.model;
   const retryIndex = input.retryIndex ?? 0;
   const maximumCostUsdTicks = parseUsdTicks(contract.maxCostUsdTicks);
+  const maxOutputTokens = contract.maxTokens;
+  const providerMaxOutputTokens =
+    input.effort === "high"
+      ? Math.max(MIN_REASONING_PROVIDER_OUTPUT_TOKENS, maxOutputTokens)
+      : maxOutputTokens;
+  const highEffortAllowed =
+    (input.contractId === "forgeUi" || input.contractId === "forgeLogic") &&
+    maximumCostUsdTicks !== null &&
+    BigInt(maximumCostUsdTicks) >= 15_000_000_000n;
   if (
     !model ||
     !contract.allowedTools.includes("requestAiCompletion") ||
@@ -96,11 +115,18 @@ function assertContractInput(input: AgentCompletionInput): {
     retryIndex > contract.maxRetries ||
     !input.agentId.trim() ||
     !input.logicalCallKey.trim() ||
+    (input.effort === "high" && !highEffortAllowed) ||
     typeof input.validateContent !== "function"
   ) {
     throw new AiBudgetError("AI_AGENT_CONTRACT_INVALID");
   }
-  return { model, maximumCostUsdTicks, retryIndex };
+  return {
+    model,
+    maximumCostUsdTicks,
+    retryIndex,
+    maxOutputTokens,
+    providerMaxOutputTokens,
+  };
 }
 
 function contentPassesValidator(validator: AiContentValidator, content: string): boolean {
@@ -123,8 +149,17 @@ export async function requestAgentCompletion(
   if (!runtime) throw new AiBudgetError("BUILD_JOB_WORKER_CONTEXT_MISSING");
   runtime.abortSignal.throwIfAborted();
 
-  const { model, maximumCostUsdTicks, retryIndex } = assertContractInput(input);
-  const providerId = input.providerId ?? "xai";
+  const {
+    model,
+    maximumCostUsdTicks,
+    retryIndex,
+    maxOutputTokens,
+    providerMaxOutputTokens,
+  } = assertContractInput(input);
+  const providerId = input.providerId ?? "openai";
+  const safetyIdentifier = job.userId
+    ? await sha256Hex(`helix-openai-safety:${job.userId}`)
+    : undefined;
   await recoverStaleAiCalls({ jobId: job.id, workerId: runtime.workerId });
 
   const callId = crypto.randomUUID();
@@ -135,9 +170,11 @@ export async function requestAgentCompletion(
       model,
       system: input.system,
       user: input.user,
-      maxOutputTokens: AGENT_CONTRACTS[input.contractId].maxTokens,
+      maxOutputTokens,
+      providerMaxOutputTokens,
       temperature: input.temperature,
       effort: input.effort ?? "low",
+      safetyIdentifier: safetyIdentifier ?? null,
     }),
   );
   const cacheKey = job.userId
@@ -200,9 +237,14 @@ export async function requestAgentCompletion(
 
   // Configuration is validated before reserving a call because no provider
   // request (and therefore no charge) can occur without a configured adapter.
+  if (providerId === "openai" && process.env.HELIX_AI_GATEWAY_ENABLED !== "true") {
+    throw new AiProviderError("HELIX_AI_DISABLED", { retryable: false });
+  }
   const providers = configuredProviders();
-  if (providerId === "xai" && !providers.ids().includes("xai")) {
-    throw new AiProviderError("XAI_API_KEY_MISSING", { retryable: false });
+  if (providerId === "openai" && !providers.ids().includes("openai")) {
+    throw new AiProviderError("NETLIFY_AI_GATEWAY_CONFIGURATION_MISSING", {
+      retryable: false,
+    });
   }
   const provider = providers.get(providerId);
   await reserveAiCallTelemetry({
@@ -253,10 +295,12 @@ export async function requestAgentCompletion(
       model,
       system: input.system,
       user: input.user,
-      maxOutputTokens: AGENT_CONTRACTS[input.contractId].maxTokens,
+      maxOutputTokens,
+      providerMaxOutputTokens,
       timeoutMs: AGENT_CONTRACTS[input.contractId].timeoutMs,
       temperature: input.temperature,
       effort: input.effort,
+      safetyIdentifier,
       signal: runtime.abortSignal,
     });
   } catch (error) {

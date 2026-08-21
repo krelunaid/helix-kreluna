@@ -21,28 +21,32 @@ test("AI provider usage and budget accounting stay evidence-bound", async (t) =>
     await vite.close();
   });
 
-  const [xai, budget, providerTypes, providerRegistry] = await Promise.all([
-    vite.ssrLoadModule("/src/lib/server/ai/providers/xai.ts"),
+  const [openai, budget, providerTypes, providerRegistry] = await Promise.all([
+    vite.ssrLoadModule("/src/lib/server/ai/providers/openai.ts"),
     vite.ssrLoadModule("/src/lib/server/ai/budget.ts"),
     vite.ssrLoadModule("/src/lib/server/ai/types.ts"),
     vite.ssrLoadModule("/src/lib/server/ai/provider.ts"),
   ]);
 
-  await t.test("xAI documented token and integer-cost fields are preserved", () => {
-    const result = xai.parseXaiChatCompletion(
+  await t.test("OpenAI documented token fields are preserved without invented cost", () => {
+    const result = openai.parseOpenAiChatCompletion(
       {
         id: "response-1",
-        model: "grok-resolved",
-        choices: [{ message: { content: "Delivered artifact" } }],
+        model: "gpt-5.6-terra-resolved",
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { content: "Delivered artifact", refusal: null },
+          },
+        ],
         usage: {
           prompt_tokens: 120,
           completion_tokens: 30,
           total_tokens: 150,
           prompt_tokens_details: { cached_tokens: 45 },
-          cost_in_usd_ticks: "12345678901234567890",
         },
       },
-      { requestedModel: "grok-requested", latencyMs: 84 },
+      { requestedModel: "gpt-5.6-terra", latencyMs: 84 },
     );
 
     assert.deepEqual(result.usage, {
@@ -52,19 +56,19 @@ test("AI provider usage and budget accounting stay evidence-bound", async (t) =>
       totalTokens: 150,
     });
     assert.deepEqual(result.cost, {
-      usdTicks: "12345678901234567890",
-      kind: "provider_actual",
+      usdTicks: null,
+      kind: "unknown",
       pricingVersion: null,
     });
-    assert.equal(result.requestedModel, "grok-requested");
-    assert.equal(result.reportedModel, "grok-resolved");
+    assert.equal(result.requestedModel, "gpt-5.6-terra");
+    assert.equal(result.reportedModel, "gpt-5.6-terra-resolved");
     assert.equal(result.responseId, "response-1");
     assert.equal(result.latencyMs, 84);
     assert.equal(result.delivery, "provider");
   });
 
   await t.test("missing or contradictory provider evidence remains null", () => {
-    const missing = xai.parseXaiChatUsage({ usage: {} });
+    const missing = openai.parseOpenAiChatUsage({ usage: {} });
     assert.deepEqual(missing.usage, {
       inputTokens: null,
       outputTokens: null,
@@ -77,13 +81,12 @@ test("AI provider usage and budget accounting stay evidence-bound", async (t) =>
       pricingVersion: null,
     });
 
-    const invalid = xai.parseXaiChatUsage({
+    const invalid = openai.parseOpenAiChatUsage({
       usage: {
         prompt_tokens: 10,
         completion_tokens: 5,
         total_tokens: 4,
         prompt_tokens_details: { cached_tokens: 11 },
-        cost_in_usd_ticks: 1.25,
       },
     });
     assert.deepEqual(invalid.usage, {
@@ -100,22 +103,24 @@ test("AI provider usage and budget accounting stay evidence-bound", async (t) =>
     assert.equal(providerTypes.parseUsdTicks("1".repeat(31)), null);
   });
 
-  await t.test("the xAI adapter sends one explicit provider request", async () => {
+  await t.test("the Gateway adapter sends one explicit, non-stored OpenAI request", async () => {
     let observed;
-    const adapter = xai.createXaiChatCompletionProvider({
-      apiKey: "test-only-key",
+    const adapter = openai.createOpenAiGatewayChatCompletionProvider({
+      gatewayKey: "test-only-key",
+      baseUrl: "https://gateway.test",
       fetchImpl: async (url, init) => {
         observed = { url, init };
         return new Response(
           JSON.stringify({
             id: "response-adapter",
-            model: "grok-returned",
-            choices: [{ message: { content: "ok" } }],
+            model: "gpt-5.6-terra",
+            choices: [
+              { finish_reason: "stop", message: { content: "ok", refusal: null } },
+            ],
             usage: {
               prompt_tokens: 5,
               completion_tokens: 1,
               total_tokens: 6,
-              cost_in_usd_ticks: 2500,
             },
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -123,26 +128,217 @@ test("AI provider usage and budget accounting stay evidence-bound", async (t) =>
       },
     });
     const result = await adapter.complete({
-      model: "grok-requested",
+      model: "gpt-5.6-terra",
       system: "System contract",
       user: "User request",
       maxOutputTokens: 40,
+      providerMaxOutputTokens: 40,
       timeoutMs: 1_000,
       temperature: 0.2,
       effort: "low",
+      safetyIdentifier: "a".repeat(64),
     });
     const body = JSON.parse(observed.init.body);
-    assert.equal(observed.url, "https://api.x.ai/v1/chat/completions");
+    assert.equal(observed.url, "https://gateway.test/v1/chat/completions");
     assert.equal(observed.init.headers.Authorization, "Bearer test-only-key");
-    assert.equal(body.model, "grok-requested");
-    assert.equal(body.max_tokens, 40);
-    assert.equal(result.cost.usdTicks, "2500");
+    assert.equal(body.model, "gpt-5.6-terra");
+    assert.equal(body.max_completion_tokens, 40);
+    assert.equal(body.reasoning_effort, "none");
+    assert.equal(body.temperature, 0.2);
+    assert.equal(body.store, false);
+    assert.equal(body.safety_identifier, "a".repeat(64));
+    assert.deepEqual(body.messages, [
+      { role: "developer", content: "System contract" },
+      { role: "user", content: "User request" },
+    ]);
+    assert.equal(result.cost.usdTicks, null);
+
+    const alreadyVersioned = openai.createOpenAiGatewayChatCompletionProvider({
+      gatewayKey: "test-only-key",
+      baseUrl: "https://gateway.test/v1/",
+      fetchImpl: async (url, init) => {
+        assert.equal(url, "https://gateway.test/v1/chat/completions");
+        const highBody = JSON.parse(init.body);
+        assert.equal(highBody.max_completion_tokens, 25_000);
+        assert.equal(highBody.reasoning_effort, "high");
+        assert.equal("temperature" in highBody, false);
+        assert.equal(highBody.store, false);
+        return new Response(
+          JSON.stringify({
+            id: "high-effort",
+            model: "gpt-5.6-terra",
+            choices: [{ finish_reason: "stop", message: { content: "ok" } }],
+            usage: {
+              prompt_tokens: 10,
+              completion_tokens: 9_000,
+              total_tokens: 9_010,
+              completion_tokens_details: { reasoning_tokens: 1_000 },
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    await alreadyVersioned.complete({
+      model: "gpt-5.6-terra",
+      system: "System contract",
+      user: "User request",
+      maxOutputTokens: 8_192,
+      providerMaxOutputTokens: 25_000,
+      timeoutMs: 1_000,
+      temperature: 0.2,
+      effort: "high",
+    });
+
+    const multimodalUser = [
+      { type: "text", text: "Inspect this evidence" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,aGVsaXg=" } },
+    ];
+    const multimodal = openai.createOpenAiGatewayChatCompletionProvider({
+      gatewayKey: "test-only-key",
+      baseUrl: "http://127.0.0.1:9999",
+      fetchImpl: async (_url, init) => {
+        const multimodalBody = JSON.parse(init.body);
+        assert.deepEqual(multimodalBody.messages[1], {
+          role: "user",
+          content: multimodalUser,
+        });
+        return new Response(
+          JSON.stringify({
+            id: "multimodal",
+            model: "gpt-5.6-terra",
+            choices: [{ finish_reason: "stop", message: { content: "reviewed" } }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    await multimodal.complete({
+      model: "gpt-5.6-terra",
+      system: "Review evidence",
+      user: multimodalUser,
+      maxOutputTokens: 800,
+      providerMaxOutputTokens: 800,
+      timeoutMs: 1_000,
+      temperature: 0.1,
+      effort: "low",
+    });
+
+    assert.throws(
+      () =>
+        openai.createOpenAiGatewayChatCompletionProvider({
+          gatewayKey: "test-only-key",
+          baseUrl: "http://gateway.test",
+        }),
+      /NETLIFY_AI_GATEWAY_CONFIGURATION_INVALID/,
+    );
+    await assert.rejects(
+      adapter.complete({
+        model: "gpt-5.6-terra",
+        system: "system",
+        user: "user",
+        maxOutputTokens: 40,
+        providerMaxOutputTokens: 40,
+        timeoutMs: 1_000,
+        temperature: 0.2,
+        effort: "medium",
+      }),
+      (error) => error?.code === "AI_REQUEST_INVALID" && error.retryable === false,
+    );
 
     const registry = new providerRegistry.AiProviderRegistry([adapter]);
-    assert.deepEqual(registry.ids(), ["xai"]);
-    assert.equal(registry.get("xai"), adapter);
+    assert.deepEqual(registry.ids(), ["openai"]);
+    assert.equal(registry.get("openai"), adapter);
     assert.throws(() => registry.get("unconfigured"), /AI_PROVIDER_NOT_CONFIGURED/);
     assert.throws(() => registry.register(adapter), /AI_PROVIDER_DUPLICATE/);
+  });
+
+  await t.test("incomplete, filtered and refused responses fail closed", () => {
+    for (const [payload, code] of [
+      [
+        { choices: [{ finish_reason: "length", message: { content: "partial" } }] },
+        "OPENAI_GATEWAY_RESPONSE_INCOMPLETE_MAX_OUTPUT_TOKENS",
+      ],
+      [
+        { choices: [{ finish_reason: "content_filter", message: { content: null } }] },
+        "OPENAI_GATEWAY_RESPONSE_CONTENT_FILTERED",
+      ],
+      [
+        { choices: [{ finish_reason: "tool_calls", message: { content: "unsupported" } }] },
+        "OPENAI_GATEWAY_RESPONSE_INCOMPLETE",
+      ],
+      [
+        {
+          choices: [
+            {
+              finish_reason: "stop",
+              message: { content: "unsafe fallback", refusal: "Cannot comply" },
+            },
+          ],
+        },
+        "OPENAI_GATEWAY_RESPONSE_REFUSED",
+      ],
+    ]) {
+      assert.throws(
+        () =>
+          openai.parseOpenAiChatCompletion(payload, {
+            requestedModel: "gpt-5.6-terra",
+            latencyMs: 1,
+          }),
+        (error) => error.code === code && error.retryable === false,
+      );
+    }
+  });
+
+  await t.test("the visible artifact token ceiling is enforced after reasoning", async () => {
+    for (const [usage, effort, code] of [
+      [
+        { completion_tokens: 9_000 },
+        "high",
+        "OPENAI_GATEWAY_OUTPUT_TOKEN_EVIDENCE_INVALID",
+      ],
+      [
+        {
+          completion_tokens: 9_000,
+          completion_tokens_details: { reasoning_tokens: 100 },
+        },
+        "high",
+        "OPENAI_GATEWAY_VISIBLE_OUTPUT_LIMIT_EXCEEDED",
+      ],
+      [
+        { completion_tokens: 41 },
+        "low",
+        "OPENAI_GATEWAY_OUTPUT_TOKEN_EVIDENCE_INVALID",
+      ],
+    ]) {
+      const adapter = openai.createOpenAiGatewayChatCompletionProvider({
+        gatewayKey: "test-only-key",
+        baseUrl: "https://gateway.test",
+        fetchImpl: async () =>
+          new Response(
+            JSON.stringify({
+              id: "token-boundary",
+              model: "gpt-5.6-terra",
+              choices: [{ finish_reason: "stop", message: { content: "complete" } }],
+              usage,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      });
+      await assert.rejects(
+        adapter.complete({
+          model: "gpt-5.6-terra",
+          system: "system",
+          user: "user",
+          maxOutputTokens: effort === "high" ? 8_192 : 40,
+          providerMaxOutputTokens: effort === "high" ? 25_000 : 40,
+          timeoutMs: 1_000,
+          temperature: 0.2,
+          effort,
+        }),
+        (error) => error?.code === code && error.retryable === false,
+      );
+    }
   });
 
   await t.test("HTTP retryability is typed and no provider fallback occurs", async () => {
@@ -151,21 +347,23 @@ test("AI provider usage and budget accounting stay evidence-bound", async (t) =>
       [429, true],
       [503, true],
     ]) {
-      const adapter = xai.createXaiChatCompletionProvider({
-        apiKey: "test-only-key",
+      const adapter = openai.createOpenAiGatewayChatCompletionProvider({
+        gatewayKey: "test-only-key",
+        baseUrl: "https://gateway.test",
         fetchImpl: async () => new Response("no", { status }),
       });
       await assert.rejects(
         adapter.complete({
-          model: "grok-test",
+          model: "gpt-5.6-terra",
           system: "system",
           user: "user",
           maxOutputTokens: 10,
+          providerMaxOutputTokens: 10,
           timeoutMs: 1_000,
           temperature: 0,
         }),
         (error) => {
-          assert.equal(error.code, `XAI_HTTP_${status}`);
+          assert.equal(error.code, `OPENAI_GATEWAY_HTTP_${status}`);
           assert.equal(error.retryable, retryable);
           return true;
         },
@@ -330,25 +528,46 @@ test("AI provider usage and budget accounting stay evidence-bound", async (t) =>
 });
 
 test("the gateway enforces and persists the real Helix call path", async (t) => {
-  const previousKey = process.env.XAI_API_KEY;
+  const previousEnabled = process.env.HELIX_AI_GATEWAY_ENABLED;
+  const previousKey = process.env.NETLIFY_AI_GATEWAY_KEY;
+  const previousBaseUrl = process.env.NETLIFY_AI_GATEWAY_BASE_URL;
   const previousFetch = globalThis.fetch;
-  process.env.XAI_API_KEY = ["gateway", "test", "key"].join("-");
+  process.env.HELIX_AI_GATEWAY_ENABLED = "true";
+  process.env.NETLIFY_AI_GATEWAY_KEY = ["gateway", "test", "key"].join("-");
+  process.env.NETLIFY_AI_GATEWAY_BASE_URL = "https://gateway.test";
   let providerCalls = 0;
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (url, init) => {
     providerCalls += 1;
+    assert.equal(url, "https://gateway.test/v1/chat/completions");
+    const request = JSON.parse(init.body);
+    assert.equal(request.model, "gpt-5.6-terra");
+    assert.equal(request.store, false);
+    if (providerCalls === 4) {
+      assert.equal(request.reasoning_effort, "high");
+      assert.equal(request.max_completion_tokens, 25_000);
+      assert.equal("temperature" in request, false);
+    } else {
+      assert.equal(request.reasoning_effort, "none");
+      assert.equal(request.max_completion_tokens, providerCalls === 3 ? 800 : 1_200);
+      assert.equal(request.temperature, 0.2);
+    }
     if (providerCalls === 3) return new Response("unavailable", { status: 503 });
-    const cost = providerCalls === 1 ? 1000 : 2500000001;
     return new Response(
       JSON.stringify({
         id: `gateway-response-${providerCalls}`,
-        model: "grok-4.5",
-        choices: [{ message: { content: `gateway-result-${providerCalls}` } }],
+        model: "gpt-5.6-terra",
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { content: `gateway-result-${providerCalls}`, refusal: null },
+          },
+        ],
         usage: {
           prompt_tokens: 12,
           completion_tokens: 3,
           total_tokens: 15,
           prompt_tokens_details: { cached_tokens: providerCalls - 1 },
-          cost_in_usd_ticks: cost,
+          completion_tokens_details: { reasoning_tokens: providerCalls === 4 ? 1 : 0 },
         },
       }),
       { status: 200, headers: { "content-type": "application/json" } },
@@ -356,8 +575,12 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
   };
   t.after(() => {
     globalThis.fetch = previousFetch;
-    if (previousKey === undefined) delete process.env.XAI_API_KEY;
-    else process.env.XAI_API_KEY = previousKey;
+    if (previousEnabled === undefined) delete process.env.HELIX_AI_GATEWAY_ENABLED;
+    else process.env.HELIX_AI_GATEWAY_ENABLED = previousEnabled;
+    if (previousKey === undefined) delete process.env.NETLIFY_AI_GATEWAY_KEY;
+    else process.env.NETLIFY_AI_GATEWAY_KEY = previousKey;
+    if (previousBaseUrl === undefined) delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+    else process.env.NETLIFY_AI_GATEWAY_BASE_URL = previousBaseUrl;
   });
 
   const vite = await createServer({
@@ -397,6 +620,61 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
   assert.ok(job);
   job.runtime = { workerId, abortSignal: new AbortController().signal };
 
+  delete process.env.HELIX_AI_GATEWAY_ENABLED;
+  await assert.rejects(
+    gateway.requestAgentCompletion({
+      job,
+      contractId: "nova",
+      agentId: "Nova",
+      logicalCallKey: "nova:disabled",
+      system: "Stable system prefix",
+      user: "Private prompt body",
+      temperature: 0.2,
+      effort: "low",
+      validateContent: () => true,
+    }),
+    (error) => error?.code === "HELIX_AI_DISABLED" && error.retryable === false,
+  );
+  process.env.HELIX_AI_GATEWAY_ENABLED = "true";
+  delete process.env.NETLIFY_AI_GATEWAY_KEY;
+  await assert.rejects(
+    gateway.requestAgentCompletion({
+      job,
+      contractId: "nova",
+      agentId: "Nova",
+      logicalCallKey: "nova:gateway-missing",
+      system: "Stable system prefix",
+      user: "Private prompt body",
+      temperature: 0.2,
+      effort: "low",
+      validateContent: () => true,
+    }),
+    (error) =>
+      error?.code === "NETLIFY_AI_GATEWAY_CONFIGURATION_MISSING" &&
+      error.retryable === false,
+  );
+  process.env.NETLIFY_AI_GATEWAY_KEY = ["gateway", "test", "key"].join("-");
+  await assert.rejects(
+    gateway.requestAgentCompletion({
+      job,
+      contractId: "nova",
+      agentId: "Nova",
+      logicalCallKey: "nova:invalid-high-effort",
+      system: "Stable system prefix",
+      user: "Private prompt body",
+      temperature: 0.2,
+      effort: "high",
+      validateContent: () => true,
+    }),
+    (error) => error?.code === "AI_AGENT_CONTRACT_INVALID",
+  );
+  assert.equal(providerCalls, 0);
+  const noPrematureReservation = await pg.query(
+    "select count(*)::integer as count from build_job_ai_calls where job_id = $1",
+    [job.id],
+  );
+  assert.equal(noPrematureReservation.rows[0].count, 0);
+
   const first = await gateway.requestAgentCompletion({
     job,
     contractId: "nova",
@@ -413,54 +691,84 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
   assert.equal(job.aiUsage.applicationCacheHitCount, 0);
   assert.equal(job.aiUsage.knownInputTokens, 12);
   assert.equal(job.aiUsage.knownCachedInputTokens, 0);
-  assert.equal(job.aiUsage.providerActualCostUsdTicks, "1000");
-  assert.equal(job.aiUsage.actualCostComplete, true);
+  assert.equal(job.aiUsage.providerActualCostUsdTicks, "0");
+  assert.equal(job.aiUsage.accountedCostUsdTicks, "2500000000");
+  assert.equal(job.aiUsage.actualCostComplete, false);
 
-  await assert.rejects(
-    gateway.requestAgentCompletion({
-      job,
-      contractId: "nova",
-      agentId: "Nova",
-      logicalCallKey: "nova:gateway-cost-breach",
-      system: "Stable system prefix",
-      user: "A second private prompt body",
-      temperature: 0.2,
-      effort: "low",
-      validateContent: () => true,
-    }),
-    (error) => {
-      assert.equal(error.code, "AI_COST_RESERVATION_EXCEEDED");
-      assert.equal(error.retryable, false);
-      return true;
-    },
-  );
+  const second = await gateway.requestAgentCompletion({
+    job,
+    contractId: "nova",
+    agentId: "Nova",
+    logicalCallKey: "nova:gateway-second",
+    system: "Stable system prefix",
+    user: "A second private prompt body",
+    temperature: 0.2,
+    effort: "low",
+    validateContent: () => true,
+  });
+  assert.equal(second.content, "gateway-result-2");
   assert.equal(providerCalls, 2);
   assert.equal(job.aiUsage.callCount, 2);
-  assert.equal(job.aiUsage.providerActualCostUsdTicks, "2500001001");
+  assert.equal(job.aiUsage.providerActualCostUsdTicks, "0");
+  assert.equal(job.aiUsage.accountedCostUsdTicks, "5000000000");
 
   await assert.rejects(
     gateway.requestAgentCompletion({
       job,
-      contractId: "atlas",
-      agentId: "Atlas",
-      logicalCallKey: "atlas:gateway-provider-failure",
-      system: "Stable architecture prefix",
-      user: "Private architecture input",
+      contractId: "iris",
+      agentId: "Iris",
+      logicalCallKey: "iris:gateway-provider-failure",
+      system: "Stable review prefix",
+      user: "Private review input",
       temperature: 0.2,
       effort: "low",
       validateContent: () => true,
     }),
     (error) => {
-      assert.equal(error.code, "XAI_HTTP_503");
+      assert.equal(error.code, "OPENAI_GATEWAY_HTTP_503");
       assert.equal(error.retryable, true);
       return true;
     },
   );
   assert.equal(job.aiUsage.callCount, 3);
   assert.equal(job.aiUsage.failedCallCount, 1);
-  assert.equal(job.aiUsage.unknownCostCallCount, 1);
+  assert.equal(job.aiUsage.unknownCostCallCount, 3);
   assert.equal(job.aiUsage.actualCostComplete, false);
-  assert.equal(job.aiUsage.accountedCostUsdTicks, "5500001001");
+  assert.equal(job.aiUsage.accountedCostUsdTicks, "7000000000");
+
+  const highDraft = await create.createBuildJobDraft({
+    prompt: "Exercise the high-effort Forge provider ceiling",
+    locale: "en",
+    mode: "generate",
+    currentHtml: null,
+  });
+  await queue.enqueueBuildJob({
+    job: highDraft.job,
+    idempotencyKey: `ai-gateway-high:${crypto.randomUUID()}`,
+    requestFingerprint: highDraft.requestFingerprint,
+  });
+  const highWorkerId = crypto.randomUUID();
+  const highJob = await queue.claimBuildJob(highDraft.job.id, highWorkerId);
+  assert.ok(highJob);
+  highJob.runtime = {
+    workerId: highWorkerId,
+    abortSignal: new AbortController().signal,
+  };
+  const high = await gateway.requestAgentCompletion({
+    job: highJob,
+    contractId: "forgeUi",
+    agentId: "Forge",
+    logicalCallKey: "forge:gateway-high-effort",
+    system: "Stable Forge system prefix",
+    user: "Private Forge input",
+    temperature: 0.2,
+    effort: "high",
+    validateContent: () => true,
+  });
+  assert.equal(high.content, "gateway-result-4");
+  assert.equal(providerCalls, 4);
+  assert.equal(highJob.aiUsage.accountedCostUsdTicks, "15000000000");
+  assert.equal(highJob.aiUsage.actualCostComplete, false);
 
   const calls = await pg.query(
     `select logical_call_key, status, provider, requested_model, input_tokens,
@@ -471,7 +779,7 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
      where job_id = $1
      order by case logical_call_key
        when 'nova:gateway-test' then 1
-       when 'nova:gateway-cost-breach' then 2
+       when 'nova:gateway-second' then 2
        else 3
      end`,
     [job.id],
@@ -486,9 +794,9 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
       row.maximum_cost_usd_ticks,
     ]),
     [
-      ["succeeded", "xai", "grok-4.5", 12, "2500000000"],
-      ["succeeded", "xai", "grok-4.5", 12, "2500000000"],
-      ["failed", "xai", "grok-4.5", null, "3000000000"],
+      ["succeeded", "openai", "gpt-5.6-terra", 12, "2500000000"],
+      ["succeeded", "openai", "gpt-5.6-terra", 12, "2500000000"],
+      ["failed", "openai", "gpt-5.6-terra", null, "2000000000"],
     ],
   );
   assert.match(calls.rows[0].request_sha256, /^[0-9a-f]{64}$/);
@@ -507,8 +815,8 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
   const abandonedCallId = crypto.randomUUID();
   await pg.query(
     `select reserve_build_job_ai_call(
-       $1, $2, $3, 'iris:abandoned', 0, 'Iris', 'iris', 'xai',
-       'grok-4.5', $4, 2000000000, 16, 2, 600000, 90000000000
+       $1, $2, $3, 'iris:abandoned', 0, 'Iris', 'iris', 'openai',
+       'gpt-5.6-terra', $4, 2000000000, 16, 2, 600000, 90000000000
      )`,
     [abandonedCallId, job.id, workerId, "d".repeat(64)],
   );
@@ -546,7 +854,7 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
   );
   assert.deepEqual(recoveredBudget.rows[0], {
     reserved: "0",
-    accounted: "7500001001",
+    accounted: "9000000000",
   });
 });
 

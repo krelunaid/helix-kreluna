@@ -7,11 +7,19 @@ import { createServer } from "vite";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 test("the DB-backed worker fails honestly and resumes a finalized checkpoint", async (t) => {
-  const previousKey = process.env.XAI_API_KEY;
-  delete process.env.XAI_API_KEY;
+  const previousEnabled = process.env.HELIX_AI_GATEWAY_ENABLED;
+  const previousKey = process.env.NETLIFY_AI_GATEWAY_KEY;
+  const previousBaseUrl = process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+  process.env.HELIX_AI_GATEWAY_ENABLED = "false";
+  delete process.env.NETLIFY_AI_GATEWAY_KEY;
+  delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
   t.after(() => {
-    if (previousKey === undefined) delete process.env.XAI_API_KEY;
-    else process.env.XAI_API_KEY = previousKey;
+    if (previousEnabled === undefined) delete process.env.HELIX_AI_GATEWAY_ENABLED;
+    else process.env.HELIX_AI_GATEWAY_ENABLED = previousEnabled;
+    if (previousKey === undefined) delete process.env.NETLIFY_AI_GATEWAY_KEY;
+    else process.env.NETLIFY_AI_GATEWAY_KEY = previousKey;
+    if (previousBaseUrl === undefined) delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+    else process.env.NETLIFY_AI_GATEWAY_BASE_URL = previousBaseUrl;
   });
 
   const vite = await createServer({
@@ -52,7 +60,7 @@ test("the DB-backed worker fails honestly and resumes a finalized checkpoint", a
   assert.equal(terminal.queue.status, "failed");
   assert.equal(terminal.status, "error");
   assert.equal(terminal.usedAi, false);
-  assert.match(terminal.error, /XAI_API_KEY_MISSING/);
+  assert.match(terminal.error, /HELIX_AI_DISABLED/);
 
   const attempts = await pg.query(
     `select attempt_number, outcome, error_code
@@ -64,7 +72,7 @@ test("the DB-backed worker fails honestly and resumes a finalized checkpoint", a
   assert.deepEqual(
     attempts.rows.map((row) => [row.attempt_number, row.outcome, row.error_code]),
     [
-      [1, "failed", "XAI_API_KEY_MISSING"],
+      [1, "failed", "HELIX_AI_DISABLED"],
     ],
   );
 
@@ -116,7 +124,7 @@ test("the DB-backed worker fails honestly and resumes a finalized checkpoint", a
   assert.equal(rejectedCorrupt.checkpoint.requestFingerprint, corrupt.requestFingerprint);
   assert.equal(rejectedCorrupt.checkpoint.stage, "queued");
   assert.equal(rejectedCorrupt.checkpoint.artifacts, undefined);
-  assert.match(rejectedCorrupt.error, /XAI_API_KEY_MISSING/);
+  assert.match(rejectedCorrupt.error, /HELIX_AI_DISABLED/);
 
   const resumed = await create.createBuildJobDraft({
     prompt: "Resume a fully validated persisted artifact",

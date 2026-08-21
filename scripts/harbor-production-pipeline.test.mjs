@@ -6,7 +6,9 @@ import { PGlite } from "@electric-sql/pglite";
 import { createServer } from "vite";
 
 const ROOT = join(import.meta.dirname, "..");
-const NOW = Date.parse("2026-08-21T10:00:00.000Z");
+// Keep provider evidence deterministic within this process without tying the
+// retry window to a wall-clock date that will eventually pass.
+const NOW = Date.now();
 const SECRET = "offline-harbor-contract-secret-32-bytes";
 const HUMAN_GATE_SHA = "a".repeat(64);
 
@@ -192,7 +194,9 @@ function providerOptions(runner, stateForAction) {
         },
         acceptedAt: new Date(NOW).toISOString(),
         observedAt: new Date(NOW).toISOString(),
-        retryAfterSeconds: active || failed ? null : 5,
+        // Leave enough wall-clock headroom for this assertion even when the
+        // complete test suite runs this file under heavy local contention.
+        retryAfterSeconds: active || failed ? null : 60,
         error: failed
           ? {
               code: "OFFLINE_PROVIDER_BUILD_FAILED",

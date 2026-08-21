@@ -11,29 +11,39 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function requestHash({ system, user }) {
+function requestHash({ system, user, userId }) {
   return sha256(
     JSON.stringify({
-      provider: "xai",
+      provider: "openai",
       contractId: "nova",
-      model: "grok-4.5",
+      model: "gpt-5.6-terra",
       system,
       user,
       maxOutputTokens: 1_200,
+      providerMaxOutputTokens: 1_200,
       temperature: 0.2,
       effort: "low",
+      safetyIdentifier: userId ? sha256(`helix-openai-safety:${userId}`) : null,
     }),
   );
 }
 
 test("authenticated AI response caching is isolated, evidenced and TTL-bound", async (t) => {
-  const previousKey = process.env.XAI_API_KEY;
+  const previousEnabled = process.env.HELIX_AI_GATEWAY_ENABLED;
+  const previousKey = process.env.NETLIFY_AI_GATEWAY_KEY;
+  const previousBaseUrl = process.env.NETLIFY_AI_GATEWAY_BASE_URL;
   const previousFetch = globalThis.fetch;
-  delete process.env.XAI_API_KEY;
+  delete process.env.HELIX_AI_GATEWAY_ENABLED;
+  delete process.env.NETLIFY_AI_GATEWAY_KEY;
+  delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
   t.after(() => {
     globalThis.fetch = previousFetch;
-    if (previousKey === undefined) delete process.env.XAI_API_KEY;
-    else process.env.XAI_API_KEY = previousKey;
+    if (previousEnabled === undefined) delete process.env.HELIX_AI_GATEWAY_ENABLED;
+    else process.env.HELIX_AI_GATEWAY_ENABLED = previousEnabled;
+    if (previousKey === undefined) delete process.env.NETLIFY_AI_GATEWAY_KEY;
+    else process.env.NETLIFY_AI_GATEWAY_KEY = previousKey;
+    if (previousBaseUrl === undefined) delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+    else process.env.NETLIFY_AI_GATEWAY_BASE_URL = previousBaseUrl;
   });
 
   const vite = await createServer({
@@ -71,18 +81,18 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
   const user = "Create the same private plan without calling the provider";
   const cacheKey = {
     userId: "cache-owner-a",
-    provider: "xai",
-    requestedModel: "grok-4.5",
+    provider: "openai",
+    requestedModel: "gpt-5.6-terra",
     contractId: "nova",
-    contractVersion: "2.0.0",
-    requestSha256: requestHash({ system, user }),
+    contractVersion: "3.0.0",
+    requestSha256: requestHash({ system, user, userId: "cache-owner-a" }),
   };
   await cache.writeAiResponseCache({
     key: cacheKey,
     result: {
-      provider: "xai",
-      requestedModel: "grok-4.5",
-      reportedModel: "grok-4.5-resolved",
+      provider: "openai",
+      requestedModel: "gpt-5.6-terra",
+      reportedModel: "gpt-5.6-terra",
       responseId: "provider-response-redacted-from-cache",
       content: "cached authenticated result",
       latencyMs: 91,
@@ -92,7 +102,7 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
         cachedInputTokens: 12,
         totalTokens: 107,
       },
-      cost: { usdTicks: "1234", kind: "provider_actual", pricingVersion: null },
+      cost: { usdTicks: null, kind: "unknown", pricingVersion: null },
       delivery: "provider",
     },
   });
@@ -116,6 +126,64 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
     job.runtime = { workerId, abortSignal: new AbortController().signal };
     return job;
   }
+
+  const legacySystem = "Legacy xAI cache segregation boundary";
+  const legacyUser = "This row must never satisfy a Terra request";
+  const legacyKey = {
+    userId: "cache-owner-a",
+    provider: "xai",
+    requestedModel: "grok-4.5",
+    contractId: "nova",
+    contractVersion: "2.0.0",
+    requestSha256: sha256(
+      JSON.stringify({
+        provider: "xai",
+        contractId: "nova",
+        model: "grok-4.5",
+        system: legacySystem,
+        user: legacyUser,
+        maxOutputTokens: 1_200,
+        temperature: 0.2,
+        effort: "low",
+      }),
+    ),
+  };
+  await cache.writeAiResponseCache({
+    key: legacyKey,
+    result: {
+      provider: "xai",
+      requestedModel: "grok-4.5",
+      reportedModel: "grok-4.5",
+      responseId: null,
+      content: "legacy xAI cache row",
+      latencyMs: 1,
+      usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, totalTokens: 2 },
+      cost: { usdTicks: null, kind: "unknown", pricingVersion: null },
+      delivery: "provider",
+    },
+  });
+  let unexpectedProviderCalls = 0;
+  globalThis.fetch = async () => {
+    unexpectedProviderCalls += 1;
+    throw new Error("provider must remain disabled");
+  };
+  const legacyBoundaryJob = await claimedJob({ userId: "cache-owner-a" });
+  await assert.rejects(
+    gateway.requestAgentCompletion({
+      job: legacyBoundaryJob,
+      contractId: "nova",
+      agentId: "Nova",
+      logicalCallKey: "nova:legacy-cache-segregation",
+      system: legacySystem,
+      user: legacyUser,
+      temperature: 0.2,
+      effort: "low",
+      validateContent: () => true,
+    }),
+    (error) => error?.code === "HELIX_AI_DISABLED",
+  );
+  assert.equal(unexpectedProviderCalls, 0);
+  assert.equal(legacyBoundaryJob.aiUsage, undefined);
 
   const ownerJob = await claimedJob({ userId: "cache-owner-a" });
   const hit = await gateway.requestAgentCompletion({
@@ -169,6 +237,7 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
   assert.equal(evidence.rows[0].request_sha256, cacheKey.requestSha256);
   assert.equal(evidence.rows[0].provider_calls, 0);
 
+  process.env.HELIX_AI_GATEWAY_ENABLED = "true";
   const otherOwnerJob = await claimedJob({ userId: "cache-owner-b" });
   await assert.rejects(
     gateway.requestAgentCompletion({
@@ -182,7 +251,7 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
       effort: "low",
       validateContent: (content) => content === "cached authenticated result",
     }),
-    /XAI_API_KEY_MISSING/,
+    /NETLIFY_AI_GATEWAY_CONFIGURATION_MISSING/,
   );
 
   const guestJob = await claimedJob({ userId: undefined });
@@ -198,7 +267,7 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
       effort: "low",
       validateContent: (content) => content === "cached authenticated result",
     }),
-    /XAI_API_KEY_MISSING/,
+    /NETLIFY_AI_GATEWAY_CONFIGURATION_MISSING/,
   );
   const unauthorizedHits = await pg.query(
     `select count(*)::integer as count
@@ -212,8 +281,18 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
     `update ai_response_cache
      set created_at = now() - interval '2 seconds',
          expires_at = now() - interval '1 second'
-     where user_id = $1`,
-    [cacheKey.userId],
+     where user_id = $1
+       and provider = $2
+       and requested_model = $3
+       and contract_id = $4
+       and request_sha256 = $5`,
+    [
+      cacheKey.userId,
+      cacheKey.provider,
+      cacheKey.requestedModel,
+      cacheKey.contractId,
+      cacheKey.requestSha256,
+    ],
   );
   assert.equal(await cache.readAiResponseCache(cacheKey), null);
   const purged = await pg.query("select purge_expired_ai_response_cache(10) as count");
@@ -228,8 +307,8 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
   await cache.writeAiResponseCache({
     key: corruptKey,
     result: {
-      provider: "xai",
-      requestedModel: "grok-4.5",
+      provider: "openai",
+      requestedModel: "gpt-5.6-terra",
       reportedModel: null,
       responseId: null,
       content: "integrity-bound content",
@@ -248,7 +327,8 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
   );
   assert.equal(corruptRows.rows[0].count, 0);
 
-  process.env.XAI_API_KEY = "cache-placeholder-key";
+  process.env.NETLIFY_AI_GATEWAY_KEY = "cache-placeholder-key";
+  process.env.NETLIFY_AI_GATEWAY_BASE_URL = "https://gateway.test";
   const sourceHtml = `<!doctype html><html><head><title>Source</title></head><body><main>${"source interaction ".repeat(
     28,
   )}</main><script>document.body.dataset.ready = "true";</script></body></html>`;
@@ -256,8 +336,14 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
     28,
   )}</main><button id="primary">Continue</button><script>document.querySelector("#primary").addEventListener("click", () => { document.body.dataset.clicked = "true"; });</script></body></html>`;
   let providerCalls = 0;
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (url, init) => {
     providerCalls += 1;
+    assert.equal(url, "https://gateway.test/v1/chat/completions");
+    const request = JSON.parse(init.body);
+    assert.equal(request.model, "gpt-5.6-terra");
+    assert.equal(request.store, false);
+    assert.match(request.safety_identifier, /^[0-9a-f]{64}$/);
+    assert.doesNotMatch(JSON.stringify(request), /cache-owner-a/);
     const content =
       providerCalls === 1
         ? "This is not an HTML document"
@@ -267,14 +353,13 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
     return new Response(
       JSON.stringify({
         id: `cache-boundary-provider-${providerCalls}`,
-        model: providerCalls <= 2 ? "grok-4.6" : "grok-4.5",
-        choices: [{ message: { content } }],
+        model: "gpt-5.6-terra",
+        choices: [{ finish_reason: "stop", message: { content, refusal: null } }],
         usage: {
           prompt_tokens: 20,
           completion_tokens: 10,
           total_tokens: 30,
           prompt_tokens_details: { cached_tokens: 0 },
-          cost_in_usd_ticks: 1000,
         },
       }),
       { status: 200, headers: { "content-type": "application/json" } },
@@ -318,14 +403,18 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
   const invalidRowUser = "Return the provider-valid cache replacement";
   const invalidRowKey = {
     ...cacheKey,
-    requestSha256: requestHash({ system: invalidRowSystem, user: invalidRowUser }),
+    requestSha256: requestHash({
+      system: invalidRowSystem,
+      user: invalidRowUser,
+      userId: "cache-owner-a",
+    }),
   };
   await cache.writeAiResponseCache({
     key: invalidRowKey,
     result: {
-      provider: "xai",
-      requestedModel: "grok-4.5",
-      reportedModel: "grok-4.5",
+      provider: "openai",
+      requestedModel: "gpt-5.6-terra",
+      reportedModel: "gpt-5.6-terra",
       responseId: null,
       content: "preexisting contract-invalid content",
       latencyMs: 1,

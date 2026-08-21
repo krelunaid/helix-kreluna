@@ -159,12 +159,15 @@ async function accountState(pg) {
   return { balance: balance.rows[0].credits_balance, ledger: ledger.rows };
 }
 
-test("the legacy preview endpoint is retired with a typed 410 and no direct xAI path", () => {
+test("the legacy preview endpoint is retired with a typed 410 and no direct provider path", () => {
   assert.match(vetraSource, /class LegacyGeneratorRetiredError extends Error/);
   assert.match(vetraSource, /readonly code = "LEGACY_GENERATOR_RETIRED"/);
   assert.match(vetraSource, /readonly status = 410/);
   assert.match(vetraSource, /throw new LegacyGeneratorRetiredError\(\)/);
-  assert.doesNotMatch(vetraSource, /function generateHtml|api\.x\.ai|XAI_API_KEY/);
+  assert.doesNotMatch(
+    vetraSource,
+    /function generateHtml|api\.x\.ai|XAI_API_KEY|NETLIFY_AI_GATEWAY_(?:KEY|BASE_URL)/,
+  );
   assert.match(vetraSource, /event: "build_job_dispatch_deferred"/);
   assert.equal(vetraSource.match(/await dispatchCommittedBuildJob\(jobId\)/g)?.length, 2);
 });

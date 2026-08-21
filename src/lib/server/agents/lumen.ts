@@ -8,7 +8,7 @@ import {
   type DesignSelection,
   type ProductPlan,
 } from "@/lib/server/agents/types";
-import { chatModel } from "@/lib/server/grok/chat";
+import { chatModel } from "@/lib/server/ai/chat";
 import { lumenSystemPrompt } from "@/lib/server/prompts/helix";
 
 export async function agentDesign(

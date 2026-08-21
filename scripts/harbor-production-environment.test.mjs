@@ -43,7 +43,7 @@ test("manual hosted runtimes fail closed without NETLIFY=true", async (t) => {
     BETTER_AUTH_URL: "https://helix.example.test",
     GROK_AUTH_CLIENT_ID: "offline-client-id",
     GROK_AUTH_CLIENT_SECRET: "S".repeat(32),
-    XAI_API_KEY: "offline-key",
+    HELIX_AI_GATEWAY_ENABLED: "false",
     HELIX_QUEUE_DISPATCH_SECRET: "Q".repeat(32),
     GITHUB_TOKEN_ENCRYPTION_KEY: "1".repeat(64),
     GITHUB_TOKEN_KEY_VERSION: "v1",
@@ -51,6 +51,30 @@ test("manual hosted runtimes fail closed without NETLIFY=true", async (t) => {
   assert.equal(hosted.isHostedRuntime, true);
   assert.equal(hosted.isNetlify, true);
   assert.equal(hosted.isProduction, true);
+  assert.equal(hosted.aiGatewayEnabled, false);
+
+  assert.doesNotThrow(() =>
+    environment.validateServerEnvironment({
+      ...hosted,
+      HELIX_AI_GATEWAY_ENABLED: "true",
+    }),
+  );
+  assert.throws(
+    () =>
+      environment.validateServerEnvironment({
+        ...hosted,
+        HELIX_AI_GATEWAY_ENABLED: "true",
+        NETLIFY_AI_GATEWAY_KEY: ["partial", "runtime", "pair"].join("-"),
+      }),
+    /NETLIFY_AI_GATEWAY_BASE_URL/u,
+  );
+  const hostedWithAi = environment.validateServerEnvironment({
+    ...hosted,
+    HELIX_AI_GATEWAY_ENABLED: "true",
+    NETLIFY_AI_GATEWAY_KEY: ["offline", "netlify", "gateway", "key"].join("-"),
+    NETLIFY_AI_GATEWAY_BASE_URL: "https://gateway.example.test",
+  });
+  assert.equal(hostedWithAi.aiGatewayEnabled, true);
 
   const netlifyDatabaseHosted = environment.validateServerEnvironment({
     ...hosted,

@@ -1,9 +1,10 @@
 /**
  * Provider-neutral AI completion contracts.
  *
- * Costs use xAI's integer USD ticks end-to-end when the provider supplies
- * them. One USD is 10^10 ticks. Decimal strings keep the value exact and JSON
- * safe; callers must never turn ticks into a floating-point source of truth.
+ * Costs use integer USD ticks end-to-end when a provider supplies authoritative
+ * invoiced evidence. One USD is 10^10 ticks. Decimal strings keep the value
+ * exact and JSON safe; callers must never turn ticks into a floating-point
+ * source of truth.
  */
 export type UsdTicks = string & { readonly __usdTicks: unique symbol };
 
@@ -29,10 +30,15 @@ export type AiCompletionRequest = Readonly<{
   model: string;
   system: string;
   user: string | AiContentPart[];
+  /** Visible artifact budget declared by the agent contract. */
   maxOutputTokens: number;
+  /** Provider ceiling including any hidden reasoning tokens. */
+  providerMaxOutputTokens: number;
   timeoutMs: number;
   temperature: number;
   effort?: "low" | "high";
+  /** Stable one-way user identifier for provider-side abuse detection. */
+  safetyIdentifier?: string;
   signal?: AbortSignal;
 }>;
 

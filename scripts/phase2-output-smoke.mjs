@@ -11,7 +11,9 @@ const auth401Mode = process.argv.includes("--auth-401");
 delete process.env.NETLIFY;
 delete process.env.DATABASE_URL;
 delete process.env.NETLIFY_DB_URL;
-delete process.env.XAI_API_KEY;
+process.env.HELIX_AI_GATEWAY_ENABLED = "false";
+delete process.env.NETLIFY_AI_GATEWAY_KEY;
+delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
 process.env.BETTER_AUTH_URL = "http://localhost:8080";
 if (auth401Mode) {
   process.env.VITE_AUTH_ENABLED = "true";

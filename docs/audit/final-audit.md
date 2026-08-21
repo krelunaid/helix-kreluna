@@ -8,20 +8,20 @@ Commit di base: `a194ffce842db62bfa2d32ded52ea199f50f189e`
 
 ## Verdetto
 
-**Il supporto Netlify Database è stabilizzato localmente; l'esatto SHA finale non è ancora verificato end-to-end sui provider.**
+**Il supporto Netlify Database e la migrazione dell'inference a OpenAI `gpt-5.6-terra` tramite Netlify AI Gateway sono stabilizzati localmente; l'esatto SHA finale non è ancora verificato end-to-end sui provider.**
 
 - Requisiti 1–62: **38 RISOLTO_LOCALMENTE / 2 PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING / 22 PARZIALE_ESTERNO / 0 MANCANTE**.
 - Definition of Done: **16 RISOLTO_LOCALMENTE / 2 PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING / 2 PARZIALE_ESTERNO / 0 MANCANTE**.
 - P0/P1 locali aperti: **0**.
 - P1 operativo esterno: **1**, limitato a una credenziale OAuth preview ancora presente nella storia Git raggiungibile.
 
-`RISOLTO_LOCALMENTE` significa che il comportamento è implementato e coperto da prove locali pertinenti. Non implica un deploy, un pagamento, una chiamata AI, un browser runner, un database gestito o una submission Store reali. `PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING` significa che esiste prova reale su commit precedenti al diff corrente: Netlify funzionale su `3e0af1e3a6047fc13e34972e62ae243f30b203fa` e CI/CodeQL su `a3a25556d7369f454e8a976f3dd1e7a0c8395e74`, ma non sull'esatto SHA finale di questo snapshot. `PARZIALE_ESTERNO` significa che il percorso locale è implementato e fail-closed, ma l'accettazione completa richiede credenziali, infrastruttura o prove esterne non autorizzate/disponibili. `MANCANTE` significa che manca ancora la capacità locale centrale.
+`RISOLTO_LOCALMENTE` significa che il comportamento è implementato e coperto da prove locali pertinenti. Non implica un deploy, un pagamento, una chiamata AI, un browser runner, un database gestito o una submission Store reali. `PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING` significa che esiste prova reale su commit precedenti al diff corrente: Netlify funzionale su `3e0af1e3a6047fc13e34972e62ae243f30b203fa`, branch preview su `a3a25556d7369f454e8a976f3dd1e7a0c8395e74` e CI/CodeQL su `842f7bee72a9503271f3c9ab8fc5f80c74a68764`, ma non sull'esatto SHA finale della migrazione Terra di questo snapshot. `PARZIALE_ESTERNO` significa che il percorso locale è implementato e fail-closed, ma l'accettazione completa richiede credenziali, infrastruttura o prove esterne non autorizzate/disponibili. `MANCANTE` significa che manca ancora la capacità locale centrale.
 
 ## Confine delle prove
 
 - Nessun servizio esterno è stato simulato come prova di produzione.
-- Non sono state eseguite chiamate xAI fatturate, transazioni Stripe, migrazioni DB remote, EAS build, signing o submission Store. È stato creato un Netlify Database, ancora senza migrazioni applicate, ed è stata deployata una branch preview isolata del commit `a3a25556d7369f454e8a976f3dd1e7a0c8395e74`; la preview non è operativa perché mancano nuove credenziali Grok OAuth e xAI. Il diff Netlify Database corrente non è stato deployato.
-- Il sito precedente sul commit `3e0af1e` resta live su Netlify. Il commit `a3a25556d7369f454e8a976f3dd1e7a0c8395e74` è pubblicato sul ramo e ha CI e CodeQL verdi; la sua branch preview isolata fallisce chiusa per le credenziali esterne mancanti. Il supporto Netlify Database descritto qui è ancora un diff locale non pubblicato né verificato da CI al momento di questo snapshot.
+- Non sono state eseguite chiamate AI fatturate (né xAI storiche né OpenAI `gpt-5.6-terra`), transazioni Stripe, migrazioni DB remote, EAS build, signing o submission Store. È stato creato un Netlify Database, ancora senza migrazioni applicate, ed è stata deployata una branch preview isolata del commit `a3a25556d7369f454e8a976f3dd1e7a0c8395e74`; quella preview precedente non è operativa perché mancano nuove credenziali Grok OAuth e la configurazione AI allora basata su xAI. Il diff corrente, che migra l'inference a Netlify AI Gateway e la mantiene disabilitata per default, non è stato deployato.
+- Il sito precedente sul commit `3e0af1e` resta live su Netlify. La branch preview isolata di `a3a25556d7369f454e8a976f3dd1e7a0c8395e74` fallisce chiusa per le credenziali esterne mancanti. Il commit `842f7bee72a9503271f3c9ab8fc5f80c74a68764`, che integra Netlify Database, è pubblicato sul ramo e ha CI e CodeQL verdi; soltanto la migrazione Terra corrente è ancora un diff locale senza SHA hosted al momento di questo snapshot.
 - Non sono stati eseguiti merge o force push, né cancellati rami o file.
 - Il runner Production, Twin, Warden, Nimbus, Augur e Store falliscono chiusi quando mancano adapter, evidence o credenziali reali.
 - La QA Chrome descritta sotto è una verifica manuale della build locale compilata; non è un report Twin remoto firmato.
@@ -34,7 +34,7 @@ Ambiente locale: Node `22.23.2`, npm `10.9.8`. L'installazione esistente è stat
 | --- | --- |
 | TypeScript strict | PASS |
 | ESLint completo | PASS, 0 errori; 5 warning legacy `react-refresh` in `src/lib/i18n.tsx` |
-| Suite completa | PASS, **410/410** |
+| Suite completa | PASS, **413/413** |
 | Build client/SSR | PASS |
 | Smoke output Netlify | PASS |
 | Secret scan worktree | PASS, 0 finding |
@@ -64,7 +64,7 @@ Risultato: cambi di stato visibili e coerenti, **0 errori e 0 warning console** 
 
 | # | Stato | Evidenza locale o limite residuo |
 | ---: | --- | --- |
-| 1 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | Il sito live sul commit `3e0af1e` serve frontend e funzioni server reali. Una branch preview isolata di `a3a2555` è stata creata, ma fallisce chiusa perché mancano nuove credenziali Grok OAuth e xAI. Build e smoke del diff Netlify Database sono verdi; il diff non è ancora deployato. |
+| 1 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | Il sito live sul commit `3e0af1e` serve frontend e funzioni server reali. Una branch preview isolata di `a3a2555` è stata creata, ma fallisce chiusa perché mancano nuove credenziali Grok OAuth e la configurazione AI allora basata su xAI. Il diff corrente usa Terra tramite Netlify AI Gateway, disabilitato per default, e non è ancora deployato. |
 | 2 | RISOLTO_LOCALMENTE | Inventario env, gruppi all-or-none e startup fail-closed. Nei runtime hosted è obbligatorio `DATABASE_URL` oppure la connessione SDK `NETLIFY_DB_URL`; nei runtime Netlify l'SDK è l'autorità unica per app e Better Auth, i contesti branch rifiutano URL divergenti e non ripiegano su PGLite. Solo il locale conserva PGLite; queue, Stripe e limiti guest non ricadono nei fallback locali. |
 | 3 | PARZIALE_ESTERNO | Worktree senza secret e scanner history-aware; revoca/rotazione provider e bonifica storia non eseguite. |
 | 4 | PARZIALE_ESTERNO | Checkout hosted, webhook raw-body verificato, inbox, ledger, subscription/top-up e Portal mode-aware implementati; nessun flusso Stripe Test Mode reale. |
@@ -122,7 +122,7 @@ Risultato: cambi di stato visibili e coerenti, **0 errori e 0 warning console** 
 | 56 | RISOLTO_LOCALMENTE | Limiti di costo/call/retry/durata con reserve/settle atomici. |
 | 57 | RISOLTO_LOCALMENTE | Response cache persistente tenant/provider/model/contract-bound, validata prima del riuso. |
 | 58 | RISOLTO_LOCALMENTE | Registry provider esplicito e nessun fallback automatico. |
-| 59 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | CI e CodeQL GitHub-hosted sono verdi su `a3a25556d7369f454e8a976f3dd1e7a0c8395e74`; il diff Netlify Database attende la propria verifica hosted sull'esatto SHA finale. |
+| 59 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | CI e CodeQL GitHub-hosted sono verdi su `842f7bee72a9503271f3c9ab8fc5f80c74a68764`, che include il supporto Netlify Database; la migrazione Terra attende la verifica hosted sull'esatto SHA finale. |
 | 60 | RISOLTO_LOCALMENTE | Suite locale copre accesso, guest, crediti, billing, queue, gate, provider failure, score, deploy/store e locale. |
 | 61 | PARZIALE_ESTERNO | Warden ha source autenticata, freshness, dedupe, persistenza e policy senza autopublish; monitoring reale assente. |
 | 62 | PARZIALE_ESTERNO | Nimbus decide runtime/DB/storage/CDN/costi da evidence verificata e resta fail-closed; provisioning/provider live assenti. |
@@ -131,7 +131,7 @@ Risultato: cambi di stato visibili e coerenti, **0 errori e 0 warning console** 
 
 | # | Stato | Valutazione |
 | ---: | --- | --- |
-| 1 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | Frontend e funzioni server reali sono stati probati sul deploy Netlify di `3e0af1e`; la branch preview di `a3a2555` resta bloccata dalle credenziali Grok OAuth e xAI mancanti e il diff corrente non è stato deployato. |
+| 1 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | Frontend e funzioni server reali sono stati probati sul deploy Netlify di `3e0af1e`; la branch preview di `a3a2555` resta bloccata dalle credenziali Grok OAuth e dalla configurazione AI storica mancante. La migrazione corrente a Terra/Netlify AI Gateway non è stata deployata. |
 | 2 | PARZIALE_ESTERNO | Worktree senza secret; la storia contiene ancora la credenziale OAuth preview. |
 | 3 | RISOLTO_LOCALMENTE | Nessun piano/top-up accredita senza evento di pagamento server-side verificato. |
 | 4 | RISOLTO_LOCALMENTE | Crediti atomici e idempotenti. |
@@ -149,8 +149,8 @@ Risultato: cambi di stato visibili e coerenti, **0 errori e 0 warning console** 
 | 16 | RISOLTO_LOCALMENTE | Card e routing usano le app preview reali. |
 | 17 | RISOLTO_LOCALMENTE | Prototype e Production distinti. |
 | 18 | RISOLTO_LOCALMENTE | Production crea workspace multi-file reale e validabile. |
-| 19 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | CI e CodeQL GitHub-hosted sono verdi su `a3a25556d7369f454e8a976f3dd1e7a0c8395e74`; il diff Netlify Database attende commit, push e run hosted sul proprio SHA. |
-| 20 | RISOLTO_LOCALMENTE | Typecheck, lint, **410/410** test, build client/SSR e smoke Netlify locali verdi. |
+| 19 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | CI e CodeQL GitHub-hosted sono verdi su `842f7bee72a9503271f3c9ab8fc5f80c74a68764`; la migrazione Terra attende commit, push e run hosted sul proprio SHA. |
+| 20 | RISOLTO_LOCALMENTE | Typecheck, lint, **413/413** test, build client/SSR e smoke Netlify locali verdi. |
 
 ## P1 operativo esterno: secret OAuth nella storia
 
@@ -166,9 +166,9 @@ La riscrittura/force push è incompatibile con il divieto esplicito corrente e n
 
 ## Attivazioni e prove esterne ancora necessarie
 
-1. Il Netlify Database è stato creato; il diff locale integra `@netlify/database` `2.0.0`, usa una sola connessione SDK-authoritative, isola branch/deploy preview e applica le migrazioni `0001`–`0025` soltanto dopo una build verde. Restano da applicare le migrazioni remote e da configurare nuove credenziali `GROK_AUTH_CLIENT_ID`, `GROK_AUTH_CLIENT_SECRET` e `XAI_API_KEY`; dopo commit/push va deployata una preview dell'esatto SHA finale e vanno probati SSR, server function, API, auth, CSP e scheduled/background functions.
+1. Il Netlify Database è stato creato e il commit pubblicato `842f7bee72a9503271f3c9ab8fc5f80c74a68764` integra `@netlify/database` `2.0.0`, usa una sola connessione SDK-authoritative, isola branch/deploy preview e applica le migrazioni `0001`–`0025` soltanto dopo una build verde. Restano da applicare le migrazioni remote e da configurare nuove credenziali `GROK_AUTH_CLIENT_ID` / `GROK_AUTH_CLIENT_SECRET` per il broker OAuth. L'inference usa OpenAI `gpt-5.6-terra`: resta disabilitata finché il runtime non imposta esplicitamente `HELIX_AI_GATEWAY_ENABLED=true` e non riceve insieme `NETLIFY_AI_GATEWAY_KEY` / `NETLIFY_AI_GATEWAY_BASE_URL`. Dopo commit/push della migrazione Terra va deployata una preview dell'esatto SHA finale e vanno probati SSR, server function, API, auth, CSP e scheduled/background functions.
 2. Stripe Test Mode/Test Clock con Checkout, webhook provider, invoice, rinnovo, cancellazione, failure e Portal reali.
-3. Esecuzione xAI fatturata con telemetria confrontata al provider e limiti provider-side.
+3. Esecuzione fatturata di OpenAI `gpt-5.6-terra` tramite Netlify AI Gateway, con telemetria confrontata ai dati Netlify/OpenAI e limiti provider-side; nessuna chiamata a pagamento è stata autorizzata in questo audit.
 4. Workspace/Twin runner remoti con isolamento, egress, replay store e report firmati osservati.
 5. Verifica reale del Netlify Database gestito, dell'auth, dello storage e delle integrazioni per un workspace Production.
 6. Fonti reali per Warden, Nimbus e Augur; nessun provisioning automatico senza approvazione.
@@ -176,4 +176,4 @@ La riscrittura/force push è incompatibile con il divieto esplicito corrente e n
 8. Run GitHub-hosted di CI/CodeQL sull'esatto SHA finale, oltre a Dependabot e required checks/branch protection.
 9. EAS, Apple e Google con signing e submission evidence reali, incluso un Google Play release ID specifico e verificato.
 
-Questi punti non sono sostituibili con fixture locali e richiedono nuove credenziali o autorizzazioni esplicite. Il sito del commit `3e0af1e` resta pubblicato; la branch preview di `a3a2555` esiste ma non è operativa senza le credenziali esterne. Il diff Netlify Database descritto qui resta localmente stabilizzato e fail-closed, ma non viene dichiarato deployato o verificato end-to-end sui provider.
+Questi punti non sono sostituibili con fixture locali e richiedono nuove credenziali o autorizzazioni esplicite. Il sito del commit `3e0af1e` resta pubblicato; la branch preview di `a3a2555` esiste ma non è operativa senza le credenziali esterne. Il supporto Netlify Database è pubblicato nel commit `842f7bee`; la migrazione Terra/Netlify AI Gateway di questo snapshot resta localmente stabilizzata e fail-closed, ma non viene dichiarata deployata, fatturata o verificata end-to-end sui provider.

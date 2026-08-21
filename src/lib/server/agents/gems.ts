@@ -2,7 +2,7 @@ import { AGENT_CONTRACTS } from "@/lib/server/agents/contracts";
 import { parseAgentJson } from "@/lib/server/agents/json";
 import { sha256Hex } from "@/lib/server/agents/patch";
 import { AgentOutputError, type AgentGemInput, type GemPatch } from "@/lib/server/agents/types";
-import { chatModel } from "@/lib/server/grok/chat";
+import { chatModel } from "@/lib/server/ai/chat";
 import { gemSystemPrompt } from "@/lib/server/prompts/helix";
 
 export async function agentGem(input: AgentGemInput): Promise<GemPatch> {

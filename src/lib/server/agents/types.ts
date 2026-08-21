@@ -219,7 +219,7 @@ export type ChatContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
-export type ChatGrokOptions = {
+export type ChatModelOptions = {
   system: string;
   user: string | ChatContentPart[];
   maxTokens: number;

@@ -30,11 +30,11 @@ test("Helix keeps orchestration, agents, model transport and state in bounded mo
     "src/lib/server/agents/lumen.ts",
     "src/lib/server/agents/forge.ts",
     "src/lib/server/agents/gems.ts",
-    "src/lib/server/grok/chat.ts",
+    "src/lib/server/ai/chat.ts",
   ]) {
     assert.ok(read(path).trim().length > 0, `${path} must be a real module`);
   }
-  const chat = read("src/lib/server/grok/chat.ts");
+  const chat = read("src/lib/server/ai/chat.ts");
   assert.match(chat, /function chatModel/);
   assert.match(chat, /event: "ai_provider_request_failed"/);
   assert.doesNotMatch(chat, /function chatGrok|event: "xai_request_failed"/);
@@ -42,7 +42,7 @@ test("Helix keeps orchestration, agents, model transport and state in bounded mo
   const serverSources = [
     orchestrator,
     read("src/lib/server/orchestrator/state.ts"),
-    read("src/lib/server/grok/chat.ts"),
+    read("src/lib/server/ai/chat.ts"),
     read("src/lib/server/agents/nova.ts"),
     read("src/lib/server/agents/atlas.ts"),
     read("src/lib/server/agents/lumen.ts"),

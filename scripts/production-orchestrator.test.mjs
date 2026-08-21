@@ -261,20 +261,24 @@ async function startSignedRunner(secret) {
 test("Production orchestration persists an immutable candidate before fail-closed validation", async (t) => {
   const priorUrl = process.env.HELIX_WORKSPACE_RUNNER_URL;
   const priorSecret = process.env.HELIX_WORKSPACE_RUNNER_SECRET;
-  const priorKey = process.env.XAI_API_KEY;
+  const priorEnabled = process.env.HELIX_AI_GATEWAY_ENABLED;
+  const priorKey = process.env.NETLIFY_AI_GATEWAY_KEY;
+  const priorBaseUrl = process.env.NETLIFY_AI_GATEWAY_BASE_URL;
   const priorFetch = globalThis.fetch;
   const priorNimbusEnvironment = Object.fromEntries(
     NIMBUS_ENVIRONMENT_NAMES.map((name) => [name, process.env[name]]),
   );
   let nimbusDecision;
   const nimbusRequests = [];
-  process.env.XAI_API_KEY = [
+  process.env.HELIX_AI_GATEWAY_ENABLED = "true";
+  process.env.NETLIFY_AI_GATEWAY_KEY = [
     "controlled",
     "production",
     "orchestrator",
-    "test",
+    "gateway",
     "key",
   ].join("-");
+  process.env.NETLIFY_AI_GATEWAY_BASE_URL = "https://gateway.test";
   Object.assign(process.env, NIMBUS_ENVIRONMENT);
   globalThis.fetch = async (url, init) => {
     if (String(url) === NIMBUS_ENVIRONMENT.HELIX_NIMBUS_EVIDENCE_URL) {
@@ -290,22 +294,28 @@ test("Production orchestration persists an immutable candidate before fail-close
         { status: 200, headers: { "content-type": "application/json" } },
       );
     }
-    if (String(url) !== "https://api.x.ai/v1/chat/completions") {
+    if (String(url) !== "https://gateway.test/v1/chat/completions") {
       return priorFetch(url, init);
     }
     const request = JSON.parse(String(init?.body ?? "{}"));
+    assert.equal(request.model, "gpt-5.6-terra");
+    assert.equal(request.store, false);
     const system = String(request.messages?.[0]?.content ?? "");
     return new Response(
       JSON.stringify({
         id: `controlled-${crypto.randomUUID()}`,
         model: request.model,
-        choices: [{ message: { content: controlledProductionCompletion(system) } }],
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { content: controlledProductionCompletion(system), refusal: null },
+          },
+        ],
         usage: {
           prompt_tokens: 30,
           completion_tokens: 20,
           total_tokens: 50,
           prompt_tokens_details: { cached_tokens: 0 },
-          cost_in_usd_ticks: "1000",
         },
       }),
       { status: 200, headers: { "content-type": "application/json" } },
@@ -324,8 +334,12 @@ test("Production orchestration persists an immutable candidate before fail-close
     else process.env.HELIX_WORKSPACE_RUNNER_URL = priorUrl;
     if (priorSecret === undefined) delete process.env.HELIX_WORKSPACE_RUNNER_SECRET;
     else process.env.HELIX_WORKSPACE_RUNNER_SECRET = priorSecret;
-    if (priorKey === undefined) delete process.env.XAI_API_KEY;
-    else process.env.XAI_API_KEY = priorKey;
+    if (priorEnabled === undefined) delete process.env.HELIX_AI_GATEWAY_ENABLED;
+    else process.env.HELIX_AI_GATEWAY_ENABLED = priorEnabled;
+    if (priorKey === undefined) delete process.env.NETLIFY_AI_GATEWAY_KEY;
+    else process.env.NETLIFY_AI_GATEWAY_KEY = priorKey;
+    if (priorBaseUrl === undefined) delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+    else process.env.NETLIFY_AI_GATEWAY_BASE_URL = priorBaseUrl;
     for (const name of NIMBUS_ENVIRONMENT_NAMES) {
       const value = priorNimbusEnvironment[name];
       if (value === undefined) delete process.env[name];

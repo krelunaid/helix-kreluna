@@ -2,7 +2,7 @@ import type { BuildJob } from "@/lib/agent-types";
 import { AGENT_CONTRACTS } from "@/lib/server/agents/contracts";
 import { parseAgentJson } from "@/lib/server/agents/json";
 import { AgentOutputError, type Architecture, type ProductPlan } from "@/lib/server/agents/types";
-import { chatModel } from "@/lib/server/grok/chat";
+import { chatModel } from "@/lib/server/ai/chat";
 import { atlasSystemPrompt } from "@/lib/server/prompts/helix";
 
 export async function agentArchitecture(
