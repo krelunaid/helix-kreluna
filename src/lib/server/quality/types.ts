@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AugurCapacityEvidence } from "@/lib/capacity-evidence";
 
 export const QualityFindingSchema = z
   .object({
@@ -350,4 +351,17 @@ export type BuildQualityEvidence = {
   twin?: TwinBrowserReport;
   echo?: EchoAccessibilityReport;
   swift?: SwiftPerformanceReport;
+  /**
+   * Privileged, persisted evidence supplied by a load/infrastructure pipeline.
+   * The server-only Augur boundary accepts this contract only from an
+   * authenticated, fresh, replay-protected source; it never invents a profile
+   * when the source is absent.
+   */
+  capacity?: AugurCapacityEvidence;
+  /**
+   * Immutable deploy identity from the deployment registry. Augur requires it
+   * independently of the evidence bundle so a self-declared deploy hash cannot
+   * authorize a forecast.
+   */
+  capacityDeploySha256?: string;
 };

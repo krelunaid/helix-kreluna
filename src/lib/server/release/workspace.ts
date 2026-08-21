@@ -1,4 +1,5 @@
 import type { BuildJob } from "@/lib/agent-types";
+import { HELIX_PIPELINE_VERSION } from "@/lib/server/jobs/pipeline";
 import { sealWorkspace, type WorkspaceCapability, type WorkspaceValidation } from "@/lib/workspace";
 
 function unconfiguredCapability(
@@ -172,7 +173,7 @@ export async function sealBuildJobWorkspace(job: BuildJob): Promise<void> {
     jobId: job.id,
     projectId: job.projectId,
     locale: job.locale,
-    pipelineVersion: job.checkpoint?.pipelineVersion ?? "helix-v2",
+    pipelineVersion: job.checkpoint?.pipelineVersion ?? HELIX_PIPELINE_VERSION,
     createdAt: job.createdAt,
     buildLevel: job.buildLevel,
     entrypoint: "index.html",

@@ -46,11 +46,17 @@ export type AiCompletionResult = Readonly<{
   latencyMs: number;
   usage: AiTokenUsage;
   cost: AiCost;
+  /** Application cache is distinct from provider-side cached token evidence. */
+  delivery?: "provider" | "application_cache";
 }>;
+
+/** Pure, side-effect-free validation of the provider/cache content boundary. */
+export type AiContentValidator = (content: string) => boolean;
 
 export type AiJobUsageSummary = Readonly<{
   evidence: "provider_telemetry";
   callCount: number;
+  applicationCacheHitCount: number;
   retryCount: number;
   activeCallCount: number;
   succeededCallCount: number;

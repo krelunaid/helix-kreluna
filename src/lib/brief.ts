@@ -139,7 +139,7 @@ function lockText(form: Form, domain: Domain, prompt: string): string {
     domain === "marketplace"
       ? "MUST: first screen = feed of listings (photo, title, price, place). Search. Tap = detail + seller. Tab: Home / Cerca / Vendi / Salvati / Profilo."
       : domain === "shop"
-        ? "MUST: products, add to bag, total, fake checkout (one shop)."
+        ? "MUST: products, add to bag, and update the total locally. Checkout stays disabled with an explicit payments-not-configured message; never simulate payment success."
         : domain === "crm" || domain === "erp"
           ? "MUST: sidebar (Dashboard, Clienti, Documenti/Fatture, Articoli). Seed 6 clients + 5 invoices. Search, open a record, create, edit, delete in memory. Status chips. Totals that update."
           : domain === "saas"

@@ -12,6 +12,8 @@ import {
   verifyWorkspace,
   type WorkspaceManifest,
 } from "@/lib/workspace";
+import { assertSealedProductionBuildJobWorkspace } from "@/lib/server/release/production-workspace";
+import { HELIX_PIPELINE_VERSION } from "@/lib/server/jobs/pipeline";
 
 export type HumanGateDecision = "approve" | "reject" | "modify";
 export type HumanGateActor = "user" | "guest";
@@ -62,6 +64,8 @@ type GateJobRow = {
   project_id: string | null;
   user_id: string | null;
   payload: string;
+  pipeline_version: string;
+  request_fingerprint: string;
   queue_status: string;
   artifact_sha256: string | null;
   guest_access_token_hash: string | null;
@@ -138,6 +142,14 @@ function parseJobPayload(row: GateJobRow): BuildJob {
   } catch {
     throw new HumanGateError("HUMAN_GATE_ARTIFACT_NOT_SEALED");
   }
+  if (
+    row.pipeline_version !== HELIX_PIPELINE_VERSION ||
+    payload.checkpoint?.pipelineVersion !== HELIX_PIPELINE_VERSION ||
+    payload.checkpoint.requestFingerprint !== row.request_fingerprint ||
+    payload.requestFingerprint !== row.request_fingerprint
+  ) {
+    throw new HumanGateError("HUMAN_GATE_ARTIFACT_NOT_SEALED");
+  }
   if (!isValidHtmlArtifact(payload.html)) {
     throw new HumanGateError("HUMAN_GATE_ARTIFACT_NOT_SEALED");
   }
@@ -149,18 +161,20 @@ async function verifySealedArtifact(
 ): Promise<ApprovedBuildArtifact> {
   const payload = parseJobPayload(row);
   const buildLevel = parseBuildLevel(payload.buildLevel);
-  if (buildLevel !== "prototype") {
-    throw new HumanGateError("HUMAN_GATE_ARTIFACT_NOT_SEALED");
-  }
   const digest = await sha256Hex(payload.html as string);
   if (!row.artifact_sha256 || row.artifact_sha256 !== digest) {
     throw new HumanGateError("HUMAN_GATE_ARTIFACT_NOT_SEALED");
   }
   const files = payload.files ?? { "index.html": payload.html as string };
-  if (files["index.html"] !== payload.html) {
+  if (buildLevel === "production") {
+    try {
+      await assertSealedProductionBuildJobWorkspace(payload);
+    } catch {
+      throw new HumanGateError("HUMAN_GATE_ARTIFACT_NOT_SEALED");
+    }
+  } else if (files["index.html"] !== payload.html) {
     throw new HumanGateError("HUMAN_GATE_ARTIFACT_NOT_SEALED");
-  }
-  if (payload.workspace) {
+  } else if (payload.workspace) {
     const verification = await verifyWorkspace(files, payload.workspace);
     if (
       !verification.valid ||
@@ -255,6 +269,7 @@ async function decideOwnedJob(input: {
 
   const owned = await sql.query<GateJobRow>(
     `select job.id, job.project_id, job.user_id, job.payload,
+            job.pipeline_version, job.request_fingerprint,
             job.queue_status, job.artifact_sha256,
             job.guest_access_token_hash, job.guest_access_expires_at,
             project.current_build_job_id,
@@ -301,6 +316,8 @@ async function decideOwnedJob(input: {
          and job.queue_status = 'awaiting_human_approval'
          and job.artifact_sha256 = $5
          and job.payload = $6
+         and job.pipeline_version = '${HELIX_PIPELINE_VERSION}'
+         and job.request_fingerprint = $9
        returning job.id, job.project_id
      )
      insert into build_job_gate_events (
@@ -322,6 +339,7 @@ async function decideOwnedJob(input: {
       row.payload,
       input.requestId,
       input.reason,
+      row.request_fingerprint,
     ],
   );
   if (inserted[0]) return mapEvent(inserted[0]);
@@ -359,7 +377,8 @@ async function decideGuestJob(input: {
   if (replay) return replay;
 
   const rows = await sql.query<GateJobRow>(
-    `select id, project_id, user_id, payload, queue_status,
+    `select id, project_id, user_id, payload, pipeline_version,
+            request_fingerprint, queue_status,
             artifact_sha256, guest_access_token_hash,
             guest_access_expires_at,
             exists (
@@ -402,6 +421,8 @@ async function decideGuestJob(input: {
          and guest_access_expires_at > now()
          and artifact_sha256 = $4
          and payload = $5
+         and pipeline_version = '${HELIX_PIPELINE_VERSION}'
+         and request_fingerprint = $9
        returning id
      )
      insert into build_job_gate_events (
@@ -423,6 +444,7 @@ async function decideGuestJob(input: {
       input.decision,
       input.requestId,
       input.reason,
+      row.request_fingerprint,
     ],
   );
   if (inserted[0]) return mapEvent(inserted[0]);
@@ -447,6 +469,7 @@ export async function getApprovedOwnedBuild(input: {
   const sql = await getSql();
   const rows = await sql.query<GateJobRow>(
     `select job.id, job.project_id, job.user_id, job.payload,
+            job.pipeline_version, job.request_fingerprint,
             job.queue_status, job.artifact_sha256,
             job.guest_access_token_hash, job.guest_access_expires_at,
             project.current_build_job_id,
@@ -495,7 +518,8 @@ export async function getApprovedGuestBuild(input: {
   const tokenHash = await hashGuestBuildToken(input.guestAccessToken);
   const sql = await getSql();
   const rows = await sql.query<GateJobRow>(
-    `select id, project_id, user_id, payload, queue_status,
+    `select id, project_id, user_id, payload, pipeline_version,
+            request_fingerprint, queue_status,
             artifact_sha256, guest_access_token_hash,
             guest_access_expires_at,
             exists (
@@ -579,7 +603,8 @@ export async function enqueueGuestGateModification(input: {
   }
 
   const sourceRows = await sql.query<GateJobRow>(
-    `select id, project_id, user_id, payload, queue_status,
+    `select id, project_id, user_id, payload, pipeline_version,
+            request_fingerprint, queue_status,
             artifact_sha256, guest_access_token_hash,
             guest_access_expires_at
      from build_jobs
@@ -622,6 +647,8 @@ export async function enqueueGuestGateModification(input: {
          and guest_access_expires_at > now()
          and artifact_sha256 = $3
          and payload = $4
+         and pipeline_version = '${HELIX_PIPELINE_VERSION}'
+         and request_fingerprint = $13
        for update
      ), queued as materialized (
        select queued.job_id, queued.was_created,
@@ -669,6 +696,7 @@ export async function enqueueGuestGateModification(input: {
       input.childRequestFingerprint,
       input.requestId,
       input.reason.slice(0, 1_000),
+      source.request_fingerprint,
     ],
   );
   if (rows[0]) {

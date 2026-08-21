@@ -3,7 +3,13 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { STORM_LIMITS, runStormLoad, validateStormTarget } from "./storm-load.mjs";
+import { StormCapacityReportSchema } from "../src/lib/capacity-evidence.ts";
+import {
+  STORM_LIMITS,
+  runStormCapacityLoad,
+  runStormLoad,
+  validateStormTarget,
+} from "./storm-load.mjs";
 
 const RUNNER = fileURLToPath(new URL("./storm-load.mjs", import.meta.url));
 
@@ -124,6 +130,76 @@ test("Storm performs a bounded real HTTP load test and reports measured metrics"
   assert.ok(report.metrics.latencyMs.p99 <= report.metrics.latencyMs.max);
   assert.match(report.targetSha256, /^[0-9a-f]{64}$/);
   assert.match(report.artifactSha256, /^[0-9a-f]{64}$/);
+});
+
+test("capacity mode progresses to measured saturation and emits Augur-compatible evidence", async (t) => {
+  let active = 0;
+  let requests = 0;
+  const server = await localServer(async (_request, response) => {
+    active += 1;
+    requests += 1;
+    const overloaded = active > 2;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    response.statusCode = overloaded ? 503 : 200;
+    response.end(overloaded ? "saturated" : "ok");
+    active -= 1;
+  });
+  t.after(server.close);
+
+  const report = await runStormCapacityLoad({
+    target: server.url,
+    confirmed: true,
+    requests: 48,
+    concurrency: 4,
+    durationMs: 5_000,
+    timeoutMs: 1_000,
+    artifactSha256: "a".repeat(64),
+    deploySha256: "d".repeat(64),
+  });
+  const parsed = StormCapacityReportSchema.parse(report);
+  assert.equal(parsed.kind, "storm_capacity_load_test");
+  assert.equal(parsed.status, "completed");
+  assert.equal(parsed.evidence, "measured");
+  assert.equal(parsed.metrics.saturationObserved, true);
+  assert.equal(parsed.metrics.concurrency.saturation, 4);
+  assert.ok(parsed.metrics.stableRequestsPerSecond > 0);
+  assert.ok(
+    parsed.metrics.saturationRequestsPerSecond >= parsed.metrics.stableRequestsPerSecond,
+  );
+  assert.equal(
+    parsed.metrics.successfulRequests + parsed.metrics.failedRequests,
+    parsed.metrics.attemptedRequests,
+  );
+  assert.equal(requests, parsed.metrics.attemptedRequests);
+});
+
+test("capacity mode sends no traffic without confirmation or exact evidence bindings", async (t) => {
+  let requests = 0;
+  const server = await localServer((_request, response) => {
+    requests += 1;
+    response.end("unexpected");
+  });
+  t.after(server.close);
+
+  const unconfirmed = await runStormCapacityLoad({
+    target: server.url,
+    requests: 20,
+    concurrency: 2,
+    artifactSha256: "a".repeat(64),
+    deploySha256: "d".repeat(64),
+  });
+  assert.equal(unconfirmed.status, "not_run");
+  assert.equal(unconfirmed.reasonCode, "confirmation_required");
+
+  const unbound = await runStormCapacityLoad({
+    target: server.url,
+    confirmed: true,
+    requests: 20,
+    concurrency: 2,
+  });
+  assert.equal(unbound.status, "not_run");
+  assert.equal(unbound.reasonCode, "capacity_binding_invalid");
+  assert.equal(requests, 0);
 });
 
 test("external targets require an exact explicitly allowlisted origin", async () => {

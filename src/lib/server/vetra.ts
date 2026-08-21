@@ -7,7 +7,6 @@ import { titleFromPrompt } from "@/lib/utils";
 import { normalizeLocale, t, type Locale } from "@/lib/i18n-core";
 import {
   CreditMutationError,
-  initialWebHostingIdempotencyKey,
   rethrowCreditMutationError,
 } from "@/lib/server/credits";
 import { createBuildJobDraft } from "@/lib/server/jobs/create";
@@ -15,15 +14,26 @@ import { dispatchBuildJob } from "@/lib/server/jobs/dispatch.server";
 import { serializeBuildJob } from "@/lib/server/jobs/queue";
 import { loadBuildJob } from "@/lib/server/jobs/queue";
 import { sha256Hex } from "@/lib/server/agents/patch";
-import {
-  getApprovedOwnedBuild,
-  HumanGateError,
-} from "@/lib/server/review/human-gate";
+import { HumanGateError } from "@/lib/server/review/human-gate";
 import {
   assertBuildLevelAvailable,
+  BuildLevelError,
   parseBuildLevel,
   type BuildLevel,
 } from "@/lib/build-level";
+import {
+  createBillingPortal,
+  getBillingAccountSnapshot,
+  hasCurrentPaidSubscription,
+  isPaidPlanId,
+  startSubscriptionCheckout,
+  startTopUpCheckout,
+} from "@/lib/server/billing/checkout.server";
+import {
+  StripeBillingError,
+  type BillingAccountSnapshot,
+  type CheckoutResult,
+} from "@/lib/server/billing/types";
 
 export type Profile = {
   user_id: string;
@@ -65,6 +75,8 @@ export type LedgerRow = {
   created_at: string;
 };
 
+export type { BillingAccountSnapshot, CheckoutResult };
+
 export const BILLING_ERROR_CODES = ["PAYMENTS_NOT_AVAILABLE", "INVALID_PLAN"] as const;
 export type BillingErrorCode = (typeof BILLING_ERROR_CODES)[number];
 
@@ -87,6 +99,17 @@ export class LegacyGeneratorRetiredError extends Error {
   constructor() {
     super("LEGACY_GENERATOR_RETIRED");
     this.name = "LegacyGeneratorRetiredError";
+  }
+}
+
+export class LegacyHostingRetiredError extends Error {
+  readonly code = "LEGACY_HOSTING_ENDPOINT_RETIRED";
+  readonly status = 410;
+  readonly retryable = false;
+
+  constructor() {
+    super("LEGACY_HOSTING_ENDPOINT_RETIRED");
+    this.name = "LegacyHostingRetiredError";
   }
 }
 
@@ -223,7 +246,8 @@ export const getAccount = createServerFn({ method: "GET" })
       order by id desc
       limit 20
     `;
-    return { profile, ledger };
+    const billing = await getBillingAccountSnapshot(context.userId);
+    return { profile, ledger, billing };
   });
 
 export const listProjects = createServerFn({ method: "GET" })
@@ -282,13 +306,21 @@ export const createProject = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const locale = data.locale;
     if (!data.prompt) throw new Error(t(locale, "err.describe"));
-    assertBuildLevelAvailable({
+    const productionCredits =
+      data.buildLevel === "production"
+        ? await import("@/lib/server/production/config").then((module) =>
+            module.requireProductionBuildCredits(),
+          )
+        : null;
+    const quote = assertBuildLevelAvailable({
       buildLevel: data.buildLevel,
       action: "generate",
       authenticated: true,
+      productionCredits,
     });
     await ensureProfile(context.userId);
-    const cost = ACTIONS.generate.credits;
+    if (quote.credits === null) throw new BuildLevelError("PRODUCTION_MODE_NOT_AVAILABLE");
+    const cost = quote.credits;
     const id = data.requestId;
     const title = titleFromPrompt(data.prompt, locale);
     const sql = await getSql();
@@ -650,93 +682,42 @@ export const iterateProject = createServerFn({ method: "POST" })
 
 export const hostProject = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((id: string) => id)
-  .handler(async ({ context, data: id }) => {
-    const sql = await getSql();
-    const rows = await sql<ProjectRow>`
-      select id, user_id, title, prompt, kind, build_level, status, html, messages,
-             credits_spent, hosted, hosted_until, created_at, updated_at
-      from projects where id = ${id} and user_id = ${context.userId}
-    `;
-    if (!rows[0]) throw new Error("Progetto non trovato");
-    const project = mapProject(rows[0]);
-    if (project.hosted) return { project, profile: await ensureProfile(context.userId) };
-    const current = await sql<{ current_build_job_id: string | null }>`
-      select current_build_job_id
-      from projects
-      where id = ${id} and user_id = ${context.userId}
-    `;
-    if (!current[0]?.current_build_job_id) {
-      throw new HumanGateError("HUMAN_GATE_CLOSED");
-    }
-    await getApprovedOwnedBuild({
-      jobId: current[0].current_build_job_id,
-      projectId: id,
-      userId: context.userId,
-    });
-    const cost = ACTIONS.host.credits;
-    const until = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    const messages = [
-      ...project.messages,
-      {
-        role: "assistant" as const,
-        content: "App tenuta online per 30 giorni. I crediti di hosting sono stati scalati.",
-        kind: "host" as const,
-      },
-    ];
-    try {
-      await sql`
-        with owned as materialized (
-          select id
-          from projects
-          where id = ${id}
-            and user_id = ${context.userId}
-            and hosted = false
-        ),
-        credit as (
-          select mutation.was_applied
-          from owned
-          cross join lateral apply_credit_entry(
-            ${context.userId},
-            ${-cost},
-            'host',
-            owned.id,
-            'Hosting 30 giorni',
-            ${initialWebHostingIdempotencyKey(id)}
-          ) as mutation
-        )
-        update projects
-        set hosted = true,
-            hosted_until = ${until},
-            credits_spent = credits_spent + ${cost},
-            messages = ${JSON.stringify(messages)},
-            updated_at = now()
-        from credit
-        where projects.id = ${id}
-          and projects.user_id = ${context.userId}
-          and projects.hosted = false
-      `;
-    } catch (error) {
-      rethrowCreditMutationError(error);
-    }
-    const next = await sql<ProjectRow>`
-      select id, user_id, title, prompt, kind, build_level, status, html, messages,
-             credits_spent, hosted, hosted_until, created_at, updated_at
-      from projects where id = ${id} and user_id = ${context.userId}
-    `;
-    return { project: mapProject(next[0]), profile: await ensureProfile(context.userId) };
+  .validator((id: string) => id.trim().slice(0, 128))
+  .handler(() => {
+    // The legacy endpoint used to debit credits and flip `hosted` without
+    // publishing any bytes. Real hosting must go through deploy.publishWeb,
+    // which binds Human Gate, artifact hashes, public_apps and deploy evidence.
+    throw new LegacyHostingRetiredError();
   });
 
 export const choosePlan = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((planId: PlanId) => planId)
-  .handler(async ({ context, data: planId }) => {
+  .validator((input: PlanId | { planId: PlanId; requestId?: string }) => ({
+    planId: typeof input === "string" ? input : input.planId,
+    requestId: typeof input === "string" ? undefined : input.requestId,
+  }))
+  .handler(async ({ context, data }) => {
+    const planId = data.planId;
     const plan = PLANS.find((p) => p.id === planId);
     if (!plan) throw new BillingError("INVALID_PLAN");
-    if (plan.id !== "free") throw new BillingError("PAYMENTS_NOT_AVAILABLE");
+    if (isPaidPlanId(plan.id)) {
+      if (!data.requestId) {
+        throw new StripeBillingError("INVALID_BILLING_REQUEST", { retryable: false });
+      }
+      return startSubscriptionCheckout({
+        userId: context.userId,
+        planId: plan.id,
+        requestId: data.requestId,
+      });
+    }
 
     const profile = await ensureProfile(context.userId);
-    if (profile.plan === "free") return profile;
+    if (profile.plan === "free") return { kind: "profile" as const, profile };
+    if (await hasCurrentPaidSubscription(context.userId)) {
+      // A local plan flip would not cancel the recurring Stripe charge. The
+      // customer portal owns cancellation; the webhook performs the downgrade.
+      throw new StripeBillingError("SUBSCRIPTION_ALREADY_EXISTS", { retryable: false });
+    }
 
     // Free is the one plan that can be selected without a payment. It never
     // grants credits here: the initial 10-credit allowance is created once by
@@ -747,11 +728,18 @@ export const choosePlan = createServerFn({ method: "POST" })
       set plan = 'free'
       where user_id = ${context.userId}
     `;
-    return ensureProfile(context.userId);
+    return { kind: "profile" as const, profile: await ensureProfile(context.userId) };
   });
 
 export const buyExtraCredits = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .handler(async () => {
-    throw new BillingError("PAYMENTS_NOT_AVAILABLE");
+  .validator((input: { requestId: string }) => input)
+  .handler(async ({ context, data }) => {
+    return startTopUpCheckout({ userId: context.userId, requestId: data.requestId });
+  });
+
+export const createBillingPortalSession = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    return createBillingPortal({ userId: context.userId });
   });

@@ -65,7 +65,7 @@ export const HOUSE: HouseAgent[] = [
   { id: "atlas", name: "Atlas", role: "Chief Architect", roleIt: "Capo architetto", craft: "Architecture", craftIt: "Architettura", desk: "product", brief: "Screens and data before any code.", briefIt: "Schermate e dati prima di qualsiasi codice." },
   { id: "sol", name: "Sol", role: "Solution Architect", roleIt: "Solution architect", craft: "Stack", craftIt: "Stack", desk: "product", brief: "Stack vs cost, speed and scale.", briefIt: "Stack rispetto a costo, velocità e scala." },
   { id: "reed", name: "Reed", role: "UX Researcher", roleIt: "Ricercatore UX", craft: "UX research", craftIt: "Ricerca UX", desk: "product", brief: "Journeys, personas, friction.", briefIt: "Percorsi, persone, attriti." },
-  { id: "lumen", name: "Lumen", role: "Chief of graphics", roleIt: "Capo della grafica", craft: "Graphics", craftIt: "Grafica", desk: "product", brief: "Looks you can feel. Four directions. You pick.", briefIt: "Aspetto che si sente. Quattro direzioni. Scegli tu." },
+  { id: "lumen", name: "Lumen", role: "Chief of graphics", roleIt: "Capo della grafica", craft: "Graphics", craftIt: "Grafica", desk: "product", brief: "Looks you can feel. Three distinct directions. You pick.", briefIt: "Aspetto che si sente. Tre direzioni distinte. Scegli tu." },
   { id: "glyph", name: "Glyph", role: "Design System", roleIt: "Design system", craft: "Visual system", craftIt: "Sistema visivo", desk: "product", brief: "One language of components.", briefIt: "Un solo linguaggio di componenti." },
   { id: "flint", name: "Flint", role: "—", roleIt: "—", craft: "—", craftIt: "—", desk: "eng", brief: "Let go. Did not ship the interior.", briefIt: "Licenziato. Non consegnava l’interno." },
   { id: "forge", name: "Forge", role: "Frontend", roleIt: "Frontend", craft: "Building the app", craftIt: "Scrittura dell’app", desk: "eng", brief: "Writes the product you see and tap.", briefIt: "Scrive il prodotto che vedi e tocchi." },
@@ -278,7 +278,9 @@ export function knowledgeHints(prompt: string): string[] {
     hints.push("Marketplace: 8 listings on first screen with photo, price, place. Search filters the list. Tap = detail. Not a CRM. Not appointments.");
   }
   if (/pagament|stripe|pay|checkout|shop|negozio|e-?commerc/.test(p) && !/ebay|marketplace|annunci/.test(p)) {
-    hints.push("Shop/pay: 4+ products visible, add to bag, bag total, fake checkout success. No live keys.");
+    hints.push(
+      "Shop/pay: 4+ products visible, add to bag, and recompute the bag total locally. Checkout must stay disabled and say that payments are not configured; never simulate payment success or use live keys.",
+    );
   }
   if (/todo|lista|habit|task/.test(p)) {
     hints.push("Lists: seed 5 items. Add, toggle, remove in memory.");
@@ -296,7 +298,7 @@ export function knowledgeHints(prompt: string): string[] {
     hints.push("Program/software: window layout (sidebar + main). Seed clients, invoices, items. Search works. New record form. Totals recompute. Keyboard: / focuses search.");
   }
   if (/desktop|windows|macos|electron|pc\b/.test(p)) {
-    hints.push("Desktop program: title bar, menu, sidebar, status bar. Dense tables. Feels installed. Cedar packs Windows/macOS later.");
+    hints.push("Desktop program: title bar, menu, sidebar, status bar. Dense tables. Feels installed. Cedar can prepare Electron source later; no desktop binary is built here.");
   }
   if (/social|feed|chat|messagg/.test(p)) {
     hints.push("Feed/chat: 6 seeded posts or threads. Composer adds one. Heart/reply works.");
@@ -330,7 +332,7 @@ export function aftercare(title: string, prompt: string, needs: Need[]) {
 
 export function stackFor(needs: Need[]) {
   const front = needs.includes("desktop")
-    ? "Working program UI now (HTML). Cedar packs Electron/Tauri for Windows, macOS, Linux."
+    ? "Working program UI now (HTML). Cedar can prepare a source-only Electron wrapper later; no desktop binary or Tauri project is generated."
     : "Single HTML app (CSS + JS). Later: React if the product outgrows it.";
   const back = needs.includes("data") || needs.includes("auth") || needs.includes("payments")
     ? "In-memory now. Next: Postgres + a thin API."

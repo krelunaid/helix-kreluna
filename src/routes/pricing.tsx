@@ -3,7 +3,14 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { ACTIONS, EXTRA_PACK, PLANS, type PlanId } from "@/lib/plans";
-import { choosePlan, getAccount, type Profile } from "@/lib/server/vetra";
+import {
+  buyExtraCredits,
+  choosePlan,
+  createBillingPortalSession,
+  getAccount,
+  type BillingAccountSnapshot,
+  type Profile,
+} from "@/lib/server/vetra";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { formatCredits } from "@/lib/utils";
 import { toast } from "sonner";
@@ -17,16 +24,28 @@ function Pricing() {
   const { locale, t } = useI18n();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [billing, setBilling] = useState<BillingAccountSnapshot | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+
+  function billingErrorMessage(error: unknown): string {
+    return error instanceof Error && error.message === "PAYMENTS_NOT_AVAILABLE"
+      ? t("pricing.unavailable")
+      : t("pricing.error");
+  }
 
   const userId = user?.id;
   useEffect(() => {
     track("pricing_view");
     if (!userId) return;
     void getAccount()
-      .then((a) => setProfile(a.profile))
+      .then((a) => {
+        setProfile(a.profile);
+        setBilling(a.billing);
+        const checkoutState = new URLSearchParams(window.location.search).get("checkout");
+        if (checkoutState === "success") toast.success(t("pricing.activating"));
+      })
       .catch(() => undefined);
-  }, [userId]);
+  }, [userId, t]);
 
   async function pick(id: PlanId) {
     if (!user) {
@@ -35,12 +54,44 @@ function Pricing() {
     }
     setBusy(id);
     try {
-      const next = await choosePlan({ data: id });
-      setProfile(next);
+      const next = await choosePlan({
+        data: { planId: id, requestId: crypto.randomUUID() },
+      });
+      if (next.kind === "checkout") {
+        window.location.assign(next.url);
+        return;
+      }
+      setProfile(next.profile);
       toast.success(t("pricing.planOn", { id }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Errore");
+      toast.error(billingErrorMessage(err));
     } finally {
+      setBusy(null);
+    }
+  }
+
+  async function topUp() {
+    if (!user) {
+      void navigate({ to: "/login", search: { next: "/pricing" } });
+      return;
+    }
+    setBusy("topup");
+    try {
+      const checkout = await buyExtraCredits({ data: { requestId: crypto.randomUUID() } });
+      window.location.assign(checkout.url);
+    } catch (err) {
+      toast.error(billingErrorMessage(err));
+      setBusy(null);
+    }
+  }
+
+  async function manageBilling() {
+    setBusy("portal");
+    try {
+      const portal = await createBillingPortalSession();
+      window.location.assign(portal.url);
+    } catch (err) {
+      toast.error(billingErrorMessage(err));
       setBusy(null);
     }
   }
@@ -61,6 +112,14 @@ function Pricing() {
               plan: profile.plan,
               n: formatCredits(profile.credits_balance, locale),
             })}
+          </p>
+        ) : null}
+        {billing?.subscription ? (
+          <p className="mt-2 text-xs text-subtle">
+            {t("pricing.subscription", { status: billing.subscription.status })}
+            {billing.subscription.cancelAtPeriodEnd
+              ? ` · ${t("pricing.cancelPending")}`
+              : ""}
           </p>
         ) : null}
 
@@ -98,16 +157,21 @@ function Pricing() {
               <Button
                 className="mt-6 w-full"
                 variant={p.highlight ? "primary" : "secondary"}
-                disabled={p.id !== "free" || busy === p.id || profile?.plan === p.id}
+                disabled={
+                  busy === p.id ||
+                  profile?.plan === p.id ||
+                  (p.id !== "free" && (!billing?.available || Boolean(billing.subscription))) ||
+                  (p.id === "free" && Boolean(billing?.subscription))
+                }
                 onClick={() => void pick(p.id)}
               >
                 {profile?.plan === p.id
                   ? t("pricing.active")
-                  : p.id !== "free"
+                  : p.id !== "free" && !billing?.available
                     ? t("pricing.unavailable")
-                  : busy === p.id
-                    ? t("pricing.activating")
-                    : t("pricing.choose")}
+                    : busy === p.id
+                      ? t("pricing.activating")
+                      : t("pricing.choose")}
               </Button>
             </article>
           ))}
@@ -154,15 +218,26 @@ function Pricing() {
             <Button
               className="mt-8 w-full sm:w-auto"
               variant="secondary"
-              disabled
+              disabled={!billing?.available || busy === "topup"}
+              onClick={() => void topUp()}
             >
-              {t("pricing.unavailable")}
+              {billing?.available ? t("acc.buy") : t("pricing.unavailable")}
             </Button>
+            {billing?.hasCustomer ? (
+              <Button
+                className="mt-3 w-full sm:ml-3 sm:w-auto"
+                variant="secondary"
+                disabled={busy === "portal"}
+                onClick={() => void manageBilling()}
+              >
+                {t("acc.plan")}
+              </Button>
+            ) : null}
           </div>
         </section>
 
         <p className="mt-12 text-sm text-subtle">
-          {t("pricing.demo")}{" "}
+          {t(billing?.available ? "pricing.configured" : "pricing.demo")}{" "}
           <Link to="/studio" className="text-fg underline underline-offset-2">
             {t("pricing.goto")}
           </Link>

@@ -182,6 +182,16 @@ export const ReviewResultSchema = z
 
 export type ReviewResult = z.infer<typeof ReviewResultSchema>;
 
+export const GemPatchValidationCheckSchema = z.enum([
+  "html_document_valid",
+  "replacement_present_once",
+  "original_fragment_absent",
+]);
+
+export type GemPatchValidationCheck = z.infer<typeof GemPatchValidationCheckSchema>;
+
+const REQUIRED_GEM_PATCH_VALIDATIONS = GemPatchValidationCheckSchema.options;
+
 export const GemPatchSchema = z
   .object({
     target: z.string().min(1).max(240),
@@ -189,7 +199,15 @@ export const GemPatchSchema = z
     before: z.string().min(1).max(24_000),
     beforeHash: z.string().regex(/^[0-9a-f]{64}$/),
     patch: z.string().min(1).max(32_000),
-    validation: z.array(z.string().min(1).max(240)).min(1).max(12),
+    validation: z
+      .array(GemPatchValidationCheckSchema)
+      .length(REQUIRED_GEM_PATCH_VALIDATIONS.length)
+      .refine(
+        (checks) =>
+          REQUIRED_GEM_PATCH_VALIDATIONS.every((required) => checks.includes(required)) &&
+          new Set(checks).size === checks.length,
+        { message: "Every deterministic Gem patch validation must be declared exactly once" },
+      ),
   })
   .refine((change) => change.before !== change.patch, {
     message: "Patch must change the target",

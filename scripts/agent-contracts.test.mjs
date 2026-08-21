@@ -72,6 +72,7 @@ test("agent contracts describe the real Helix executions", async (t) => {
     const artifacts = new Set();
     for (const [id, contract] of Object.entries(AGENT_CONTRACTS)) {
       for (const field of [
+        "id",
         "kind",
         "version",
         "role",
@@ -85,10 +86,14 @@ test("agent contracts describe the real Helix executions", async (t) => {
         "maxCostUsd",
         "maxCostUsdTicks",
         "artifact",
+        "validation",
+        "status",
+        "error",
       ]) {
         assert.ok(Object.hasOwn(contract, field), `${id} is missing ${field}`);
       }
       assert.ok(kinds.has(contract.kind), `${id} has an unknown kind`);
+      assert.equal(contract.id, id, `${id} has a mismatched explicit id`);
       assert.match(contract.version, /^\d+\.\d+\.\d+$/, `${id} must use semver`);
       assert.ok(contract.role.trim().length > 0, `${id} has no role`);
       assert.equal(typeof contract.inputSchema.safeParse, "function", `${id} has no input schema`);
@@ -113,6 +118,17 @@ test("agent contracts describe the real Helix executions", async (t) => {
       assert.ok(contract.artifact.trim().length > 0, `${id} has no artifact`);
       assert.ok(!artifacts.has(contract.artifact), `${id} reuses artifact ${contract.artifact}`);
       artifacts.add(contract.artifact);
+      assert.equal(contract.validation.mode, "zod_and_sha256");
+      assert.equal(contract.validation.artifactRequiredOnDone, true);
+      assert.equal(contract.status.safeParse("done").success, true);
+      assert.equal(
+        contract.error.safeParse({
+          code: "CONTROLLED_FAILURE",
+          retryable: false,
+          detailRedacted: "No credentials included.",
+        }).success,
+        true,
+      );
       if (contract.kind !== "orchestrator") {
         assert.notEqual(contract.model, null, `${id} invokes AI but has no model`);
         assert.ok(contract.maxTokens > 0, `${id} invokes AI without a token budget`);
@@ -224,7 +240,11 @@ test("agent contracts describe the real Helix executions", async (t) => {
       before: "<h1>Before</h1>",
       beforeHash: "a".repeat(64),
       patch: "<h1>After</h1>",
-      validation: ["Heading remains visible"],
+      validation: [
+        "html_document_valid",
+        "replacement_present_once",
+        "original_fragment_absent",
+      ],
     };
     assert.equal(AGENT_CONTRACTS.gemPatch.outputSchema.safeParse(patch).success, true);
     assert.match(AGENT_CONTRACTS.gemPatch.artifact, /patch/i);

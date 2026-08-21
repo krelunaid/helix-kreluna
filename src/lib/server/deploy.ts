@@ -1,11 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getSql } from "@/lib/db";
+import { getSql, type Sql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { bundleIdFromTitle, expoFiles, slugify, withPwa, windowsFiles } from "@/lib/expo-pack";
 import { archivedFor, featuredFor, featuredHtml } from "@/lib/templates";
 import { normalizeLocale } from "@/lib/i18n-core";
 import { toBase64, zipFiles } from "@/lib/zip";
 import { publicOriginFromHostname } from "@/lib/env.shared";
+import type { BuildLevel } from "@/lib/build-level";
 import { protectGeneratedHtml } from "@/lib/generated-content-policy";
 import {
   GUEST_PUBLISH_TTL_MS,
@@ -28,6 +29,15 @@ import {
   sha256Utf8Hex,
 } from "@/lib/server/release/integrity";
 import { deleteExpiredGuestPublications } from "@/lib/server/persistence/guest-publications";
+import {
+  callStoreRunner,
+  isStoreRunnerConfigured,
+  StoreRunnerError,
+  StoreIdentitySchema,
+  StoreRunnerReportSchema,
+  type StoreIdentity,
+  type StoreRunnerReport,
+} from "@/lib/server/store-runner";
 
 let schemaReady: Promise<void> | null = null;
 
@@ -73,31 +83,122 @@ async function ensureSchema() {
 export const DEPLOY_COST = { web: 50, ios: 80, android: 80, windows: 0 } as const;
 export type DeployTarget = keyof typeof DEPLOY_COST;
 
+export class HarborPublishError extends Error {
+  readonly code = "HARBOR_PRODUCTION_WEB_PUBLISH_UNAVAILABLE";
+  readonly status = 409;
+  readonly retryable = false;
+  readonly buildLevel = "production";
+  readonly target = "web";
+
+  constructor() {
+    super("HARBOR_PRODUCTION_WEB_PUBLISH_UNAVAILABLE");
+    this.name = "HarborPublishError";
+  }
+}
+
+export function assertHarborWebPublishable(
+  buildLevel: BuildLevel,
+): asserts buildLevel is "prototype" {
+  if (buildLevel === "production") {
+    throw new HarborPublishError();
+  }
+}
+
+export class StoreProductionArtifactError extends Error {
+  readonly code = "STORE_PRODUCTION_NATIVE_ARTIFACT_UNAVAILABLE";
+  readonly status = 409;
+  readonly retryable = false;
+
+  constructor() {
+    super("STORE_PRODUCTION_NATIVE_ARTIFACT_UNAVAILABLE");
+    this.name = "StoreProductionArtifactError";
+  }
+}
+
+export function assertStoreArtifactShippable(
+  buildLevel: BuildLevel,
+): asserts buildLevel is "prototype" {
+  if (buildLevel === "production") throw new StoreProductionArtifactError();
+}
+
 export type StoreReadiness = {
   sourcePackageReady: true;
+  runnerConfigured: boolean;
+  mappingAccepted: boolean;
   credentialsConfigured: boolean;
-  nativeBuildReady: false;
-  signingReady: false;
-  submissionReady: false;
+  nativeBuildReady: boolean;
+  signingReady: boolean;
+  submissionReady: boolean;
   missingCredentials: string[];
-  reason: "STORE_PROVIDER_NOT_INTEGRATED";
+  reason:
+    | "STORE_RUNNER_UNCONFIGURED"
+    | "STORE_CREDENTIAL_MAPPING_PENDING"
+    | "STORE_CREDENTIAL_MAPPING_ACCEPTED"
+    | "STORE_DISPATCH_ACCEPTED"
+    | "STORE_WORKFLOW_IN_PROGRESS"
+    | "STORE_DISTRIBUTED"
+    | "STORE_ACTION_REQUIRED";
 };
 
 export function storeReadiness(
   target: "ios" | "android",
   env: Record<string, string | undefined> = process.env,
 ): StoreReadiness {
-  const required =
-    target === "ios" ? ["EXPO_TOKEN", "APPLE_TEAM_ID"] : ["EXPO_TOKEN", "PLAY_SERVICE_JSON"];
-  const missingCredentials = required.filter((name) => !env[name]?.trim());
+  const runnerConfigured = isStoreRunnerConfigured(env);
   return {
     sourcePackageReady: true,
-    credentialsConfigured: missingCredentials.length === 0,
+    runnerConfigured,
+    // A configured endpoint and a local mapping are not provider proof.
+    mappingAccepted: false,
+    credentialsConfigured: false,
     nativeBuildReady: false,
     signingReady: false,
     submissionReady: false,
-    missingCredentials,
-    reason: "STORE_PROVIDER_NOT_INTEGRATED",
+    missingCredentials: runnerConfigured
+      ? [
+          target === "ios"
+            ? "EAS iOS build/signing and TestFlight credentials not yet proven"
+            : "EAS Android build/signing and Play credentials not yet proven",
+        ]
+      : ["HELIX_STORE_RUNNER_URL", "HELIX_STORE_RUNNER_SECRET"],
+    reason: runnerConfigured ? "STORE_CREDENTIAL_MAPPING_PENDING" : "STORE_RUNNER_UNCONFIGURED",
+  };
+}
+
+export function storeReadinessFromReport(report: StoreRunnerReport): StoreReadiness {
+  const buildReady =
+    report.providerBuildId !== null && report.providerEvidence.buildStatus === "succeeded";
+  const submissionReady =
+    report.workflowDistributionJobId !== null &&
+    report.providerEvidence.submissionStatus === "succeeded" &&
+    report.state === "distributed";
+  return {
+    sourcePackageReady: true,
+    runnerConfigured: true,
+    // Accept proves only that the authenticated runner recognized an
+    // operator-supplied app mapping. Successful provider work is the proof for
+    // build/signing credentials; complete distribution is the proof that the
+    // store credential also worked.
+    mappingAccepted: true,
+    credentialsConfigured: submissionReady,
+    nativeBuildReady: buildReady,
+    signingReady: buildReady,
+    submissionReady,
+    missingCredentials: submissionReady
+      ? []
+      : [
+          buildReady
+            ? "EAS store submission credential not yet proven"
+            : "EAS build/signing and store credentials not yet proven",
+        ],
+    reason:
+      report.state === "distributed"
+        ? "STORE_DISTRIBUTED"
+        : report.state === "failed" || report.state === "action_required"
+          ? "STORE_ACTION_REQUIRED"
+          : report.state === "dispatch_accepted"
+            ? "STORE_CREDENTIAL_MAPPING_ACCEPTED"
+            : "STORE_WORKFLOW_IN_PROGRESS",
   };
 }
 
@@ -137,6 +238,7 @@ export type Deploy = {
   completed_at: string | null;
   error_code: string | null;
   error_message: string | null;
+  store_release_id: string | null;
 };
 
 export type PublicApp = {
@@ -278,8 +380,28 @@ function harborWeb(): DeployStep[] {
   ];
 }
 
-function harborStore(target: "ios" | "android"): DeployStep[] {
-  const store = target === "ios" ? "App Store Connect" : "Google Play Console";
+function harborStore(target: "ios" | "android", report: StoreRunnerReport): DeployStep[] {
+  const store = target === "ios" ? "TestFlight" : "Google Play internal track";
+  const buildStatus = report.providerEvidence.buildStatus;
+  const submissionStatus = report.providerEvidence.submissionStatus;
+  const buildStepStatus: DeployStep["status"] =
+    buildStatus === "succeeded"
+      ? "done"
+      : buildStatus === "failed"
+        ? "error"
+        : buildStatus === "in_progress"
+          ? "running"
+          : "queued";
+  const submissionStepStatus: DeployStep["status"] =
+    submissionStatus === "succeeded"
+      ? "done"
+      : submissionStatus === "failed"
+        ? "error"
+        : submissionStatus === "action_required"
+          ? "blocked"
+          : submissionStatus === "in_progress"
+            ? "running"
+            : "queued";
   return [
     {
       id: "gate",
@@ -294,24 +416,316 @@ function harborStore(target: "ios" | "android"): DeployStep[] {
       detail: `Expo source workspace prepared for ${target} with exact ZIP SHA-256`,
     },
     {
+      id: "accept",
+      label: "Harbor · authenticated Store runner",
+      status: "done",
+      detail: "The durable runner accepted the exact ZIP hash and credential mapping",
+    },
+    {
       id: "build",
       label: "Harbor · native binary build",
-      status: "skipped",
-      detail: "EAS/native build was not executed",
+      status: buildStepStatus,
+      detail:
+        report.providerBuildId === null
+          ? "No completed EAS build has been reported"
+          : `EAS build ID ${report.providerBuildId}`,
     },
     {
       id: "sign",
       label: "Harbor · signing",
-      status: "blocked",
-      detail: "Developer signing credentials are required",
+      status: buildStepStatus,
+      detail:
+        buildStatus === "succeeded"
+          ? "The store-distribution EAS build completed with runner-bound credential evidence"
+          : "Signing is not claimed until the store-distribution build succeeds",
     },
     {
       id: "upload",
       label: `Harbor · ${store}`,
-      status: "skipped",
-      detail: "No store upload or submission was executed",
+      status: submissionStepStatus,
+      detail:
+        report.workflowDistributionJobId === null
+          ? `No successful ${store} distribution has been reported`
+          : `EAS workflow distribution job ${report.workflowDistributionJobId}`,
     },
   ];
+}
+
+type StoreReleaseRow = {
+  id: string;
+  project_id: string;
+  build_job_id: string;
+  deploy_id: string | null;
+  user_id: string;
+  platform: "ios" | "android";
+  destination: "testflight" | "play_internal";
+  request_id: string;
+  idempotency_key: string;
+  source_artifact_sha256: string;
+  package_sha256: string;
+  package_bytes: number;
+  package_filename: string;
+  app_identifier: string;
+  eas_project_id: string;
+  apple_team_id: string | null;
+  state: StoreRunnerReport["state"] | "prepared";
+  runner_job_id: string | null;
+  workflow_run_id: string | null;
+  provider_build_id: string | null;
+  provider_submission_id: string | null;
+  provider_release_id: string | null;
+  play_track: string | null;
+  provider_evidence: unknown;
+  retry_count: number;
+  last_error_code: string | null;
+  last_error_message: string | null;
+  last_error_retryable: boolean | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function parseStoredStoreReport(value: unknown): StoreRunnerReport | null {
+  const parsed = StoreRunnerReportSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function storeReleaseResult(row: StoreReleaseRow, report?: StoreRunnerReport | null) {
+  const evidence = report ?? parseStoredStoreReport(row.provider_evidence);
+  return {
+    id: row.id,
+    deployId: row.deploy_id,
+    status: row.state,
+    submissionStatus:
+      row.state === "distributed"
+        ? ("distributed" as const)
+        : row.state === "failed" || row.state === "action_required"
+          ? ("blocked" as const)
+          : row.state === "prepared"
+            ? ("not_dispatched" as const)
+            : ("in_progress" as const),
+    target: row.platform,
+    destination: row.destination,
+    bundleId: row.app_identifier,
+    easProjectId: row.eas_project_id,
+    runnerJobId: row.runner_job_id,
+    workflowRunId: row.workflow_run_id,
+    providerBuildId: row.provider_build_id,
+    providerSubmissionId: row.provider_submission_id,
+    providerReleaseId: row.provider_release_id,
+    playTrack: row.play_track,
+    packageSha256: row.package_sha256,
+    sourceArtifactSha256: row.source_artifact_sha256,
+    readiness: evidence ? storeReadinessFromReport(evidence) : storeReadiness(row.platform),
+    retryCount: row.retry_count,
+    error:
+      row.last_error_code && row.last_error_message
+        ? {
+            code: row.last_error_code,
+            message: row.last_error_message,
+            retryable: row.last_error_retryable === true,
+          }
+        : null,
+  };
+}
+
+function storeReportEventKey(report: StoreRunnerReport): string {
+  return `report:${report.action}:${report.state}:${
+    report.providerEvidence.rawReportSha256 ?? report.observedAt
+  }`;
+}
+
+async function persistStoreRunnerReport(input: {
+  sql: Sql;
+  report: StoreRunnerReport;
+  releaseId: string;
+  projectId: string;
+  userId: string;
+  buildJobId: string;
+  artifactSha256: string;
+  target: "ios" | "android";
+}): Promise<StoreReleaseRow> {
+  const { report } = input;
+  const log = JSON.stringify(harborStore(input.target, report));
+  const reportJson = JSON.stringify(report);
+  const credentialsJson = JSON.stringify(report.credentialEvidence);
+  const eventKey = storeReportEventKey(report);
+  const errorCode = report.error?.code ?? null;
+  const errorMessage = report.error?.message ?? null;
+  const errorRetryable = report.error?.retryable ?? null;
+  const nextPollAt = report.retryAfterSeconds
+    ? new Date(Date.parse(report.observedAt) + report.retryAfterSeconds * 1_000).toISOString()
+    : null;
+  const rows = await input.sql.query<StoreReleaseRow>(
+    `with current as materialized (
+       select * from store_release_jobs
+       where id = $1 and project_id = $2 and user_id = $3
+         and build_job_id = $4 and source_artifact_sha256 = $5
+         and package_sha256 = $6 and runner_job_id = $7
+         and (workflow_run_id is null or workflow_run_id = $8)
+         and (
+           state not in ('distributed', 'failed', 'action_required')
+           or state = $9
+         )
+         and case $9
+           when 'dispatch_accepted' then 1
+           when 'workflow_queued' then 2
+           when 'build_in_progress' then 3
+           when 'build_succeeded' then 4
+           when 'submission_in_progress' then 5
+           when 'distributed' then 6
+           when 'failed' then 90
+           when 'action_required' then 91
+           else 0
+         end >= case state
+           when 'prepared' then 0
+           when 'dispatch_accepted' then 1
+           when 'workflow_queued' then 2
+           when 'build_in_progress' then 3
+           when 'build_succeeded' then 4
+           when 'submission_in_progress' then 5
+           when 'distributed' then 6
+           when 'failed' then 90
+           when 'action_required' then 91
+           else 999
+         end
+       for update
+     ), updated as (
+       update store_release_jobs as release
+       set state = $9,
+           workflow_run_id = coalesce($8, release.workflow_run_id),
+           provider_build_id = coalesce($10, release.provider_build_id),
+           provider_submission_id = coalesce($11, release.provider_submission_id),
+           provider_release_id = coalesce($12, release.provider_release_id),
+           play_track = case when release.platform = 'android' and $9 = 'distributed'
+             then 'internal' else release.play_track end,
+           credential_evidence = $13::jsonb,
+           provider_evidence = $14::jsonb,
+           dispatched_at = case when $9 <> 'dispatch_accepted'
+             then coalesce(release.dispatched_at, $15::timestamptz) else release.dispatched_at end,
+           completed_at = case when $9 = 'distributed' then $15::timestamptz
+             else release.completed_at end,
+           last_polled_at = case when $16 = 'status' then $15::timestamptz
+             else release.last_polled_at end,
+           next_poll_at = $17::timestamptz,
+           last_error_code = $18,
+           last_error_message = $19,
+           last_error_retryable = $20,
+           updated_at = now()
+       from current
+       where release.id = current.id
+       returning release.*
+     ), deploy_updated as (
+       update deploys as deploy
+       set status = $9, provider_deploy_id = $7,
+           log = $21, error_code = $18, error_message = $19,
+           completed_at = case when $9 = 'distributed' then $15::timestamptz
+             else deploy.completed_at end,
+           updated_at = now()
+       from updated
+       where deploy.id = updated.deploy_id
+       returning deploy.id
+     ), event as (
+       insert into store_release_events (
+         release_id, event_key, from_state, to_state, source,
+         provider_observed_at, evidence, error_code, error_message, retryable
+       )
+       select updated.id, $22, current.state, $9, 'runner', $15::timestamptz,
+              $14::jsonb, $18, $19, $20
+       from updated join current on current.id = updated.id
+       on conflict (release_id, event_key) do nothing
+     ), completed as (
+       select complete_build_job_release($4, $5, updated.deploy_id)
+       from updated
+       where $9 = 'distributed' and updated.deploy_id is not null
+         and not exists (
+           select 1 from current where current.state = 'distributed'
+         )
+     )
+     select updated.* from updated
+     left join deploy_updated on true
+     left join completed on true`,
+    [
+      input.releaseId,
+      input.projectId,
+      input.userId,
+      input.buildJobId,
+      input.artifactSha256,
+      report.packageSha256,
+      report.runnerJobId,
+      report.workflowRunId,
+      report.state,
+      report.providerBuildId,
+      report.providerSubmissionId,
+      report.providerReleaseId,
+      credentialsJson,
+      reportJson,
+      report.observedAt,
+      report.action,
+      nextPollAt,
+      errorCode,
+      errorMessage,
+      errorRetryable,
+      log,
+      eventKey,
+    ],
+  );
+  if (!rows[0]) throw new StoreRunnerError("STORE_RELEASE_STATE_CONFLICT");
+  return rows[0];
+}
+
+async function recordStoreRunnerFailure(input: {
+  sql: Sql;
+  releaseId: string;
+  projectId: string;
+  userId: string;
+  expectedState: StoreReleaseRow["state"];
+  error: unknown;
+}): Promise<void> {
+  const runnerError =
+    input.error instanceof StoreRunnerError
+      ? input.error
+      : new StoreRunnerError("STORE_RUNNER_REQUEST_FAILED", true);
+  const eventKey = `runner-error:${crypto.randomUUID()}`;
+  await input.sql.query(
+    `with updated as (
+       update store_release_jobs
+       set retry_count = least(retry_count + 1, 20),
+           state = case
+             when not $4 or retry_count >= 4 then 'action_required'
+             else state
+           end,
+           last_error_code = $5,
+           last_error_message = $5,
+           last_error_retryable = $4 and retry_count < 4,
+           next_poll_at = case when $4 and retry_count < 4
+             then now() + make_interval(secs => least(300, 15 * (retry_count + 1)))
+             else null end,
+           updated_at = now()
+       where id = $1 and project_id = $2 and user_id = $3
+         and state = $7
+         and state not in ('distributed', 'failed', 'action_required')
+       returning id, state
+     ), deploy_updated as (
+       update deploys set error_code = $5, error_message = $5, updated_at = now()
+       from updated where deploys.id = (
+         select deploy_id from store_release_jobs where id = updated.id
+       )
+     )
+     insert into store_release_events (
+       release_id, event_key, to_state, source, error_code, error_message, retryable
+     )
+     select updated.id, $6, updated.state, 'helix', $5, $5, $4
+     from updated`,
+    [
+      input.releaseId,
+      input.projectId,
+      input.userId,
+      runnerError.retryable,
+      runnerError.code,
+      eventKey,
+      input.expectedState,
+    ],
+  );
 }
 
 export const getPublicApp = createServerFn({ method: "GET" })
@@ -386,14 +800,19 @@ export const listDeploys = createServerFn({ method: "GET" })
     await ensureSchema();
     const sql = await getSql();
     const rows = await sql<DeployRow>`
-      select id, project_id, user_id, target, status, slug, bundle_id, apple_team,
-             version, testers_code, url, log, created_at, updated_at,
-             build_job_id, provider, provider_deploy_id, artifact_ref,
-             artifact_sha256, published_sha256, output_integrity_version,
-             rollback_ref, release_key, completed_at,
-             error_code, error_message
-      from deploys where project_id = ${projectId} and user_id = ${context.userId}
-      order by created_at desc
+      select deploy.id, deploy.project_id, deploy.user_id, deploy.target,
+             deploy.status, deploy.slug, deploy.bundle_id, deploy.apple_team,
+             deploy.version, deploy.testers_code, deploy.url, deploy.log,
+             deploy.created_at, deploy.updated_at, deploy.build_job_id,
+             deploy.provider, deploy.provider_deploy_id, deploy.artifact_ref,
+             deploy.artifact_sha256, deploy.published_sha256,
+             deploy.output_integrity_version, deploy.rollback_ref,
+             deploy.release_key, deploy.completed_at, deploy.error_code,
+             deploy.error_message, store.id as store_release_id
+      from deploys as deploy
+      left join store_release_jobs as store on store.deploy_id = deploy.id
+      where deploy.project_id = ${projectId} and deploy.user_id = ${context.userId}
+      order by deploy.created_at desc
     `;
     return rows.map(mapDeploy);
   });
@@ -406,13 +825,14 @@ export const publishWeb = createServerFn({ method: "POST" })
     requestId: normalizeGateRequestId(input.requestId),
   }))
   .handler(async ({ context, data }) => {
-    await ensureSchema();
-    const sql = await getSql();
     const artifact = await getApprovedOwnedBuild({
       jobId: data.jobId,
       projectId: data.projectId,
       userId: context.userId,
     });
+    assertHarborWebPublishable(artifact.buildLevel);
+    await ensureSchema();
+    const sql = await getSql();
     const releaseKey = `web:${data.jobId}:${data.requestId}`;
     const replay = await sql<{
       id: string;
@@ -823,6 +1243,55 @@ export const publishGuest = createServerFn({ method: "POST" })
     }
   });
 
+export const getStoreReadiness = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((target: "ios" | "android") => target)
+  .handler(async ({ data: target }) => storeReadiness(target));
+
+async function advanceStoreRelease(input: {
+  sql: Sql;
+  row: StoreReleaseRow;
+  identity: StoreIdentity;
+  userId: string;
+}): Promise<StoreReleaseRow> {
+  if (["distributed", "failed", "action_required"].includes(input.row.state)) return input.row;
+  const action = input.row.state === "dispatch_accepted" ? "activate" : "status";
+  try {
+    const report = await callStoreRunner({
+      action,
+      releaseId: input.row.id,
+      idempotencyKey: input.row.idempotency_key,
+      packageSha256: input.row.package_sha256,
+      identity: input.identity,
+      sourcePackage: null,
+    });
+    return await persistStoreRunnerReport({
+      sql: input.sql,
+      report,
+      releaseId: input.row.id,
+      projectId: input.row.project_id,
+      userId: input.userId,
+      buildJobId: input.row.build_job_id,
+      artifactSha256: input.row.source_artifact_sha256,
+      target: input.row.platform,
+    });
+  } catch (error) {
+    await recordStoreRunnerFailure({
+      sql: input.sql,
+      releaseId: input.row.id,
+      projectId: input.row.project_id,
+      userId: input.userId,
+      expectedState: input.row.state,
+      error,
+    });
+    const refreshed = await input.sql.query<StoreReleaseRow>(
+      `select * from store_release_jobs where id = $1 and user_id = $2`,
+      [input.row.id, input.userId],
+    );
+    return refreshed[0] ?? input.row;
+  }
+}
+
 export const shipStore = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(
@@ -831,147 +1300,318 @@ export const shipStore = createServerFn({ method: "POST" })
       jobId: string;
       target: "ios" | "android";
       appleTeam?: string;
-      bundleId?: string;
+      bundleId: string;
+      easProjectId: string;
       requestId: string;
+      confirmSubmission: boolean;
     }) => ({
       projectId: input.projectId.trim().slice(0, 128),
       jobId: input.jobId.trim().slice(0, 128),
       target: input.target,
-      appleTeam: input.appleTeam?.trim().slice(0, 20) || "",
-      bundleId: input.bundleId?.trim().slice(0, 80) || "",
+      appleTeam: input.appleTeam?.trim().toUpperCase().slice(0, 10) || "",
+      bundleId: input.bundleId.trim().slice(0, 160),
+      easProjectId: input.easProjectId.trim().slice(0, 64),
       requestId: normalizeGateRequestId(input.requestId),
+      confirmSubmission: input.confirmSubmission === true,
     }),
   )
   .handler(async ({ context, data }) => {
-    await ensureSchema();
-    const sql = await getSql();
+    if (!data.confirmSubmission) {
+      throw new StoreRunnerError("STORE_SUBMISSION_CONFIRMATION_REQUIRED");
+    }
     const artifact = await getApprovedOwnedBuild({
       jobId: data.jobId,
       projectId: data.projectId,
       userId: context.userId,
     });
-    const rows = await sql<{ id: string; title: string }>`
+    // Production output is a multi-file service/client workspace. Its inline
+    // preview HTML is not a native application and must never be wrapped in a
+    // WebView then submitted as if it were the Production artifact.
+    assertStoreArtifactShippable(artifact.buildLevel);
+    if (!storeReadiness(data.target).runnerConfigured) {
+      throw new StoreRunnerError("STORE_RUNNER_UNCONFIGURED");
+    }
+    await ensureSchema();
+    const sql = await getSql();
+    const projects = await sql<{ id: string; title: string }>`
       select id, title from projects
       where id = ${data.projectId} and user_id = ${context.userId}
     `;
-    if (!rows[0]) throw new HumanGateError("HUMAN_GATE_FORBIDDEN", 403);
-    const project = rows[0];
+    if (!projects[0]) throw new HumanGateError("HUMAN_GATE_FORBIDDEN", 403);
+    const project = projects[0];
     const title = artifact.title || project.title;
     const slug = slugify(title);
-    const bundle = data.bundleId || bundleIdFromTitle(title);
+    const identity = StoreIdentitySchema.parse({
+      platform: data.target,
+      appIdentifier: data.bundleId,
+      easProjectId: data.easProjectId,
+      version: "1.0.0",
+      appleTeamId: data.target === "ios" ? data.appleTeam : null,
+      destination: data.target === "ios" ? "testflight" : "play_internal",
+    });
     const files = expoFiles({
       title,
       slug,
       html: artifact.html,
-      bundleId: bundle,
-      appleTeam: data.appleTeam,
+      bundleId: data.bundleId,
+      easProjectId: data.easProjectId,
+      appleTeam: data.target === "ios" ? data.appleTeam : undefined,
       liveUrl: appUrl(slug),
       platform: data.target,
     });
     const zip = zipFiles(files);
-    const publishedSha256 = await sha256BytesHex(zip);
-    const pack = {
-      filename: `${slug}-${data.target}-source.zip`,
-      base64: toBase64(zip),
-    };
-    const readiness = storeReadiness(data.target);
-    const releaseKey = `store-package:${data.jobId}:${data.target}:${data.requestId}`;
-    const id = crypto.randomUUID();
-    let deployId: string = id;
+    const packageSha256 = await sha256BytesHex(zip);
+    const packageFilename = `${slug}-${data.target}-source.zip`;
+    const releaseIdentitySha256 = await sha256Utf8Hex(
+      JSON.stringify({
+        version: identity.version,
+        jobId: data.jobId,
+        target: data.target,
+        appIdentifier: identity.appIdentifier,
+        easProjectId: identity.easProjectId,
+      }),
+    );
+    // The release identity, not a browser-generated retry nonce, is the
+    // provider/debit idempotency boundary. A lost HTTP response can therefore
+    // be retried without creating another workflow or charging twice.
+    const idempotencyKey = `store-release:v1:${releaseIdentitySha256}`;
+    const candidateReleaseId = crypto.randomUUID();
+    const preparedRows = await sql.query<StoreReleaseRow>(
+      `with gate as materialized (
+         select job.id
+         from build_jobs as job
+         join projects as owned on owned.id = job.project_id
+         where job.id = $1 and job.project_id = $2 and job.user_id = $3
+           and owned.user_id = $3 and owned.current_build_job_id = job.id
+           and job.queue_status in ('approved', 'deployed')
+           and job.artifact_sha256 = $4
+           and exists (
+             select 1 from build_job_gate_events as event
+             where event.job_id = job.id and event.decision = 'approve'
+               and event.artifact_sha256 = job.artifact_sha256
+           )
+         for update of job
+       ), prepared as (
+         insert into store_release_jobs (
+           id, project_id, build_job_id, user_id, platform, destination,
+           request_id, idempotency_key, source_artifact_sha256, package_sha256,
+           package_bytes, package_filename, app_identifier, eas_project_id,
+           apple_team_id, play_track, state
+         )
+         select $5, $2, gate.id, $3, $6, $7, $8, $9, $4, $10,
+                $11, $12, $13, $14, $15, null, 'prepared'
+         from gate
+         on conflict (idempotency_key) do update
+           set updated_at = store_release_jobs.updated_at
+         where store_release_jobs.project_id = excluded.project_id
+           and store_release_jobs.build_job_id = excluded.build_job_id
+           and store_release_jobs.user_id = excluded.user_id
+           and store_release_jobs.platform = excluded.platform
+           and store_release_jobs.destination = excluded.destination
+           and store_release_jobs.source_artifact_sha256 = excluded.source_artifact_sha256
+           and store_release_jobs.package_sha256 = excluded.package_sha256
+           and store_release_jobs.app_identifier = excluded.app_identifier
+           and store_release_jobs.eas_project_id = excluded.eas_project_id
+           and store_release_jobs.apple_team_id is not distinct from excluded.apple_team_id
+         returning *
+       ), event as (
+         insert into store_release_events (
+           release_id, event_key, from_state, to_state, source, evidence
+         )
+         select prepared.id, 'prepared:' || prepared.package_sha256,
+                null, 'prepared', 'helix',
+                jsonb_build_object('packageSha256', prepared.package_sha256,
+                                   'packageBytes', prepared.package_bytes)
+         from prepared
+         on conflict (release_id, event_key) do nothing
+       )
+       select * from prepared`,
+      [
+        data.jobId,
+        project.id,
+        context.userId,
+        artifact.artifactSha256,
+        candidateReleaseId,
+        data.target,
+        identity.destination,
+        data.requestId,
+        idempotencyKey,
+        packageSha256,
+        zip.byteLength,
+        packageFilename,
+        identity.appIdentifier,
+        identity.easProjectId,
+        identity.appleTeamId,
+      ],
+    );
+    let release = preparedRows[0];
+    if (!release) throw new StoreRunnerError("STORE_RELEASE_IDEMPOTENCY_CONFLICT");
+
+    if (release.state !== "prepared") {
+      release = await advanceStoreRelease({ sql, row: release, identity, userId: context.userId });
+      return storeReleaseResult(release);
+    }
+
+    const accepted = await callStoreRunner({
+      action: "accept",
+      releaseId: release.id,
+      idempotencyKey,
+      packageSha256,
+      identity,
+      sourcePackage: {
+        filename: packageFilename,
+        sha256: packageSha256,
+        byteLength: zip.byteLength,
+        base64: toBase64(zip),
+      },
+    });
+    const deployId = crypto.randomUUID();
+    const acceptedLog = JSON.stringify(harborStore(data.target, accepted));
+    const acceptedReport = JSON.stringify(accepted);
+    const acceptedCredentials = JSON.stringify(accepted.credentialEvidence);
     try {
-      const prepared = await sql<{ id: string }>`
-        with gate as materialized (
-          select job.id
-          from build_jobs as job
-          join projects as owned on owned.id = job.project_id
-          where job.id = ${data.jobId}
-            and job.project_id = ${project.id}
-            and job.user_id = ${context.userId}
-            and owned.user_id = ${context.userId}
-            and owned.current_build_job_id = job.id
-            and job.queue_status in ('approved', 'deployed')
-            and job.artifact_sha256 = ${artifact.artifactSha256}
-            and not exists (
-              select 1
-              from deploys as prior_release
-              where prior_release.release_key = ${releaseKey}
-                and (
-                  prior_release.artifact_sha256 is distinct from ${artifact.artifactSha256}
-                  or prior_release.published_sha256 is distinct from ${publishedSha256}
-                )
-            )
-            and exists (
-              select 1 from build_job_gate_events as event
-              where event.job_id = job.id
-                and event.decision = 'approve'
-                and event.artifact_sha256 = job.artifact_sha256
-            )
-          for update of job
-        ), credit as materialized (
-          select gate.id as job_id, mutation.was_applied
-          from gate
-          cross join lateral apply_credit_entry(
-            ${context.userId},
-            ${-DEPLOY_COST[data.target]},
-            ${data.target},
-            ${project.id},
-            ${
-              data.target === "ios"
-                ? "iOS web-to-native source package"
-                : "Android web-to-native source package"
-            },
-            ${releaseKey}
-          ) as mutation
-        ), project_cost as (
-          update projects
-          set credits_spent = credits_spent
-                + case when credit.was_applied then ${DEPLOY_COST[data.target]} else 0 end,
-              updated_at = now()
-          from credit
-          where projects.id = ${project.id}
-            and projects.user_id = ${context.userId}
-          returning projects.id
-        )
-        insert into deploys (
-          id, project_id, user_id, target, status, slug, bundle_id, apple_team,
-          testers_code, url, log, build_job_id, provider,
-          provider_deploy_id, artifact_ref, artifact_sha256, published_sha256,
-          release_key, completed_at
-        )
-        select
-          ${id}, project_cost.id, ${context.userId}, ${data.target},
-          'package_prepared', ${slug}, ${bundle}, ${data.appleTeam || null},
-          null, null, ${JSON.stringify(harborStore(data.target))}, ${data.jobId},
-          'local-export', null, ${pack.filename}, ${artifact.artifactSha256},
-          ${publishedSha256},
-          ${releaseKey}, now()
-        from project_cost
-        on conflict (release_key) where release_key is not null
-        do update set updated_at = deploys.updated_at
-        where deploys.artifact_sha256 = excluded.artifact_sha256
-          and deploys.published_sha256 = excluded.published_sha256
-        returning id
-      `;
-      if (!prepared[0]) throw new HumanGateError("HUMAN_GATE_CLOSED");
-      deployId = prepared[0].id;
+      const committed = await sql.query<StoreReleaseRow>(
+        `with gate as materialized (
+           select release.id
+           from store_release_jobs as release
+           join build_jobs as job on job.id = release.build_job_id
+           join projects as owned on owned.id = release.project_id
+           where release.id = $1 and release.project_id = $2 and release.user_id = $3
+             and release.state = 'prepared' and release.build_job_id = $4
+             and release.source_artifact_sha256 = $5 and release.package_sha256 = $6
+             and owned.user_id = $3 and owned.current_build_job_id = job.id
+             and job.queue_status in ('approved', 'deployed')
+             and job.artifact_sha256 = $5
+             and exists (
+               select 1 from build_job_gate_events as event
+               where event.job_id = job.id and event.decision = 'approve'
+                 and event.artifact_sha256 = job.artifact_sha256
+             )
+           for update of release, job
+         ), credit as materialized (
+           select gate.id, mutation.was_applied
+           from gate
+           cross join lateral apply_credit_entry(
+             $3, $7, $8, $2, $9, $10
+           ) as mutation
+         ), project_cost as (
+           update projects
+           set credits_spent = credits_spent
+                 + case when credit.was_applied then $11 else 0 end,
+               updated_at = now()
+           from credit
+           where projects.id = $2 and projects.user_id = $3
+           returning projects.id
+         ), deployed as (
+           insert into deploys (
+             id, project_id, user_id, target, status, slug, bundle_id, apple_team,
+             testers_code, url, log, build_job_id, provider, provider_deploy_id,
+             artifact_ref, artifact_sha256, published_sha256, release_key
+           )
+           select $12, project_cost.id, $3, $8, 'dispatch_accepted', $13, $14, $15,
+                  null, null, $16, $4, 'eas-workflows', $17,
+                  $18, $5, $6, $10
+           from project_cost
+           on conflict (release_key) where release_key is not null do update
+             set updated_at = deploys.updated_at
+           where deploys.artifact_sha256 = excluded.artifact_sha256
+             and deploys.published_sha256 = excluded.published_sha256
+             and deploys.provider_deploy_id = excluded.provider_deploy_id
+           returning id
+         ), updated as (
+           update store_release_jobs as release
+           set deploy_id = deployed.id, state = 'dispatch_accepted',
+               runner_job_id = $17, credential_evidence = $19::jsonb,
+               provider_evidence = $20::jsonb, accepted_at = $21::timestamptz,
+               next_poll_at = now(), last_error_code = null,
+               last_error_message = null, last_error_retryable = null,
+               updated_at = now()
+           from deployed
+           where release.id = $1
+           returning release.*
+         ), event as (
+           insert into store_release_events (
+             release_id, event_key, from_state, to_state, source,
+             provider_observed_at, evidence
+           )
+           select updated.id, $22, 'prepared', 'dispatch_accepted', 'runner',
+                  $23::timestamptz, $20::jsonb
+           from updated
+           on conflict (release_id, event_key) do nothing
+         )
+         select * from updated`,
+        [
+          release.id,
+          project.id,
+          context.userId,
+          data.jobId,
+          artifact.artifactSha256,
+          packageSha256,
+          -DEPLOY_COST[data.target],
+          data.target,
+          data.target === "ios"
+            ? "iOS TestFlight workflow dispatch"
+            : "Android Play workflow dispatch",
+          idempotencyKey,
+          DEPLOY_COST[data.target],
+          deployId,
+          slug,
+          data.bundleId,
+          identity.appleTeamId,
+          acceptedLog,
+          accepted.runnerJobId,
+          `runner:${accepted.runnerJobId}:sha256:${packageSha256}`,
+          acceptedCredentials,
+          acceptedReport,
+          accepted.acceptedAt,
+          storeReportEventKey(accepted),
+          accepted.observedAt,
+        ],
+      );
+      if (!committed[0]) throw new StoreRunnerError("STORE_RELEASE_ACCEPT_COMMIT_FAILED");
+      release = committed[0];
     } catch (error) {
       rethrowCreditMutationError(error);
     }
-    return {
-      id: deployId,
-      status: "package_prepared" as const,
-      slug,
-      bundleId: bundle,
-      testersCode: null,
-      testersUrl: null,
-      url: null,
-      needsAccount: true,
-      submissionStatus: "not_executed" as const,
-      readiness,
-      pack,
-      sourceArtifactSha256: artifact.artifactSha256,
-      publishedSha256,
+
+    release = await advanceStoreRelease({ sql, row: release, identity, userId: context.userId });
+    return storeReleaseResult(release);
+  });
+
+export const refreshStoreSubmission = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { projectId: string; releaseId: string }) => ({
+    projectId: input.projectId.trim().slice(0, 128),
+    releaseId: input.releaseId.trim().slice(0, 128),
+  }))
+  .handler(async ({ context, data }) => {
+    await ensureSchema();
+    const sql = await getSql();
+    const rows = await sql.query<StoreReleaseRow>(
+      `select * from store_release_jobs
+       where id = $1 and project_id = $2 and user_id = $3`,
+      [data.releaseId, data.projectId, context.userId],
+    );
+    const release = rows[0];
+    if (!release) throw new HumanGateError("HUMAN_GATE_FORBIDDEN", 403);
+    if (release.state === "prepared") {
+      throw new StoreRunnerError("STORE_RELEASE_NOT_ACCEPTED");
+    }
+    const identity: StoreIdentity = {
+      platform: release.platform,
+      appIdentifier: release.app_identifier,
+      easProjectId: release.eas_project_id,
+      version: "1.0.0",
+      appleTeamId: release.apple_team_id,
+      destination: release.destination,
     };
+    const updated = await advanceStoreRelease({
+      sql,
+      row: release,
+      identity,
+      userId: context.userId,
+    });
+    return storeReleaseResult(updated);
   });
 
 export const downloadNativePack = createServerFn({ method: "POST" })
@@ -983,12 +1623,14 @@ export const downloadNativePack = createServerFn({ method: "POST" })
       target: "ios" | "android" | "windows";
       appleTeam?: string;
       bundleId?: string;
+      easProjectId?: string;
     }) => ({
       projectId: input.projectId.trim().slice(0, 128),
       jobId: input.jobId.trim().slice(0, 128),
       target: input.target,
       appleTeam: input.appleTeam?.trim() || "",
       bundleId: input.bundleId?.trim() || "",
+      easProjectId: input.easProjectId?.trim() || "",
     }),
   )
   .handler(async ({ context, data }) => {
@@ -1014,6 +1656,7 @@ export const downloadNativePack = createServerFn({ method: "POST" })
             slug,
             html: artifact.html,
             bundleId,
+            easProjectId: data.easProjectId || undefined,
             appleTeam: data.appleTeam,
             liveUrl,
             platform: data.target,

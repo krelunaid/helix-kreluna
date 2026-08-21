@@ -164,6 +164,7 @@ export async function settleAiCallTelemetry(input: {
 
 type UsageAggregateRow = {
   call_count: number;
+  application_cache_hit_count: number;
   retry_count: number;
   active_count: number;
   succeeded_count: number;
@@ -189,6 +190,11 @@ export async function readAiJobUsageSummary(input: {
   const rows = await sql.query<UsageAggregateRow>(
     `select
        count(call.call_id)::integer as call_count,
+       (
+         select count(*)::integer
+         from build_job_ai_cache_hits cache_hit
+         where cache_hit.job_id = job.id
+       ) as application_cache_hit_count,
        count(*) filter (where call.retry_index > 0)::integer as retry_count,
        count(*) filter (where call.status = 'started')::integer as active_count,
        count(*) filter (where call.status = 'succeeded')::integer as succeeded_count,
@@ -234,6 +240,7 @@ export async function readAiJobUsageSummary(input: {
   return Object.freeze({
     evidence: "provider_telemetry",
     callCount: safeCount(row.call_count),
+    applicationCacheHitCount: safeCount(row.application_cache_hit_count),
     retryCount: safeCount(row.retry_count),
     activeCallCount,
     succeededCallCount: safeCount(row.succeeded_count),

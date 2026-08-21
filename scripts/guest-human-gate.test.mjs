@@ -58,6 +58,11 @@ function makeGuestJob({ jobId, credential, html }) {
       "docs/artifact-level.md": "# Artifact level\n\nPrototype\n",
       "index.html": html,
     },
+    checkpoint: {
+      pipelineVersion: "helix-v3",
+      requestFingerprint: "",
+      stage: "queued",
+    },
     guestAccessTokenHash: credential.tokenHash,
     guestAccessExpiresAt: credential.expiresAt,
     createdAt: Date.now(),

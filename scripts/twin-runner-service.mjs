@@ -17,18 +17,16 @@ const MAX_REQUEST_BYTES = 384 * 1024;
 const MAX_SCREENSHOT_BYTES = 3 * 1024 * 1024;
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1_000;
 const RUN_TIMEOUT_MS = 180_000;
-const usedNonces = new Map();
-
-const secret = process.env.HELIX_BROWSER_RUNNER_SECRET?.trim();
-if (!secret || secret.length < 32) {
-  throw new Error("HELIX_BROWSER_RUNNER_SECRET must contain at least 32 characters");
-}
+// A request timestamp may be one full skew window in the future. Keep the
+// claim beyond that complete acceptance window and the bounded browser run.
+const NONCE_TTL_MS = MAX_CLOCK_SKEW_MS + RUN_TIMEOUT_MS + 5 * 60 * 1_000;
+const REPLAY_TABLE = "helix_browser_runner_replay_nonces";
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function hmac(value) {
+function hmac(secret, value) {
   return createHmac("sha256", secret).update(value).digest("hex");
 }
 
@@ -39,10 +37,103 @@ function equalSignature(left, right) {
   return timingSafeEqual(Buffer.from(left, "hex"), Buffer.from(right, "hex"));
 }
 
-function purgeNonces(now = Date.now()) {
-  for (const [nonce, expiresAt] of usedNonces) {
-    if (expiresAt <= now) usedNonces.delete(nonce);
+class RunnerRejection extends Error {
+  constructor(status, code, authenticatedNonce) {
+    super(code);
+    this.name = "RunnerRejection";
+    this.status = status;
+    this.code = code;
+    this.authenticatedNonce = authenticatedNonce;
   }
+}
+
+/**
+ * Validate the standalone service configuration without opening a connection.
+ * The executable intentionally has no volatile replay-store fallback: a real
+ * service must have a durable, shared PostgreSQL authority before it listens.
+ */
+export function parseTwinRunnerServiceConfiguration(environment = process.env) {
+  const secret = environment.HELIX_BROWSER_RUNNER_SECRET?.trim();
+  if (!secret || secret.length < 32) {
+    throw new Error("HELIX_BROWSER_RUNNER_SECRET must contain at least 32 characters");
+  }
+  const replayDatabaseUrl =
+    environment.HELIX_BROWSER_RUNNER_REPLAY_DATABASE_URL?.trim();
+  if (!replayDatabaseUrl) {
+    throw new Error(
+      "HELIX_BROWSER_RUNNER_REPLAY_DATABASE_URL is required; volatile replay stores are test-only",
+    );
+  }
+  let parsed;
+  try {
+    parsed = new URL(replayDatabaseUrl);
+  } catch {
+    throw new Error("HELIX_BROWSER_RUNNER_REPLAY_DATABASE_URL must be a PostgreSQL URL");
+  }
+  if (
+    !["postgres:", "postgresql:"].includes(parsed.protocol) ||
+    !parsed.hostname ||
+    parsed.hash
+  ) {
+    throw new Error("HELIX_BROWSER_RUNNER_REPLAY_DATABASE_URL must be a PostgreSQL URL");
+  }
+  return { secret, replayDatabaseUrl };
+}
+
+/**
+ * PostgreSQL is the replay authority for the standalone browser runner. The
+ * unique key plus conditional upsert makes `claim` atomic across requests,
+ * processes and service restarts. Callers must not substitute a volatile store
+ * outside explicit tests.
+ */
+export function createPostgresTwinRunnerReplayStore(client) {
+  if (!client || typeof client.query !== "function") {
+    throw new Error("RUNNER_REPLAY_STORE_INVALID");
+  }
+  return {
+    async initialize() {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS ${REPLAY_TABLE} (
+          nonce_sha256 TEXT PRIMARY KEY CHECK (nonce_sha256 ~ '^[0-9a-f]{64}$'),
+          expires_at TIMESTAMPTZ NOT NULL,
+          claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS helix_browser_runner_replay_expiry_idx
+        ON ${REPLAY_TABLE} (expires_at)
+      `);
+      await client.query(`DELETE FROM ${REPLAY_TABLE} WHERE expires_at <= NOW()`);
+    },
+    async claim(input) {
+      if (
+        !/^[0-9a-f]{64}$/.test(input?.nonceSha256 ?? "") ||
+        !Number.isSafeInteger(input?.expiresAtMs) ||
+        input.expiresAtMs <= 0
+      ) {
+        throw new Error("RUNNER_REPLAY_CLAIM_INVALID");
+      }
+      const result = await client.query(
+        `
+          INSERT INTO ${REPLAY_TABLE} (nonce_sha256, expires_at)
+          VALUES ($1, TO_TIMESTAMP($2 / 1000.0))
+          ON CONFLICT (nonce_sha256) DO UPDATE
+          SET expires_at = EXCLUDED.expires_at, claimed_at = NOW()
+          WHERE ${REPLAY_TABLE}.expires_at <= NOW()
+          RETURNING nonce_sha256
+        `,
+        [input.nonceSha256, input.expiresAtMs],
+      );
+      const claimed = Array.isArray(result?.rows) && result.rows.length === 1;
+      // Keep the durable table bounded. Failure is fail-closed even after a
+      // successful claim: the nonce remains claimed and browser work never runs.
+      await client.query(
+        `DELETE FROM ${REPLAY_TABLE} WHERE expires_at <= NOW() AND nonce_sha256 <> $1`,
+        [input.nonceSha256],
+      );
+      return claimed;
+    },
+  };
 }
 
 async function body(request) {
@@ -60,22 +151,35 @@ async function body(request) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function authenticate(request, requestBody) {
+async function authenticate(request, requestBody, dependencies) {
   const timestamp = String(request.headers["x-helix-runner-timestamp"] ?? "");
   const nonce = String(request.headers["x-helix-runner-nonce"] ?? "");
   const signature = String(request.headers["x-helix-runner-signature"] ?? "");
   const timestampNumber = Number(timestamp);
-  purgeNonces();
+  const receivedAtMs = dependencies.now();
   if (
     !Number.isFinite(timestampNumber) ||
-    Math.abs(Date.now() - timestampNumber) > MAX_CLOCK_SKEW_MS ||
+    Math.abs(receivedAtMs - timestampNumber) > MAX_CLOCK_SKEW_MS ||
     !/^[0-9a-f-]{36}$/i.test(nonce) ||
-    usedNonces.has(nonce) ||
-    !equalSignature(signature, hmac(`${timestamp}\n${nonce}\n${requestBody}`))
+    !equalSignature(
+      signature,
+      hmac(dependencies.secret, `${timestamp}\n${nonce}\n${requestBody}`),
+    )
   ) {
-    throw new Error("RUNNER_UNAUTHORIZED");
+    throw new RunnerRejection(401, "RUNNER_UNAUTHORIZED");
   }
-  usedNonces.set(nonce, Date.now() + MAX_CLOCK_SKEW_MS);
+  let claimed;
+  try {
+    claimed = await dependencies.replayStore.claim({
+      nonceSha256: sha256(nonce),
+      expiresAtMs: receivedAtMs + NONCE_TTL_MS,
+    });
+  } catch {
+    throw new RunnerRejection(503, "RUNNER_REPLAY_STORE_UNAVAILABLE", nonce);
+  }
+  if (!claimed) {
+    throw new RunnerRejection(409, "RUNNER_REPLAY_DETECTED", nonce);
+  }
   return nonce;
 }
 
@@ -194,43 +298,130 @@ async function executeBrowserRun(input) {
   }
 }
 
-function signedJson(response, status, nonce, payload) {
+function signedJson(response, status, nonce, payload, secret) {
   const responseBody = JSON.stringify(payload);
   response.writeHead(status, {
     "content-type": "application/json",
     "content-length": Buffer.byteLength(responseBody),
     "cache-control": "no-store",
     "x-content-type-options": "nosniff",
-    "x-helix-runner-signature": hmac(`${nonce}\n${responseBody}`),
+    "x-helix-runner-signature": hmac(secret, `${nonce}\n${responseBody}`),
   });
   response.end(responseBody);
 }
 
-const server = createServer(async (request, response) => {
-  let nonce = "unauthenticated";
-  try {
-    if (request.method !== "POST" || request.url !== "/run") {
-      response.writeHead(404, { "cache-control": "no-store" }).end();
-      return;
-    }
-    const requestBody = await body(request);
-    nonce = authenticate(request, requestBody);
-    const input = validateInput(JSON.parse(requestBody));
-    signedJson(response, 200, nonce, await executeBrowserRun(input));
-  } catch (error) {
-    const code = String(error instanceof Error ? error.message : error).slice(0, 120);
-    if (nonce === "unauthenticated") {
-      response.writeHead(code === "RUNNER_REQUEST_TOO_LARGE" ? 413 : 401, {
-        "cache-control": "no-store",
-      }).end();
-    } else {
-      signedJson(response, 500, nonce, { errorCode: code });
-    }
+export function createTwinRunnerRequestHandler(dependencies) {
+  const secret = dependencies?.secret?.trim();
+  if (!secret || secret.length < 32) {
+    throw new Error("HELIX_BROWSER_RUNNER_SECRET must contain at least 32 characters");
   }
-});
+  if (!dependencies.replayStore || typeof dependencies.replayStore.claim !== "function") {
+    throw new Error("RUNNER_DURABLE_REPLAY_STORE_REQUIRED");
+  }
+  const now = dependencies.now ?? Date.now;
+  const execute = dependencies.executeBrowserRun ?? executeBrowserRun;
 
-const port = Number(process.env.HELIX_TWIN_RUNNER_PORT ?? "8787");
-const host = process.env.HELIX_TWIN_RUNNER_HOST?.trim() || "127.0.0.1";
-server.listen(port, host, () => {
+  return async (request, response) => {
+    let nonce = "unauthenticated";
+    try {
+      if (request.method !== "POST" || request.url !== "/run") {
+        response.writeHead(404, { "cache-control": "no-store" }).end();
+        return;
+      }
+      const requestBody = await body(request);
+      nonce = await authenticate(request, requestBody, {
+        secret,
+        replayStore: dependencies.replayStore,
+        now,
+      });
+      let candidate;
+      try {
+        candidate = JSON.parse(requestBody);
+      } catch {
+        throw new Error("RUNNER_INPUT_INVALID");
+      }
+      const input = validateInput(candidate);
+      signedJson(response, 200, nonce, await execute(input), secret);
+    } catch (error) {
+      const rejection = error instanceof RunnerRejection ? error : undefined;
+      if (rejection?.authenticatedNonce) nonce = rejection.authenticatedNonce;
+      const code = String(
+        rejection?.code ?? (error instanceof Error ? error.message : error),
+      ).slice(0, 120);
+      if (nonce === "unauthenticated") {
+        response
+          .writeHead(
+            rejection?.status ?? (code === "RUNNER_REQUEST_TOO_LARGE" ? 413 : 401),
+            { "cache-control": "no-store" },
+          )
+          .end();
+      } else {
+        signedJson(response, rejection?.status ?? 500, nonce, { errorCode: code }, secret);
+      }
+    }
+  };
+}
+
+export async function startTwinRunnerService(environment = process.env) {
+  const configuration = parseTwinRunnerServiceConfiguration(environment);
+  const { Pool } = await import("pg");
+  const pool = new Pool({
+    connectionString: configuration.replayDatabaseUrl,
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+    max: 5,
+  });
+  const replayStore = createPostgresTwinRunnerReplayStore(pool);
+  try {
+    await replayStore.initialize();
+  } catch {
+    await pool.end().catch(() => undefined);
+    throw new Error("HELIX_BROWSER_RUNNER_REPLAY_STORE_UNAVAILABLE");
+  }
+
+  const server = createServer(
+    createTwinRunnerRequestHandler({
+      secret: configuration.secret,
+      replayStore,
+    }),
+  );
+  const port = Number(environment.HELIX_TWIN_RUNNER_PORT ?? "8787");
+  const host = environment.HELIX_TWIN_RUNNER_HOST?.trim() || "127.0.0.1";
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    await pool.end();
+    throw new Error("HELIX_TWIN_RUNNER_PORT must be an integer between 1 and 65535");
+  }
+
+  try {
+    await new Promise((resolveListen, rejectListen) => {
+      server.once("error", rejectListen);
+      server.listen(port, host, resolveListen);
+    });
+  } catch (error) {
+    await pool.end().catch(() => undefined);
+    throw error;
+  }
+  let poolClosed = false;
+  const closePool = async () => {
+    if (poolClosed) return;
+    poolClosed = true;
+    await pool.end();
+  };
+  server.once("close", () => {
+    void closePool();
+  });
   process.stdout.write(`Helix Twin runner listening on http://${host}:${port}/run\n`);
-});
+  return { server, closePool };
+}
+
+const isMain = process.argv[1]
+  ? resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  : false;
+if (isMain) {
+  startTwinRunnerService().catch((error) => {
+    process.stderr.write(
+      `Helix Twin runner failed to start: ${error instanceof Error ? error.message : "unknown error"}\n`,
+    );
+    process.exitCode = 1;
+  });
+}

@@ -45,6 +45,11 @@ function makeJob({ jobId, projectId, userId, html }) {
       "docs/artifact-level.md": "# Artifact level\n\nPrototype\n",
       "index.html": html,
     },
+    checkpoint: {
+      pipelineVersion: "helix-v3",
+      requestFingerprint: "",
+      stage: "queued",
+    },
     projectId,
     userId,
     createdAt: Date.now(),
@@ -206,6 +211,52 @@ test("the Human Gate seals artifacts and enforces atomic audited decisions", asy
       }),
       gateError(gate, "HUMAN_GATE_ARTIFACT_NOT_SEALED", 409),
     );
+  });
+
+  await t.test("a sealed v2 candidate cannot cross the v3 Human Gate", async () => {
+    const userId = `gate-user-${crypto.randomUUID()}`;
+    const projectId = `gate-project-${crypto.randomUUID()}`;
+    await createProject(pg, { projectId, userId });
+    const candidate = await sealCandidate({
+      pg,
+      queue,
+      patch,
+      projectId,
+      userId,
+      label: "Fenced pipeline candidate",
+    });
+    const persisted = await pg.query(
+      "select payload from build_jobs where id = $1",
+      [candidate.jobId],
+    );
+    const payload = JSON.parse(persisted.rows[0].payload);
+    payload.checkpoint.pipelineVersion = "helix-v2";
+    await pg.query(
+      `update build_jobs
+       set pipeline_version = 'helix-v2', payload = $2
+       where id = $1`,
+      [candidate.jobId, JSON.stringify(payload)],
+    );
+
+    await assert.rejects(
+      gate.__testDecideOwnedJob({
+        jobId: candidate.jobId,
+        userId,
+        decision: "approve",
+        requestId: crypto.randomUUID(),
+        reason: null,
+      }),
+      gateError(gate, "HUMAN_GATE_ARTIFACT_NOT_SEALED", 409),
+    );
+    const state = await pg.query(
+      `select queue_status,
+              (select count(*)::int from build_job_gate_events where job_id = $1) as events
+       from build_jobs where id = $1`,
+      [candidate.jobId],
+    );
+    assert.deepEqual(state.rows, [
+      { queue_status: "awaiting_human_approval", events: 0 },
+    ]);
   });
 
   await t.test("approval is blocked without measured Aegis evidence for the exact hash", async () => {

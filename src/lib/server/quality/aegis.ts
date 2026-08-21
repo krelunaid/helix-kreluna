@@ -572,7 +572,10 @@ function validateGeneratedCsp(source: string, findings: QualityFinding[]) {
   }
 }
 
-export async function runAegisStaticScan(html: string): Promise<AegisReport> {
+export async function runAegisStaticScan(
+  html: string,
+  options: { measuredAt?: string } = {},
+): Promise<AegisReport> {
   const findings: QualityFinding[] = [];
   scanSecrets(html, findings);
   scanUnsafeDom(html, findings);
@@ -590,7 +593,7 @@ export async function runAegisStaticScan(html: string): Promise<AegisReport> {
     scanner: "helix-aegis",
     version: "1.0.0",
     evidence: "measured",
-    measuredAt: new Date().toISOString(),
+    measuredAt: options.measuredAt ?? new Date().toISOString(),
     artifactSha256: await sha256Hex(html),
     passed: blockerCount === 0,
     blockerCount,

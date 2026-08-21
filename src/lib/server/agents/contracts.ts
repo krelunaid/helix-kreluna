@@ -149,10 +149,32 @@ export type AgentAllowedTool =
 
 export type AgentModel = "grok-4.5" | "grok-4.6" | null;
 
+export const AgentExecutionStatusSchema = z.enum([
+  "queued",
+  "running",
+  "done",
+  "error",
+  "skipped",
+]);
+
+export const AgentExecutionErrorSchema = z
+  .object({
+    code: z.string().regex(/^[A-Z][A-Z0-9_]{2,127}$/),
+    retryable: z.boolean(),
+    detailRedacted: z.string().trim().min(1).max(2_000),
+  })
+  .strict();
+
+const AGENT_VALIDATION_POLICY = {
+  mode: "zod_and_sha256",
+  artifactRequiredOnDone: true,
+} as const;
+
 export type AgentContract<
   TInput extends z.ZodType = z.ZodType,
   TOutput extends z.ZodType = z.ZodType,
 > = Readonly<{
+  id: string;
   kind: AgentContractKind;
   version: `${number}.${number}.${number}`;
   role: string;
@@ -168,6 +190,11 @@ export type AgentContract<
   /** Exact integer policy ceiling; one USD is 10^10 ticks. */
   maxCostUsdTicks: `${bigint}`;
   artifact: string;
+  validation: typeof AGENT_VALIDATION_POLICY;
+  /** Runtime status vocabulary accepted by this contract. */
+  status: typeof AgentExecutionStatusSchema;
+  /** Structured, redacted runtime error accepted by this contract. */
+  error: z.ZodNullable<typeof AgentExecutionErrorSchema>;
 }>;
 
 function defineContract<const TInput extends z.ZodType, const TOutput extends z.ZodType>(
@@ -183,6 +210,7 @@ function defineContract<const TInput extends z.ZodType, const TOutput extends z.
  */
 export const AGENT_CONTRACTS = {
   helix: defineContract({
+    id: "helix",
     kind: "orchestrator",
     version: "2.0.0",
     role: "Supervise the build, persist checkpoints, and enforce release gates.",
@@ -196,8 +224,12 @@ export const AGENT_CONTRACTS = {
     maxCostUsd: 0,
     maxCostUsdTicks: "0",
     artifact: "validated_release_candidate",
+    validation: AGENT_VALIDATION_POLICY,
+    status: AgentExecutionStatusSchema,
+    error: AgentExecutionErrorSchema.nullable(),
   }),
   nova: defineContract({
+    id: "nova",
     kind: "ai_agent",
     version: "2.0.0",
     role: "Turn the brief into a structured PRD, MVP, scope, and acceptance criteria.",
@@ -211,8 +243,12 @@ export const AGENT_CONTRACTS = {
     maxCostUsd: 0.25,
     maxCostUsdTicks: "2500000000",
     artifact: "product_plan",
+    validation: AGENT_VALIDATION_POLICY,
+    status: AgentExecutionStatusSchema,
+    error: AgentExecutionErrorSchema.nullable(),
   }),
   atlas: defineContract({
+    id: "atlas",
     kind: "ai_agent",
     version: "2.0.0",
     role: "Turn the brief and PRD into routes, data flow, contracts, and failure modes.",
@@ -226,8 +262,12 @@ export const AGENT_CONTRACTS = {
     maxCostUsd: 0.3,
     maxCostUsdTicks: "3000000000",
     artifact: "architecture_plan",
+    validation: AGENT_VALIDATION_POLICY,
+    status: AgentExecutionStatusSchema,
+    error: AgentExecutionErrorSchema.nullable(),
   }),
   lumen: defineContract({
+    id: "lumen",
     kind: "ai_agent",
     version: "2.0.0",
     role: "Produce three distinct visual directions for deterministic scoring.",
@@ -241,8 +281,12 @@ export const AGENT_CONTRACTS = {
     maxCostUsd: 0.35,
     maxCostUsdTicks: "3500000000",
     artifact: "three_direction_design_portfolio",
+    validation: AGENT_VALIDATION_POLICY,
+    status: AgentExecutionStatusSchema,
+    error: AgentExecutionErrorSchema.nullable(),
   }),
   forgeUi: defineContract({
+    id: "forgeUi",
     kind: "ai_agent",
     version: "2.0.0",
     role: "Build views, content, components, hooks, and the selected design system.",
@@ -256,8 +300,12 @@ export const AGENT_CONTRACTS = {
     maxCostUsd: 1.5,
     maxCostUsdTicks: "15000000000",
     artifact: "forge_structure_ui_html",
+    validation: AGENT_VALIDATION_POLICY,
+    status: AgentExecutionStatusSchema,
+    error: AgentExecutionErrorSchema.nullable(),
   }),
   forgeLogic: defineContract({
+    id: "forgeLogic",
     kind: "ai_agent",
     version: "2.0.0",
     role: "Add state, interactions, forms, validation, and events to the UI artifact.",
@@ -271,8 +319,12 @@ export const AGENT_CONTRACTS = {
     maxCostUsd: 1.5,
     maxCostUsdTicks: "15000000000",
     artifact: "forge_logic_html",
+    validation: AGENT_VALIDATION_POLICY,
+    status: AgentExecutionStatusSchema,
+    error: AgentExecutionErrorSchema.nullable(),
   }),
   iris: defineContract({
+    id: "iris",
     kind: "review_agent",
     version: "2.0.0",
     role: "Review the runtime evidence and return a structured QA decision.",
@@ -286,8 +338,12 @@ export const AGENT_CONTRACTS = {
     maxCostUsd: 0.2,
     maxCostUsdTicks: "2000000000",
     artifact: "qa_review",
+    validation: AGENT_VALIDATION_POLICY,
+    status: AgentExecutionStatusSchema,
+    error: AgentExecutionErrorSchema.nullable(),
   }),
   superior: defineContract({
+    id: "superior",
     kind: "patch_agent",
     version: "1.0.0",
     role: "Apply Iris and local must-fix findings to the validated HTML artifact.",
@@ -301,8 +357,12 @@ export const AGENT_CONTRACTS = {
     maxCostUsd: 1.5,
     maxCostUsdTicks: "15000000000",
     artifact: "superior_patched_html",
+    validation: AGENT_VALIDATION_POLICY,
+    status: AgentExecutionStatusSchema,
+    error: AgentExecutionErrorSchema.nullable(),
   }),
   gemPatch: defineContract({
+    id: "gemPatch",
     kind: "patch_agent",
     version: "2.0.0",
     role: "Return one hash-fenced, exact-fragment change without rewriting unrelated HTML.",
@@ -316,6 +376,9 @@ export const AGENT_CONTRACTS = {
     maxCostUsd: 0.5,
     maxCostUsdTicks: "5000000000",
     artifact: "controlled_gem_patch",
+    validation: AGENT_VALIDATION_POLICY,
+    status: AgentExecutionStatusSchema,
+    error: AgentExecutionErrorSchema.nullable(),
   }),
 } as const;
 

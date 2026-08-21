@@ -4,8 +4,13 @@ import type { KrelunaScore } from "@/lib/score";
 import type { GemRun } from "@/lib/gems";
 import type { BuildQualityEvidence } from "@/lib/server/quality/types";
 import type { BuildLevel } from "@/lib/build-level";
-import type { WorkspaceManifest } from "@/lib/workspace";
+import type { WorkspaceCandidate, WorkspaceManifest } from "@/lib/workspace";
 import type { AiJobUsageSummary } from "@/lib/server/ai/types";
+import type { ProductionArtifactGraph } from "@/lib/production-artifact-graph";
+import type { WorkspaceRunnerReport } from "@/lib/server/workspace-runner";
+import type { ProductionWorkspaceQualityReport } from "@/lib/server/quality/production-workspace";
+import type { ReviewResult } from "@/lib/server/agents/types";
+import type { ProductionCreativeDirectionEvidence } from "@/lib/server/production/types";
 
 export type AgentId = HouseId;
 
@@ -81,6 +86,48 @@ export type BuildJob = {
   files?: Record<string, string>;
   /** Hash-bound descriptor only; source files remain server-side. */
   workspace?: WorkspaceManifest;
+  /**
+   * Server-produced Production evidence. The candidate describes `files`, while
+   * the graph and runner report remain outside that immutable source hash.
+   */
+  production?: {
+    candidate: WorkspaceCandidate;
+    graph: ProductionArtifactGraph;
+    /**
+     * Validated model artifacts used only as typed creative evidence. They do
+     * not replace the deterministic, domain-aware Production source stages.
+     */
+    creativeEvidence?: ProductionCreativeDirectionEvidence;
+    creativeEvidenceSha256?: string;
+    agentArtifacts?: {
+      lumen: {
+        contractId: "lumen";
+        artifact: "three_direction_design_portfolio";
+        artifactSha256: string;
+        validation: "passed";
+      };
+      forgeUi: {
+        contractId: "forgeUi";
+        artifact: "forge_structure_ui_html";
+        artifactSha256: string;
+        validation: "passed";
+      };
+      forgeLogic: {
+        contractId: "forgeLogic";
+        artifact: "forge_logic_html";
+        artifactSha256: string;
+        inputArtifactSha256: string;
+        validation: "passed";
+      };
+    };
+    runnerReport?: WorkspaceRunnerReport;
+    runnerReportSha256?: string;
+    /** Deterministic post-build security/QA evidence bound to candidate, preview and runner hashes. */
+    qualityReport?: ProductionWorkspaceQualityReport;
+    qualityReportSha256?: string;
+    /** Iris review over the exact persisted Twin/Echo/Swift browser evidence, when executed. */
+    irisReview?: ReviewResult;
+  };
   thoughts?: Thought[];
   look?: string;
   designMood?: string;
@@ -100,13 +147,25 @@ export type BuildJob = {
       | "gems"
       | "reviewed"
       | "patched"
+      | "production_candidate"
+      | "production_validated"
+      | "production_finalized"
       | "finalized";
     artifacts?: {
       plan?: unknown;
       architecture?: unknown;
       design?: unknown;
       designSelection?: unknown;
+      /** Hash of the complete three-direction portfolio plus deterministic scoring. */
+      designSelectionSha256?: string;
       structureHtml?: string;
+      structureHtmlSha256?: string;
+      forgeLogicHtml?: string;
+      forgeLogicHtmlSha256?: string;
+      /** Binds Forge Logic to the exact Forge UI artifact supplied as input. */
+      forgeLogicInputSha256?: string;
+      creativeEvidence?: ProductionCreativeDirectionEvidence;
+      creativeEvidenceSha256?: string;
       html?: string;
       usedAi?: boolean;
       review?: unknown;

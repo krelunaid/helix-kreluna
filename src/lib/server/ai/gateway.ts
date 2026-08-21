@@ -2,12 +2,19 @@ import type { BuildJob } from "@/lib/agent-types";
 import { AGENT_CONTRACTS, type AgentContractId } from "@/lib/server/agents/contracts";
 import { sha256Hex } from "@/lib/server/agents/patch";
 import { defineAiJobBudgetPolicy, AiBudgetError } from "@/lib/server/ai/budget";
+import {
+  evictAiResponseCache,
+  readAiResponseCache,
+  recordAiResponseCacheHit,
+  writeAiResponseCache,
+} from "@/lib/server/ai/cache";
 import { AiProviderRegistry } from "@/lib/server/ai/provider";
 import { createXaiChatCompletionProvider } from "@/lib/server/ai/providers/xai";
 import {
   AiProviderError,
   parseUsdTicks,
   type AiCompletionResult,
+  type AiContentValidator,
   type AiContentPart,
   type UsdTicks,
 } from "@/lib/server/ai/types";
@@ -45,6 +52,7 @@ export type AgentCompletionInput = Readonly<{
   user: string | AiContentPart[];
   temperature: number;
   effort?: "low" | "high";
+  validateContent: AiContentValidator;
 }>;
 
 function configuredProviders(): AiProviderRegistry {
@@ -87,11 +95,20 @@ function assertContractInput(input: AgentCompletionInput): {
     retryIndex < 0 ||
     retryIndex > contract.maxRetries ||
     !input.agentId.trim() ||
-    !input.logicalCallKey.trim()
+    !input.logicalCallKey.trim() ||
+    typeof input.validateContent !== "function"
   ) {
     throw new AiBudgetError("AI_AGENT_CONTRACT_INVALID");
   }
   return { model, maximumCostUsdTicks, retryIndex };
+}
+
+function contentPassesValidator(validator: AiContentValidator, content: string): boolean {
+  try {
+    return validator(content) === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -108,13 +125,6 @@ export async function requestAgentCompletion(
 
   const { model, maximumCostUsdTicks, retryIndex } = assertContractInput(input);
   const providerId = input.providerId ?? "xai";
-  // Configuration is validated before reserving a call because no provider
-  // request (and therefore no charge) can occur without a configured adapter.
-  const providers = configuredProviders();
-  if (providerId === "xai" && !providers.ids().includes("xai")) {
-    throw new AiProviderError("XAI_API_KEY_MISSING", { retryable: false });
-  }
-  const provider = providers.get(providerId);
   await recoverStaleAiCalls({ jobId: job.id, workerId: runtime.workerId });
 
   const callId = crypto.randomUUID();
@@ -130,6 +140,71 @@ export async function requestAgentCompletion(
       effort: input.effort ?? "low",
     }),
   );
+  const cacheKey = job.userId
+    ? {
+        userId: job.userId,
+        provider: providerId,
+        requestedModel: model,
+        contractId: input.contractId,
+        contractVersion: AGENT_CONTRACTS[input.contractId].version,
+        requestSha256,
+      }
+    : null;
+
+  // Guest jobs deliberately bypass this cache. For authenticated jobs a hit is
+  // returned only after durable hit evidence has been written; otherwise the
+  // normal provider path remains the source of truth.
+  if (cacheKey) {
+    const lookupStartedAt = Date.now();
+    let cached: Awaited<ReturnType<typeof readAiResponseCache>> = null;
+    try {
+      const candidate = await readAiResponseCache(cacheKey);
+      if (candidate) {
+        if (!contentPassesValidator(input.validateContent, candidate.result.content)) {
+          await evictAiResponseCache({ key: cacheKey, cacheId: candidate.cacheId });
+          console.error(
+            JSON.stringify({
+              level: "error",
+              event: "ai_response_cache_contract_invalid",
+              jobId: job.id,
+              contractId: input.contractId,
+            }),
+          );
+        } else {
+          await recordAiResponseCacheHit({
+            jobId: job.id,
+            cacheId: candidate.cacheId,
+            logicalCallKey: input.logicalCallKey,
+            contractId: input.contractId,
+            requestSha256,
+            lookupLatencyMs: Date.now() - lookupStartedAt,
+          });
+          cached = candidate;
+        }
+      }
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          event: "ai_response_cache_lookup_failed",
+          jobId: job.id,
+          errorCode: errorCode(error),
+        }),
+      );
+    }
+    if (cached) {
+      await refreshUsage(job);
+      return cached.result;
+    }
+  }
+
+  // Configuration is validated before reserving a call because no provider
+  // request (and therefore no charge) can occur without a configured adapter.
+  const providers = configuredProviders();
+  if (providerId === "xai" && !providers.ids().includes("xai")) {
+    throw new AiProviderError("XAI_API_KEY_MISSING", { retryable: false });
+  }
+  const provider = providers.get(providerId);
   await reserveAiCallTelemetry({
     callId,
     jobId: job.id,
@@ -208,5 +283,33 @@ export async function requestAgentCompletion(
   });
   await refreshUsage(job);
   if (violation) throw new AiBudgetError(violation);
+  const validForContract = contentPassesValidator(input.validateContent, result.content);
+  if (cacheKey && validForContract) {
+    try {
+      await writeAiResponseCache({ key: cacheKey, result });
+    } catch (error) {
+      // A cache write is an optimization failure, not a provider-call failure.
+      // Log only a normalized code; prompts and response content stay redacted.
+      console.error(
+        JSON.stringify({
+          level: "error",
+          event: "ai_response_cache_write_failed",
+          jobId: job.id,
+          callId,
+          errorCode: errorCode(error),
+        }),
+      );
+    }
+  } else if (!validForContract) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "ai_provider_response_contract_invalid",
+        jobId: job.id,
+        callId,
+        contractId: input.contractId,
+      }),
+    );
+  }
   return result;
 }

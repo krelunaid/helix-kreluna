@@ -107,7 +107,7 @@ function serviceArtifacts() {
         {
           name: "orders",
           sensitivity: "owned",
-          primaryKey: "id",
+          primaryKey: "user_id,id",
           ownershipField: "user_id",
           createdAtField: "created_at",
           updatedAtField: "updated_at",
@@ -152,7 +152,7 @@ function serviceArtifacts() {
         ["server/billing.ts", "server/env.ts", "server/errors.ts", "server/index.ts"],
         ["tests/backend.test.ts"],
       ),
-      runtime: "tanstack_start_netlify",
+      runtime: "node_22_es_modules",
       sourceRoot: "server/index.ts",
       serverEntrypoints: ["server/index.ts"],
       envSchemaPath: "server/env.ts",
@@ -184,8 +184,8 @@ function serviceArtifacts() {
         { role: "user", actions: ["read_own_orders"] },
       ],
       protectedRoutes: ["/api/orders"],
-      logoutImplemented: true,
-      recovery: { status: "implemented", sourcePath: "server/auth-recovery.ts" },
+      logoutImplemented: false,
+      recovery: { status: "available_library", sourcePath: "server/auth-recovery.ts" },
     },
     vault: {
       ...artifactBase(
@@ -293,27 +293,52 @@ function serviceArtifacts() {
       ...artifactBase(
         "nimbus_infrastructure_artifact",
         "docs/artifacts/nimbus.json",
-        [".env.example", "infra/cdn.toml", "infra/monitoring.ts", "netlify.toml"],
+        [
+          ".env.example",
+          "infra/cdn.toml",
+          "infra/monitoring.ts",
+          "infra/nimbus-decision.json",
+        ],
         ["tests/infra.test.ts"],
       ),
-      provider: "netlify",
-      runtime: "tanstack_start",
-      rationale: "Use the repository target and its supported full-stack TanStack Start adapter.",
-      configPaths: ["netlify.toml"],
+      decision: {
+        status: "not_configured",
+        reasonCode: "NIMBUS_DECISION_EVIDENCE_MISSING",
+        automaticProvisioning: false,
+        automaticDeployment: false,
+      },
+      provider: null,
+      runtime: null,
+      configurationAdapter: null,
+      activation: "not_configured",
+      activationEvidence: {
+        status: "not_verified",
+        evidence: "not_run",
+        automaticDeployment: false,
+        reasonCode: "PROVIDER_DECISION_NOT_CONFIGURED",
+      },
+      rationale:
+        "No provider, runtime, region, or cost is selected without authenticated evidence.",
+      configPaths: ["infra/nimbus-decision.json"],
+      functionPaths: [],
+      runtimeSourcePaths: [],
+      bindingContracts: [
+        "authorization",
+        "database",
+        "idempotency",
+        "identity_issuer",
+        "monitoring",
+        "operation_handlers",
+        "rate_limit",
+      ],
       monitoringPaths: ["infra/monitoring.ts"],
       database: { required: true, bindingNames: ["DATABASE_URL"] },
       storage: { required: false, bindingNames: [] },
-      cdn: { enabled: true, policyPath: "infra/cdn.toml" },
+      cdn: { required: true, selectedInPlan: false, policyPath: "infra/cdn.toml" },
       secretNames: ["BETTER_AUTH_SECRET", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"],
       costEstimate: {
-        evidence: "estimated",
-        currency: "EUR",
-        monthlyMin: 20,
-        monthlyMax: 120,
-        confidence: 0.45,
-        assumptions: [
-          "Traffic and database volume are estimates until a measured load test exists.",
-        ],
+        evidence: "unavailable",
+        reasonCode: "NIMBUS_DECISION_EVIDENCE_MISSING",
       },
     },
   };
@@ -337,7 +362,8 @@ function baseFiles() {
     "docs/score.md": "# Score\n\nEstimated only until runner evidence exists.\n",
     "infra/cdn.toml": "enabled = true\n",
     "infra/monitoring.ts": "export const monitoring = true;\n",
-    "netlify.toml": '[build]\ncommand = "npm run build"\n',
+    "infra/nimbus-decision.json":
+      '{"kind":"nimbus_source_configuration_plan","version":"1.0.0","evidence":{"status":"not_configured","reasonCode":"NIMBUS_DECISION_EVIDENCE_MISSING","automaticProvisioning":false,"automaticDeployment":false},"decision":null}\n',
     "package-lock.json": '{"name":"fixture","lockfileVersion":3,"packages":{}}\n',
     "package.json":
       '{"name":"fixture","private":true,"scripts":{"typecheck":"tsc --noEmit","lint":"eslint .","test":"node --test","build":"vite build"}}\n',
@@ -407,7 +433,7 @@ function architectureEvidence(source) {
     schemaVersion: "1.0.0",
     productType: source.runtimeProfile,
     frontendArchitecture: "A multi-file TypeScript client consumes typed server operations.",
-    backendArchitecture: "TanStack Start server functions run on the Netlify adapter.",
+    backendArchitecture: "Node 22 server modules are bundled behind a Netlify Functions adapter.",
     dataFlow: ["Client request -> authorization -> business rule -> PostgreSQL transaction."],
     screenMap: ["Order form", "Order status"],
     routeMap:
@@ -566,26 +592,39 @@ function staticArtifacts() {
       ...artifactBase(
         "nimbus_infrastructure_artifact",
         "docs/artifacts/nimbus.json",
-        [".env.example", "infra/monitoring.ts", "netlify.toml"],
+        [".env.example", "infra/monitoring.ts", "infra/nimbus-decision.json"],
         ["tests/infra.test.ts"],
       ),
-      provider: "netlify",
-      runtime: "tanstack_start",
+      decision: {
+        status: "not_configured",
+        reasonCode: "NIMBUS_DECISION_EVIDENCE_MISSING",
+        automaticProvisioning: false,
+        automaticDeployment: false,
+      },
+      provider: null,
+      runtime: null,
+      configurationAdapter: null,
+      activation: "not_configured",
+      activationEvidence: {
+        status: "not_verified",
+        evidence: "not_run",
+        automaticDeployment: false,
+        reasonCode: "PROVIDER_DECISION_NOT_CONFIGURED",
+      },
       rationale:
-        "Use the repository target for static delivery, uptime, and deploy-health monitoring.",
-      configPaths: ["netlify.toml"],
+        "No provider, runtime, region, or cost is selected without authenticated evidence.",
+      configPaths: ["infra/nimbus-decision.json"],
+      functionPaths: [],
+      runtimeSourcePaths: [],
+      bindingContracts: [],
       monitoringPaths: ["infra/monitoring.ts"],
       database: { required: false, bindingNames: [] },
       storage: { required: false, bindingNames: [] },
-      cdn: { enabled: true },
+      cdn: { required: true, selectedInPlan: false },
       secretNames: [],
       costEstimate: {
-        evidence: "estimated",
-        currency: "EUR",
-        monthlyMin: 0,
-        monthlyMax: 20,
-        confidence: 0.5,
-        assumptions: ["The site serves only bounded static assets."],
+        evidence: "unavailable",
+        reasonCode: "NIMBUS_DECISION_EVIDENCE_MISSING",
       },
     },
   };
@@ -602,7 +641,8 @@ function staticFiles() {
     "docs/decisions.md": "# Decisions\n",
     "docs/score.md": "# Score\n\nEstimated only.\n",
     "infra/monitoring.ts": "export const staticHealth = true;\n",
-    "netlify.toml": '[build]\ncommand = "npm run build"\n',
+    "infra/nimbus-decision.json":
+      '{"kind":"nimbus_source_configuration_plan","version":"1.0.0","evidence":{"status":"not_configured","reasonCode":"NIMBUS_DECISION_EVIDENCE_MISSING","automaticProvisioning":false,"automaticDeployment":false},"decision":null}\n',
     "tests/infra.test.ts": "export const deployConfigTest = true;\n",
   };
 }
@@ -610,7 +650,7 @@ function staticFiles() {
 test("Production source graph is requirements-derived, hash-bound, and never claims execution", async (t) => {
   const { workspace, production } = await loadModules(t);
 
-  await t.test("contract registry is explicit and disabled", () => {
+  await t.test("contract registry exposes deterministic library generators", () => {
     assert.deepEqual(Object.keys(production.PRODUCTION_ARTIFACT_CONTRACTS), [
       "prism",
       "quartz",
@@ -623,7 +663,8 @@ test("Production source graph is requirements-derived, hash-bound, and never cla
     ]);
     for (const [id, contract] of Object.entries(production.PRODUCTION_ARTIFACT_CONTRACTS)) {
       assert.equal(contract.id, id);
-      assert.equal(contract.activation, "disabled_contract_only");
+      assert.equal(contract.activation, "available_library_generator");
+      assert.equal(contract.producerKind, "deterministic_template_generator");
       assert.equal(contract.validationExecutor, "workspace_runner");
     }
   });
@@ -826,7 +867,7 @@ test("Production source graph is requirements-derived, hash-bound, and never cla
     );
   });
 
-  await t.test("service graph is deterministic and structurally present only", async () => {
+  await t.test("service graph is deterministic and keeps runtime activation unconfigured", async () => {
     const fixture = await candidateFixture(workspace, production);
     const graph = await production.buildProductionArtifactGraph(fixture);
     const reversedFixture = await candidateFixture(workspace, production, {
@@ -839,9 +880,16 @@ test("Production source graph is requirements-derived, hash-bound, and never cla
     assert.deepEqual(graph, reversedGraph);
     assert.match(graph.graphSha256, /^[0-9a-f]{64}$/);
     assert.equal(graph.candidateSha256, fixture.candidate.sourceSha256);
+    assert.equal(graph.nodes.find((node) => node.id === "nimbus")?.status, "not_configured");
     assert.equal(
-      graph.nodes.every((node) => node.status === "structurally_present"),
+      graph.nodes
+        .filter((node) => node.id !== "nimbus")
+        .every((node) => node.status === "structurally_present"),
       true,
+    );
+    assert.match(
+      graph.nodes.find((node) => node.id === "nimbus")?.reason ?? "",
+      /decision is unavailable.*No provider, runtime, region, or cost was selected/i,
     );
     assert.equal(
       graph.nodes.every((node) => node.runtimeExecution === "not_run"),
@@ -893,7 +941,7 @@ test("Production source graph is requirements-derived, hash-bound, and never cla
     });
     const graph = await production.buildProductionArtifactGraph(fixture);
     assert.equal(graph.nodes.filter((node) => node.status === "not_required").length, 7);
-    assert.equal(graph.nodes.find((node) => node.id === "nimbus")?.status, "structurally_present");
+    assert.equal(graph.nodes.find((node) => node.id === "nimbus")?.status, "not_configured");
     assert.equal(
       Object.keys(fixture.files).some((path) => path.endsWith(".sql")),
       false,
@@ -1159,6 +1207,22 @@ test("Production source graph is requirements-derived, hash-bound, and never cla
       cases.push({
         artifacts: stripeWithoutWebhook,
         pattern: /Stripe requires a verified idempotent webhook contract/i,
+      });
+
+      const runtimeDowngrade = serviceArtifacts();
+      runtimeDowngrade.nimbus = {
+        ...runtimeDowngrade.nimbus,
+        provider: {
+          id: "unverified-provider",
+          displayName: "Unverified Provider",
+          region: "eu-west",
+          quoteReference: "unverified-quote",
+          quoteObservedAt: "2026-08-20T10:00:00.000Z",
+        },
+      };
+      cases.push({
+        artifacts: runtimeDowngrade,
+        pattern: /Unverified Nimbus evidence cannot select|cannot select infrastructure without a verified decision/i,
       });
 
       for (const testCase of cases) {

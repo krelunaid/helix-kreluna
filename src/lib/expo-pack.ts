@@ -35,6 +35,7 @@ export function expoFiles(input: {
   slug: string;
   html: string;
   bundleId: string;
+  easProjectId?: string;
   appleTeam?: string;
   liveUrl: string;
   platform: "ios" | "android";
@@ -46,22 +47,28 @@ export function expoFiles(input: {
 
 Web-to-native Expo source package prepared by Helix / Harbor.
 
-No native binary, signing operation, TestFlight build, Play upload or store
-submission has been executed. The commands below require your own verified
-developer credentials and run outside Helix.
+Creating or downloading this ZIP does not execute a native build, signing,
+TestFlight distribution or Play upload. Helix can dispatch the checked-in EAS
+workflow only through its separately configured authenticated Store runner and
+only after an explicit submission request.
 
 ## TestFlight (iOS)
-1. npm i -g eas-cli && npm install
-2. eas login
-3. eas build --platform ios --profile production
-4. eas submit --platform ios --latest
+The checked-in workflow uses an EAS build job followed by a TestFlight job.
+The runner invokes it non-interactively with its configured, exact eas-cli pin.
 
 Apple Team: ${input.appleTeam || "(add your Team ID)"}
 Bundle: ${input.bundleId}
 
-## Google Play
-eas build --platform android --profile production
-eas submit --platform android --latest
+## Google Play internal track
+The checked-in workflow uses an EAS build job followed by a submit job. The
+submission profile is fixed to the internal track and produces an Android App
+Bundle (AAB).
+
+Before the authenticated runner is enabled, the signing credentials and the
+Google Play service-account key must already be uploaded to the matching EAS
+project. This source package never contains, generates or uploads a credential
+file. A non-interactive workflow with missing EAS credentials must stop and be
+reported as action required.
 
 Suggested web route (not published by this package action): ${input.liveUrl}
 `,
@@ -101,7 +108,10 @@ Suggested web route (not published by this package action): ${input.liveUrl}
             appleTeamId: input.appleTeam || undefined,
           },
           android: { package: input.bundleId },
-          extra: { liveUrl: input.liveUrl },
+          extra: {
+            liveUrl: input.liveUrl,
+            eas: input.easProjectId ? { projectId: input.easProjectId } : undefined,
+          },
         },
       },
       null,
@@ -117,11 +127,56 @@ Suggested web route (not published by this package action): ${input.liveUrl}
           },
           preview: { distribution: "internal" },
         },
-        submit: { production: { ios: { appleTeamId: input.appleTeam || undefined } } },
+        submit: {
+          production: {
+            ios: { appleTeamId: input.appleTeam || undefined },
+            android: {
+              track: "internal",
+              releaseStatus: "completed",
+            },
+          },
+        },
       },
       null,
       2,
     ),
+    ".eas/workflows/helix-store.yml":
+      input.platform === "ios"
+        ? `name: Helix iOS TestFlight release
+
+jobs:
+  build_ios:
+    name: Build signed iOS archive
+    type: build
+    params:
+      platform: ios
+      profile: production
+  distribute_testflight:
+    name: Upload and distribute with TestFlight
+    needs: [build_ios]
+    type: testflight
+    params:
+      build_id: \${{ needs.build_ios.outputs.build_id }}
+      profile: production
+      wait_processing_timeout_seconds: 1800
+`
+        : `name: Helix Android internal-track release
+
+jobs:
+  build_android:
+    name: Build signed Android App Bundle
+    type: build
+    params:
+      platform: android
+      profile: production
+  submit_play_internal:
+    name: Upload to Google Play internal track
+    needs: [build_android]
+    type: submit
+    params:
+      build_id: \${{ needs.build_android.outputs.build_id }}
+      profile: production
+`,
     "index.js": `import { registerRootComponent } from 'expo';
 import App from './App';
 registerRootComponent(App);
@@ -159,11 +214,16 @@ export default function App() {
   );
 }
 `,
-    ".gitignore": "node_modules\n.expo\ndist\n",
+    ".gitignore": "node_modules\n.expo\ndist\n.helix\n",
   };
 }
 
-export function windowsFiles(input: { title: string; slug: string; html: string; liveUrl: string }) {
+export function windowsFiles(input: {
+  title: string;
+  slug: string;
+  html: string;
+  liveUrl: string;
+}) {
   const name = input.slug || "helix-app";
   const protectedHtml = protectPackagedHtml(input.html);
   return {

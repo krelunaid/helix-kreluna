@@ -60,6 +60,7 @@ test("AI provider usage and budget accounting stay evidence-bound", async (t) =>
     assert.equal(result.reportedModel, "grok-resolved");
     assert.equal(result.responseId, "response-1");
     assert.equal(result.latencyMs, 84);
+    assert.equal(result.delivery, "provider");
   });
 
   await t.test("missing or contradictory provider evidence remains null", () => {
@@ -405,9 +406,11 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
     user: "Private prompt body",
     temperature: 0.2,
     effort: "low",
+    validateContent: () => true,
   });
   assert.equal(first.content, "gateway-result-1");
   assert.equal(job.aiUsage.callCount, 1);
+  assert.equal(job.aiUsage.applicationCacheHitCount, 0);
   assert.equal(job.aiUsage.knownInputTokens, 12);
   assert.equal(job.aiUsage.knownCachedInputTokens, 0);
   assert.equal(job.aiUsage.providerActualCostUsdTicks, "1000");
@@ -423,6 +426,7 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
       user: "A second private prompt body",
       temperature: 0.2,
       effort: "low",
+      validateContent: () => true,
     }),
     (error) => {
       assert.equal(error.code, "AI_COST_RESERVATION_EXCEEDED");
@@ -444,6 +448,7 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
       user: "Private architecture input",
       temperature: 0.2,
       effort: "low",
+      validateContent: () => true,
     }),
     (error) => {
       assert.equal(error.code, "XAI_HTTP_503");

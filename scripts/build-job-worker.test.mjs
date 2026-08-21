@@ -69,18 +69,24 @@ test("the DB-backed worker fails honestly and resumes a finalized checkpoint", a
   );
 
   const corrupt = await create.createBuildJobDraft({
-    prompt: "Reject a corrupt persisted artifact",
+    prompt: "Reject a fingerprint-mismatched persisted artifact",
     locale: "en",
     mode: "generate",
     currentHtml: null,
   });
-  corrupt.job.html = "<html></html>";
+  const untrustedHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Untrusted checkpoint</title></head><body><main><h1>Do not resume</h1><p>${"untrusted ".repeat(60)}</p></main></body></html>`;
+  corrupt.job.html = untrustedHtml;
   corrupt.job.usedAi = true;
+  corrupt.job.files = { "legacy-v2.html": untrustedHtml };
+  corrupt.job.gems = [
+    { id: "wren", name: "Wren", did: "This result is not fingerprint-bound" },
+  ];
   corrupt.job.checkpoint = {
-    pipelineVersion: pipeline.HELIX_PIPELINE_VERSION,
+    pipelineVersion: "helix-v2",
     requestFingerprint: corrupt.requestFingerprint,
     stage: "finalized",
-    artifacts: { html: "<html></html>", usedAi: true },
+    artifacts: { html: untrustedHtml, usedAi: true },
+    gemIndex: 1,
   };
   await queue.enqueueBuildJob({
     job: corrupt.job,
@@ -88,11 +94,28 @@ test("the DB-backed worker fails honestly and resumes a finalized checkpoint", a
     requestFingerprint: corrupt.requestFingerprint,
     maxAttempts: 2,
   });
+  const persistedCorrupt = await pg.query(
+    "select payload from build_jobs where id = $1",
+    [corrupt.job.id],
+  );
+  const tamperedPayload = JSON.parse(persistedCorrupt.rows[0].payload);
+  tamperedPayload.checkpoint.requestFingerprint = "f".repeat(64);
+  await pg.query("update build_jobs set payload = $2 where id = $1", [
+    corrupt.job.id,
+    JSON.stringify(tamperedPayload),
+  ]);
 
   assert.equal(await worker.processBuildJob(corrupt.job.id), "failed");
   const rejectedCorrupt = await queue.loadBuildJob(corrupt.job.id);
   assert.equal(rejectedCorrupt.queue.status, "failed");
   assert.equal(rejectedCorrupt.usedAi, false);
+  assert.equal(rejectedCorrupt.html, null);
+  assert.equal(rejectedCorrupt.files, undefined);
+  assert.deepEqual(rejectedCorrupt.gems, []);
+  assert.equal(rejectedCorrupt.checkpoint.pipelineVersion, pipeline.HELIX_PIPELINE_VERSION);
+  assert.equal(rejectedCorrupt.checkpoint.requestFingerprint, corrupt.requestFingerprint);
+  assert.equal(rejectedCorrupt.checkpoint.stage, "queued");
+  assert.equal(rejectedCorrupt.checkpoint.artifacts, undefined);
   assert.match(rejectedCorrupt.error, /XAI_API_KEY_MISSING/);
 
   const resumed = await create.createBuildJobDraft({
@@ -104,11 +127,15 @@ test("the DB-backed worker fails honestly and resumes a finalized checkpoint", a
   const resumedHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Checkpoint</title></head><body><main><h1>Persisted artifact</h1><p>${"validated ".repeat(60)}</p></main></body></html>`;
   resumed.job.html = resumedHtml;
   resumed.job.usedAi = true;
+  resumed.job.gems = [
+    { id: "sable", name: "Sable", did: "Preserved across the v2 migration" },
+  ];
   resumed.job.checkpoint = {
-    pipelineVersion: pipeline.HELIX_PIPELINE_VERSION,
+    pipelineVersion: "helix-v2",
     requestFingerprint: resumed.requestFingerprint,
     stage: "finalized",
     artifacts: { html: resumedHtml, usedAi: true },
+    gemIndex: 1,
   };
   await queue.enqueueBuildJob({
     job: resumed.job,
@@ -125,6 +152,8 @@ test("the DB-backed worker fails honestly and resumes a finalized checkpoint", a
   assert.equal(ready.checkpoint.stage, "finalized");
   assert.equal(ready.checkpoint.pipelineVersion, pipeline.HELIX_PIPELINE_VERSION);
   assert.equal(ready.checkpoint.requestFingerprint, resumed.requestFingerprint);
+  assert.equal(ready.checkpoint.gemIndex, 1);
+  assert.deepEqual(ready.gems, resumed.job.gems);
   assert.equal(ready.score.schemaVersion, "2.0.0");
   assert.equal(ready.score.artifactSha256, ready.queue.artifactSha256);
   assert.equal(ready.score.metrics.coverage.status, "not_run");

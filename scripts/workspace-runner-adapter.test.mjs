@@ -276,4 +276,40 @@ test("workspace runner environment values are paired and HTTPS-only off loopback
       HELIX_WORKSPACE_RUNNER_SECRET: "S".repeat(32),
     }),
   );
+
+  const configuredProduction = {
+    VITE_PRODUCTION_BUILDS_ENABLED: "true",
+    VITE_PRODUCTION_CREDITS: "40",
+    VITE_AUTH_ENABLED: "true",
+    BETTER_AUTH_SECRET: "A".repeat(32),
+    BETTER_AUTH_URL: "http://localhost:8080",
+    GROK_AUTH_CLIENT_ID: "production-test-client",
+    GROK_AUTH_CLIENT_SECRET: "production-example-secret",
+    HELIX_WORKSPACE_RUNNER_URL: "https://runner.example.test/validate",
+    HELIX_WORKSPACE_RUNNER_SECRET: "S".repeat(32),
+  };
+  const validated = env.validateServerEnvironment(configuredProduction);
+  assert.equal(validated.productionBuildsEnabled, true);
+  assert.equal(validated.productionBuildCredits, 40);
+
+  for (const [name, value] of [
+    ["VITE_PRODUCTION_CREDITS", undefined],
+    ["HELIX_WORKSPACE_RUNNER_URL", undefined],
+    ["HELIX_WORKSPACE_RUNNER_SECRET", undefined],
+    ["VITE_AUTH_ENABLED", "false"],
+    ["VITE_PRODUCTION_CREDITS", "0"],
+  ]) {
+    assert.throws(
+      () => env.validateServerEnvironment({ ...configuredProduction, [name]: value }),
+      new RegExp(name),
+    );
+  }
+  assert.throws(
+    () =>
+      env.validateServerEnvironment({
+        ...configuredProduction,
+        VITE_PRODUCTION_BUILDS_ENABLED: "false",
+      }),
+    /VITE_PRODUCTION_BUILDS_ENABLED/,
+  );
 });

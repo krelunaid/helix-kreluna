@@ -18,10 +18,9 @@ test("Prototype and Production are separate, fail-closed product levels", async 
   });
   t.after(async () => vite.close());
 
-  const [levels, create, orchestrator] = await Promise.all([
+  const [levels, create] = await Promise.all([
     vite.ssrLoadModule("/src/lib/build-level.ts"),
     vite.ssrLoadModule("/src/lib/server/jobs/create.ts"),
-    vite.ssrLoadModule("/src/lib/server/orchestrator/helix.ts"),
   ]);
 
   assert.equal(levels.parseBuildLevel(undefined), "prototype");
@@ -56,6 +55,36 @@ test("Prototype and Production are separate, fail-closed product levels", async 
     );
   }
 
+  const configuredProduction = levels.getBuildQuote({
+    buildLevel: "production",
+    authenticated: true,
+    productionCredits: 40,
+  });
+  assert.equal(configuredProduction.available, true);
+  assert.equal(configuredProduction.credits, 40);
+  assert.doesNotThrow(() =>
+    levels.assertBuildLevelAvailable({
+      buildLevel: "production",
+      authenticated: true,
+      productionCredits: 40,
+    }),
+  );
+  const unsupportedIteration = levels.getBuildQuote({
+    buildLevel: "production",
+    action: "iterate",
+    authenticated: true,
+    productionCredits: 40,
+  });
+  assert.equal(unsupportedIteration.available, false);
+  assert.equal(unsupportedIteration.reasonCode, "PRODUCTION_ACTION_UNSUPPORTED");
+  assert.equal(
+    levels.publicProductionBuildCredits({
+      VITE_PRODUCTION_BUILDS_ENABLED: "true",
+      VITE_PRODUCTION_CREDITS: "40",
+    }),
+    40,
+  );
+
   const shared = {
     prompt: "Build a fidelity-level test",
     locale: "en",
@@ -77,15 +106,9 @@ test("Prototype and Production are separate, fail-closed product levels", async 
     productionDraft.requestFingerprint,
   );
 
-  await assert.rejects(
-    orchestrator.runCrew(productionDraft.job),
-    (error) =>
-      error.code === "PRODUCTION_PIPELINE_NOT_CONFIGURED" &&
-      error.retryable === false,
-  );
 });
 
-test("unsupported Production requests stop before quota, job and credit work", async () => {
+test("unconfigured Production requests stop before quota, job and credit work", async () => {
   const [guestSource, projectSource, deskSource, migration] = await Promise.all([
     readFile(new URL("../src/lib/server/agents.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/server/vetra.ts", import.meta.url), "utf8"),
@@ -122,7 +145,8 @@ test("unsupported Production requests stop before quota, job and credit work", a
       createHandler.indexOf("apply_credit_entry"),
   );
 
-  assert.match(deskSource, /disabled[\s\S]*desk\.production/);
+  assert.match(deskSource, /disabled=\{!productionQuote\.available\}/);
+  assert.match(deskSource, /setBuildLevel\("production"\)/);
   assert.match(deskSource, /buildLevel:\s*BuildLevel/);
   assert.match(migration, /build_level in \('prototype', 'production'\)/);
   assert.match(migration, /jsonb_build_object\('buildLevel', 'prototype'\)/);

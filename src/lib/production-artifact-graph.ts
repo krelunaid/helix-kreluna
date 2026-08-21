@@ -80,6 +80,13 @@ const SortedPathArraySchema = z
     assertSortedUnique(paths, context, [], "Artifact paths");
   });
 
+const SortedOptionalPathArraySchema = z
+  .array(WorkspacePathSchema)
+  .max(96)
+  .superRefine((paths, context) => {
+    assertSortedUnique(paths, context, [], "Artifact paths");
+  });
+
 const SortedEnvArraySchema = z
   .array(EnvNameSchema)
   .max(64)
@@ -568,6 +575,7 @@ export const ProductionArchitectureEvidenceSchema = z
     dataFlow: z.array(z.string().trim().min(1).max(2_000)).min(1).max(128),
     screenMap: z.array(z.string().trim().min(1).max(1_000)).min(1).max(128),
     routeMap: z.array(z.string().trim().min(1).max(1_000)).min(1).max(128),
+    apiContracts: z.array(z.string().trim().min(1).max(2_000)).max(128).optional(),
     databaseRequirements: z.string().trim().min(1).max(2_000),
     authModel: z.string().trim().min(1).max(2_000),
     deploymentTarget: z.literal("netlify"),
@@ -662,6 +670,17 @@ const PrismTableSchema = z
         message: "Owned tables require an ownership field",
       });
     }
+    if (
+      table.sensitivity === "owned" &&
+      table.ownershipField !== null &&
+      table.primaryKey !== `${table.ownershipField},id`
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["primaryKey"],
+        message: "Owned tables require an owner-scoped composite primary key",
+      });
+    }
     if (table.sensitivity !== "owned" && table.ownershipField !== null) {
       context.addIssue({
         code: "custom",
@@ -724,7 +743,7 @@ export const BasaltArtifactSchema = z
     ...ArtifactBaseShape,
     kind: z.literal("basalt_backend_artifact"),
     contractPath: z.literal("docs/artifacts/basalt.json"),
-    runtime: z.literal("tanstack_start_netlify"),
+    runtime: z.literal("node_22_es_modules"),
     sourceRoot: WorkspacePathSchema,
     serverEntrypoints: SortedPathArraySchema,
     envSchemaPath: WorkspacePathSchema,
@@ -754,9 +773,11 @@ export const KeyArtifactSchema = z
     roles: z.array(IdentifierSchema).min(1).max(32),
     permissions: z.array(KeyPermissionSchema).min(1).max(128),
     protectedRoutes: z.array(z.string().startsWith("/").max(240)).min(1).max(128),
-    logoutImplemented: z.literal(true),
+    logoutImplemented: z.literal(false),
     recovery: z.discriminatedUnion("status", [
-      z.object({ status: z.literal("implemented"), sourcePath: WorkspacePathSchema }).strict(),
+      z
+        .object({ status: z.literal("available_library"), sourcePath: WorkspacePathSchema })
+        .strict(),
       z
         .object({
           status: z.literal("not_required"),
@@ -862,30 +883,186 @@ export const NimbusArtifactSchema = z
     ...ArtifactBaseShape,
     kind: z.literal("nimbus_infrastructure_artifact"),
     contractPath: z.literal("docs/artifacts/nimbus.json"),
-    provider: z.literal("netlify"),
-    runtime: z.literal("tanstack_start"),
+    decision: z.discriminatedUnion("status", [
+      z
+        .object({
+          status: z.literal("not_configured"),
+          reasonCode: z.string().regex(/^[A-Z][A-Z0-9_]{2,127}$/),
+          automaticProvisioning: z.literal(false),
+          automaticDeployment: z.literal(false),
+        })
+        .strict(),
+      z
+        .object({
+          status: z.literal("verified"),
+          sourceId: IdentifierSchema,
+          keyId: IdentifierSchema,
+          authentication: z.literal("hmac_sha256"),
+          verifiedAt: z.string().datetime(),
+          candidateWorkspaceSha256: z.string().regex(/^[0-9a-f]{64}$/),
+          productionRequirementsSha256: z.string().regex(/^[0-9a-f]{64}$/),
+          infrastructureRequirementsSha256: z.string().regex(/^[0-9a-f]{64}$/),
+          evidenceEnvelopeSha256: z.string().regex(/^[0-9a-f]{64}$/),
+          decisionInputSha256: z.string().regex(/^[0-9a-f]{64}$/),
+          decisionSha256: z.string().regex(/^[0-9a-f]{64}$/),
+          automaticProvisioning: z.literal(false),
+          automaticDeployment: z.literal(false),
+        })
+        .strict(),
+    ]),
+    provider: z
+      .object({
+        id: IdentifierSchema,
+        displayName: z.string().trim().min(1).max(120),
+        region: IdentifierSchema,
+        quoteReference: z.string().trim().min(1).max(240),
+        quoteObservedAt: z.string().datetime(),
+      })
+      .strict()
+      .nullable(),
+    runtime: z
+      .object({ id: IdentifierSchema, supportedUntil: z.string().datetime() })
+      .strict()
+      .nullable(),
+    configurationAdapter: z.literal("netlify").nullable(),
+    activation: z.enum(["source_configured", "not_configured"]),
+    activationEvidence: z
+      .object({
+        status: z.literal("not_verified"),
+        evidence: z.literal("not_run"),
+        automaticDeployment: z.literal(false),
+        reasonCode: z.enum([
+          "PROVIDER_ACTIVATION_NOT_RUN",
+          "PROVIDER_DECISION_NOT_CONFIGURED",
+        ]),
+      })
+      .strict(),
     rationale: z.string().trim().min(1).max(2_000),
     configPaths: SortedPathArraySchema,
+    functionPaths: SortedOptionalPathArraySchema,
+    runtimeSourcePaths: SortedOptionalPathArraySchema,
+    bindingContracts: z
+      .array(
+        z.enum([
+          "authorization",
+          "database",
+          "idempotency",
+          "identity_issuer",
+          "monitoring",
+          "object_storage",
+          "operation_handlers",
+          "rate_limit",
+        ]),
+      )
+      .max(8),
     monitoringPaths: SortedPathArraySchema,
     database: z.object({ required: z.boolean(), bindingNames: SortedEnvArraySchema }).strict(),
     storage: z.object({ required: z.boolean(), bindingNames: SortedEnvArraySchema }).strict(),
-    cdn: z.object({ enabled: z.boolean(), policyPath: WorkspacePathSchema.optional() }).strict(),
-    secretNames: SortedEnvArraySchema,
-    costEstimate: z
+    cdn: z
       .object({
-        evidence: z.literal("estimated"),
-        currency: z.literal("EUR"),
-        monthlyMin: z.number().nonnegative().finite(),
-        monthlyMax: z.number().nonnegative().finite(),
-        confidence: z.number().min(0).max(1),
-        assumptions: z.array(z.string().trim().min(1).max(1_000)).min(1).max(32),
+        required: z.boolean(),
+        selectedInPlan: z.boolean(),
+        policyPath: WorkspacePathSchema.optional(),
       })
-      .strict()
-      .refine((estimate) => estimate.monthlyMax >= estimate.monthlyMin, {
-        message: "Cost estimate maximum must be greater than or equal to its minimum",
-      }),
+      .strict(),
+    secretNames: SortedEnvArraySchema,
+    costEstimate: z.discriminatedUnion("evidence", [
+      z
+        .object({
+          evidence: z.literal("unavailable"),
+          reasonCode: z.string().regex(/^[A-Z][A-Z0-9_]{2,127}$/),
+        })
+        .strict(),
+      z
+        .object({
+          evidence: z.literal("authenticated_provider_quote"),
+          currency: z.literal("USD"),
+          monthlyMin: z.number().nonnegative().finite(),
+          monthlyMax: z.number().nonnegative().finite(),
+          assumptions: z.array(z.string().trim().min(1).max(1_000)).min(1).max(32),
+        })
+        .strict()
+        .refine((estimate) => estimate.monthlyMax >= estimate.monthlyMin, {
+          message: "Cost estimate maximum must be greater than or equal to its minimum",
+        }),
+    ]),
   })
-  .strict();
+  .strict()
+  .superRefine((artifact, context) => {
+    assertSortedUnique(
+      artifact.bindingContracts,
+      context,
+      ["bindingContracts"],
+      "Nimbus binding contracts",
+    );
+    if (artifact.decision.status === "not_configured") {
+      if (
+        artifact.provider !== null ||
+        artifact.runtime !== null ||
+        artifact.configurationAdapter !== null ||
+        artifact.activation !== "not_configured" ||
+        artifact.costEstimate.evidence !== "unavailable" ||
+        artifact.functionPaths.length > 0 ||
+        artifact.runtimeSourcePaths.length > 0 ||
+        artifact.activationEvidence.reasonCode !== "PROVIDER_DECISION_NOT_CONFIGURED" ||
+        artifact.configPaths.includes("netlify.toml")
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["decision"],
+          message: "Unverified Nimbus evidence cannot select a provider, runtime, cost, or adapter",
+        });
+      }
+      return;
+    }
+    if (
+      !artifact.provider ||
+      !artifact.runtime ||
+      artifact.configurationAdapter !== "netlify" ||
+      artifact.costEstimate.evidence !== "authenticated_provider_quote" ||
+      !artifact.configPaths.includes("netlify.toml") ||
+      artifact.activationEvidence.reasonCode !== "PROVIDER_ACTIVATION_NOT_RUN"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["decision"],
+        message: "Verified Nimbus evidence must bind the selected provider, runtime, quote, and adapter",
+      });
+      return;
+    }
+    if (artifact.runtime.id === "node_22_serverless_functions") {
+      if (
+        artifact.activation === "source_configured" &&
+        artifact.runtimeSourcePaths.length === 0
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["runtimeSourcePaths"],
+          message:
+            "A source-configured server runtime must own concrete runtime composition modules",
+        });
+      }
+      if (artifact.functionPaths.length === 0 || artifact.bindingContracts.length === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["functionPaths"],
+          message: "The generated server runtime must declare its adapter and binding contracts",
+        });
+      }
+    } else if (
+      artifact.runtime.id !== "static_web_delivery" ||
+      artifact.activation !== "source_configured" ||
+      artifact.functionPaths.length > 0 ||
+      artifact.runtimeSourcePaths.length > 0 ||
+      artifact.bindingContracts.length > 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["runtime"],
+        message: "Static delivery cannot claim a server adapter or runtime bindings",
+      });
+    }
+  });
 
 export type ForgeIntegrationArtifact = z.infer<typeof ForgeIntegrationArtifactSchema>;
 export type PrismArtifact = z.infer<typeof PrismArtifactSchema>;
@@ -915,8 +1092,8 @@ const ContractMetadataSchema = z
   .object({
     id: ProductionStageIdSchema,
     version: z.literal("1.0.0"),
-    activation: z.literal("disabled_contract_only"),
-    producerKind: z.enum(["planned_ai_agent", "planned_review_agent"]),
+    activation: z.literal("available_library_generator"),
+    producerKind: z.literal("deterministic_template_generator"),
     role: z.string().trim().min(1).max(1_000),
     artifact: z.string().trim().min(1).max(160),
     possibleDependencies: z.array(ProductionStageIdSchema).max(8),
@@ -928,8 +1105,8 @@ export const PRODUCTION_ARTIFACT_CONTRACTS = {
   prism: ContractMetadataSchema.parse({
     id: "prism",
     version: "1.0.0",
-    activation: "disabled_contract_only",
-    producerKind: "planned_ai_agent",
+    activation: "available_library_generator",
+    producerKind: "deterministic_template_generator",
     role: "Materialize a PostgreSQL schema, ordered migrations, ownership, constraints, indexes, timestamps, retention, and integrity tests.",
     artifact: "prism_database_artifact",
     possibleDependencies: [],
@@ -938,8 +1115,8 @@ export const PRODUCTION_ARTIFACT_CONTRACTS = {
   quartz: ContractMetadataSchema.parse({
     id: "quartz",
     version: "1.0.0",
-    activation: "disabled_contract_only",
-    producerKind: "planned_review_agent",
+    activation: "available_library_generator",
+    producerKind: "deterministic_template_generator",
     role: "Review migrations, queries, indexes, rollback, backup, and integrity without claiming that EXPLAIN was measured.",
     artifact: "quartz_database_review_artifact",
     possibleDependencies: ["prism", "vault"],
@@ -948,8 +1125,8 @@ export const PRODUCTION_ARTIFACT_CONTRACTS = {
   basalt: ContractMetadataSchema.parse({
     id: "basalt",
     version: "1.0.0",
-    activation: "disabled_contract_only",
-    producerKind: "planned_ai_agent",
+    activation: "available_library_generator",
+    producerKind: "deterministic_template_generator",
     role: "Materialize the server foundation, runtime boundaries, environment schema, business rules, and error contract.",
     artifact: "basalt_backend_artifact",
     possibleDependencies: ["prism"],
@@ -958,9 +1135,9 @@ export const PRODUCTION_ARTIFACT_CONTRACTS = {
   key: ContractMetadataSchema.parse({
     id: "key",
     version: "1.0.0",
-    activation: "disabled_contract_only",
-    producerKind: "planned_ai_agent",
-    role: "Materialize non-mock sessions, roles, permissions, protected routes, logout, and recovery policy.",
+    activation: "available_library_generator",
+    producerKind: "deterministic_template_generator",
+    role: "Materialize non-mock session-verification, authorization, logout-cookie, and recovery libraries without claiming identity lifecycle activation.",
     artifact: "key_auth_artifact",
     possibleDependencies: ["prism", "basalt"],
     validationExecutor: "workspace_runner",
@@ -968,8 +1145,8 @@ export const PRODUCTION_ARTIFACT_CONTRACTS = {
   vault: ContractMetadataSchema.parse({
     id: "vault",
     version: "1.0.0",
-    activation: "disabled_contract_only",
-    producerKind: "planned_ai_agent",
+    activation: "available_library_generator",
+    producerKind: "deterministic_template_generator",
     role: "Materialize API routes, schemas, authorization, business rules, errors, rate limits, and tests.",
     artifact: "vault_api_artifact",
     possibleDependencies: ["prism", "basalt", "key", "nexus"],
@@ -978,8 +1155,8 @@ export const PRODUCTION_ARTIFACT_CONTRACTS = {
   nexus: ContractMetadataSchema.parse({
     id: "nexus",
     version: "1.0.0",
-    activation: "disabled_contract_only",
-    producerKind: "planned_ai_agent",
+    activation: "available_library_generator",
+    producerKind: "deterministic_template_generator",
     role: "Materialize adapters, environment contracts, connection tests, verified webhooks, retries, and error maps.",
     artifact: "nexus_integrations_artifact",
     possibleDependencies: ["prism", "basalt", "key"],
@@ -988,8 +1165,8 @@ export const PRODUCTION_ARTIFACT_CONTRACTS = {
   forgeIntegration: ContractMetadataSchema.parse({
     id: "forgeIntegration",
     version: "1.0.0",
-    activation: "disabled_contract_only",
-    producerKind: "planned_ai_agent",
+    activation: "available_library_generator",
+    producerKind: "deterministic_template_generator",
     role: "Bind the multi-file frontend to local state, API, persistence, auth, and adapters with explicit UI states and tests.",
     artifact: "forge_integration_artifact",
     possibleDependencies: ["prism", "key", "vault", "nexus"],
@@ -998,8 +1175,8 @@ export const PRODUCTION_ARTIFACT_CONTRACTS = {
   nimbus: ContractMetadataSchema.parse({
     id: "nimbus",
     version: "1.0.0",
-    activation: "disabled_contract_only",
-    producerKind: "planned_ai_agent",
+    activation: "available_library_generator",
+    producerKind: "deterministic_template_generator",
     role: "Materialize a motivated Netlify runtime, bindings, monitoring, CDN policy, deploy configuration, and estimated cost range.",
     artifact: "nimbus_infrastructure_artifact",
     possibleDependencies: [
@@ -1051,7 +1228,10 @@ export function deriveProductionCapabilityRequirements(
   };
 }
 
-function requiredStages(requirements: ProductionRequirements): Record<ProductionStageId, boolean> {
+export function deriveRequiredProductionStages(
+  source: unknown,
+): Readonly<Record<ProductionStageId, boolean>> {
+  const requirements = ProductionRequirementsSchema.parse(source);
   const capabilities = deriveProductionCapabilityRequirements(requirements);
   return {
     prism: capabilities.database,
@@ -1084,7 +1264,7 @@ export const ProductionArtifactNodeSchema = z
   .object({
     id: ProductionStageIdSchema,
     contractVersion: z.literal("1.0.0"),
-    producerKind: z.enum(["planned_ai_agent", "planned_review_agent"]),
+    producerKind: z.literal("deterministic_template_generator"),
     required: z.boolean(),
     status: z.enum(["structurally_present", "not_required", "not_configured", "blocked"]),
     evidence: z.literal("structural"),
@@ -1279,6 +1459,101 @@ async function sha256Hex(value: string): Promise<string> {
     .join("");
 }
 
+async function hashProductionFileSet(
+  files: Readonly<Record<string, string>>,
+): Promise<string> {
+  return sha256Hex(
+    stableJson(
+      Object.entries(files)
+        .sort(([left], [right]) => compareText(left, right))
+        .map(([path, content]) => ({ path, content })),
+    ),
+  );
+}
+
+async function assertNimbusDecisionRecord(input: {
+  files: Readonly<Record<string, string>>;
+  requirements: ProductionRequirements;
+  provenancePath: string;
+  artifact: NimbusArtifact;
+}): Promise<void> {
+  const source = input.files["infra/nimbus-decision.json"];
+  if (!source) throw new Error("Nimbus decision record is missing");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source) as unknown;
+  } catch {
+    throw new Error("Nimbus decision record is not valid JSON");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Nimbus decision record has an invalid shape");
+  }
+  const record = parsed as Record<string, unknown>;
+  if (stableJson(record.evidence) !== stableJson(input.artifact.decision)) {
+    throw new Error("Nimbus decision record does not match its artifact evidence");
+  }
+  if (input.artifact.decision.status === "not_configured") {
+    if (record.decision !== null) {
+      throw new Error("Nimbus cannot persist a provider decision without verified evidence");
+    }
+    return;
+  }
+  if (!record.decision || typeof record.decision !== "object" || Array.isArray(record.decision)) {
+    throw new Error("Nimbus verified decision record is missing its decision");
+  }
+  if (input.artifact.costEstimate.evidence !== "authenticated_provider_quote") {
+    throw new Error("Nimbus verified decision is missing authenticated cost evidence");
+  }
+  const decision = record.decision as Record<string, unknown>;
+  if ((await sha256Hex(stableJson(decision))) !== input.artifact.decision.decisionSha256) {
+    throw new Error("Nimbus persisted decision does not match its decision hash");
+  }
+  if (
+    input.artifact.decision.productionRequirementsSha256 !==
+    (await sha256Hex(stableJson(input.requirements)))
+  ) {
+    throw new Error("Nimbus decision is not bound to the approved Production requirements");
+  }
+  const provider = decision.provider;
+  const runtime = decision.runtime;
+  const cost = decision.monthlyCostEstimate;
+  const cdn = decision.cdn;
+  if (
+    stableJson(provider) !== stableJson(input.artifact.provider) ||
+    stableJson(runtime) !== stableJson(input.artifact.runtime) ||
+    !cost ||
+    typeof cost !== "object" ||
+    Array.isArray(cost) ||
+    (cost as Record<string, unknown>).currency !== "USD" ||
+    (cost as Record<string, unknown>).minimumUsd !== input.artifact.costEstimate.monthlyMin ||
+    (cost as Record<string, unknown>).maximumUsd !== input.artifact.costEstimate.monthlyMax ||
+    !cdn ||
+    typeof cdn !== "object" ||
+    Array.isArray(cdn) ||
+    (cdn as Record<string, unknown>).selectedInPlan !== input.artifact.cdn.selectedInPlan
+  ) {
+    throw new Error("Nimbus provider/runtime/region/cost configuration diverges from its decision");
+  }
+  if (decision.requirementsSha256 !== input.artifact.decision.infrastructureRequirementsSha256) {
+    throw new Error("Nimbus decision is not bound to its derived infrastructure requirements");
+  }
+  const excluded = new Set([
+    input.provenancePath,
+    input.artifact.contractPath,
+    ...input.artifact.outputPaths,
+    ...input.artifact.testPaths,
+  ]);
+  const stageInputFiles = Object.fromEntries(
+    Object.entries(input.files).filter(([path]) => !excluded.has(path)),
+  );
+  if (
+    (await hashProductionFileSet(stageInputFiles)) !==
+    input.artifact.decision.candidateWorkspaceSha256
+  ) {
+    throw new Error("Nimbus decision is not bound to the exact pre-stage Production candidate");
+  }
+}
+
 function descriptorMap(candidate: WorkspaceCandidate): Map<string, WorkspaceFileDescriptor> {
   return new Map(candidate.files.map((descriptor) => [descriptor.path, descriptor]));
 }
@@ -1372,7 +1647,7 @@ function collectReferencedPaths(artifact: AnyProductionArtifact): string[] {
       break;
     case "key_auth_artifact":
       paths.push(...artifact.sourcePaths);
-      if (artifact.recovery.status === "implemented") paths.push(artifact.recovery.sourcePath);
+      if (artifact.recovery.status === "available_library") paths.push(artifact.recovery.sourcePath);
       break;
     case "vault_api_artifact":
       for (const route of artifact.routes) {
@@ -1394,7 +1669,12 @@ function collectReferencedPaths(artifact: AnyProductionArtifact): string[] {
       }
       break;
     case "nimbus_infrastructure_artifact":
-      paths.push(...artifact.configPaths, ...artifact.monitoringPaths);
+      paths.push(
+        ...artifact.configPaths,
+        ...artifact.functionPaths,
+        ...artifact.runtimeSourcePaths,
+        ...artifact.monitoringPaths,
+      );
       if (artifact.cdn.policyPath) paths.push(artifact.cdn.policyPath);
       break;
   }
@@ -1670,7 +1950,7 @@ function assertArtifactRelationships(
       key.outputPaths,
       [
         ...key.sourcePaths,
-        ...(key.recovery.status === "implemented" ? [key.recovery.sourcePath] : []),
+        ...(key.recovery.status === "available_library" ? [key.recovery.sourcePath] : []),
       ],
       "Key",
     );
@@ -1815,6 +2095,76 @@ function assertArtifactRelationships(
   }
 
   if (nimbus) {
+    const serviceRuntime = requirements.runtimeProfile === "service_app";
+    const runtimeCompositionSupported =
+      serviceRuntime &&
+      capabilities.database &&
+      !capabilities.auth &&
+      requirements.storage !== "object_storage" &&
+      !requirements.integrations.some((integration) => integration.execution === "server") &&
+      !requirements.apiOperations.some(
+        (operation) => operation.access.kind === "signed_webhook",
+      );
+    const expectedRuntimeSourcePaths = runtimeCompositionSupported
+      ? [
+          "server/runtime/authorization.js",
+          "server/runtime/composition.js",
+          "server/runtime/environment.js",
+          "server/runtime/operations.js",
+          "server/runtime/postgres.js",
+        ]
+      : [];
+    const expectedBindingContracts = serviceRuntime
+      ? uniqueSorted([
+          "authorization",
+          ...(capabilities.database ? ["database"] : []),
+          ...(capabilities.auth ? ["identity_issuer"] : []),
+          ...(requirements.apiOperations.some((operation) => operation.idempotencyRequired)
+            ? ["idempotency"]
+            : []),
+          "monitoring",
+          ...(requirements.storage === "object_storage" ? ["object_storage"] : []),
+          "operation_handlers",
+          ...(requirements.apiOperations.some((operation) => operation.rateLimitRequired)
+            ? ["rate_limit"]
+            : []),
+        ])
+      : [];
+    if (nimbus.decision.status === "not_configured") {
+      if (
+        nimbus.provider !== null ||
+        nimbus.runtime !== null ||
+        nimbus.configurationAdapter !== null ||
+        nimbus.activation !== "not_configured" ||
+        nimbus.functionPaths.length > 0 ||
+        nimbus.runtimeSourcePaths.length > 0 ||
+        nimbus.costEstimate.evidence !== "unavailable"
+      ) {
+        throw new Error("Nimbus cannot select infrastructure without a verified decision");
+      }
+    } else {
+      const expectedRuntimeId = serviceRuntime
+        ? "node_22_serverless_functions"
+        : "static_web_delivery";
+      if (
+        nimbus.runtime?.id !== expectedRuntimeId ||
+        !nimbus.provider ||
+        nimbus.configurationAdapter !== "netlify" ||
+        nimbus.costEstimate.evidence !== "authenticated_provider_quote" ||
+        (serviceRuntime
+          ? nimbus.activation !==
+              (runtimeCompositionSupported ? "source_configured" : "not_configured") ||
+            nimbus.functionPaths.length === 0 ||
+            stableJson(nimbus.runtimeSourcePaths) !==
+              stableJson(expectedRuntimeSourcePaths)
+          : nimbus.activation !== "source_configured" || nimbus.functionPaths.length > 0)
+      ) {
+        throw new Error("Nimbus verified decision must match the approved runtime profile");
+      }
+    }
+    if (stableJson(nimbus.bindingContracts) !== stableJson(expectedBindingContracts)) {
+      throw new Error("Nimbus binding contracts must exactly match approved capabilities");
+    }
     if (nimbus.database.required !== capabilities.database) {
       throw new Error("Nimbus database decision must match the approved requirements");
     }
@@ -1831,14 +2181,40 @@ function assertArtifactRelationships(
       nimbus.outputPaths,
       [
         ...nimbus.configPaths,
+        ...nimbus.functionPaths,
+        ...nimbus.runtimeSourcePaths,
         ...nimbus.monitoringPaths,
         ...(nimbus.cdn.policyPath ? [nimbus.cdn.policyPath] : []),
       ],
       "Nimbus",
     );
     assertPathsHaveRole(descriptors, nimbus.configPaths, ["deployment"], "Nimbus configPaths");
-    if (!nimbus.configPaths.includes("netlify.toml")) {
-      throw new Error("Nimbus must own the Netlify deployment configuration");
+    assertPathsHaveRole(
+      descriptors,
+      nimbus.functionPaths,
+      ["deployment"],
+      "Nimbus functionPaths",
+    );
+    assertPathsHaveRole(
+      descriptors,
+      nimbus.runtimeSourcePaths,
+      ["source"],
+      "Nimbus runtimeSourcePaths",
+    );
+    if (!nimbus.configPaths.includes("infra/nimbus-decision.json")) {
+      throw new Error("Nimbus must own its hash-bound decision record");
+    }
+    if (
+      nimbus.configPaths.includes("netlify.toml") !==
+      (nimbus.decision.status === "verified" && nimbus.configurationAdapter === "netlify")
+    ) {
+      throw new Error("Nimbus provider configuration must be backed by a verified decision");
+    }
+    if (nimbus.cdn.required !== true) {
+      throw new Error("Nimbus CDN requirement must be derived for the approved web candidate");
+    }
+    if (nimbus.decision.status === "not_configured" && nimbus.cdn.selectedInPlan) {
+      throw new Error("Nimbus cannot select a CDN without verified provider evidence");
     }
     const requiredEnv = uniqueSorted([
       ...(key?.requiredEnv ?? []),
@@ -1874,7 +2250,7 @@ export async function buildProductionArtifactGraph(input: {
   const requirements = ProductionRequirementsSchema.parse(input.requirements);
   const provenance = ProductionProvenanceArtifactSchema.parse(input.provenance);
   const artifacts = ProductionArtifactBundleSchema.parse(input.artifacts);
-  const required = requiredStages(requirements);
+  const required = deriveRequiredProductionStages(requirements);
   for (const id of PRODUCTION_STAGE_ORDER) {
     if (required[id] && artifacts[id] === null) {
       throw new Error(`Required Production artifact is missing: ${id}`);
@@ -2011,29 +2387,51 @@ export async function buildProductionArtifactGraph(input: {
       const node = nodes.find((candidateNode) => candidateNode.id === dependency);
       return node?.status !== "structurally_present";
     });
+    const blockedDependencies = dependencyIds.filter((dependency) => {
+      const node = nodes.find((candidateNode) => candidateNode.id === dependency);
+      return node?.status === "blocked" && /requires source changes/iu.test(node.reason);
+    });
     const missingConfiguration = requiredEnvironmentForArtifact(artifact).filter(
       (name) => !configuredEnvNames.has(name),
     );
     const reviewBlocks =
       artifact.kind === "quartz_database_review_artifact" &&
       artifact.queryReviews.some((review) => review.verdict === "changes_required");
+    const infrastructureDecisionReason =
+      artifact.kind === "nimbus_infrastructure_artifact" &&
+      artifact.decision.status === "not_configured"
+        ? artifact.decision.reasonCode
+        : null;
+    const infrastructureDecisionUnavailable = infrastructureDecisionReason !== null;
+    const runtimeBindingsNotComposed =
+      artifact.kind === "nimbus_infrastructure_artifact" &&
+      artifact.decision.status === "verified" &&
+      requirements.runtimeProfile === "service_app" &&
+      artifact.activation === "not_configured";
     const ownStatus =
-      missingConfiguration.length > 0
+      infrastructureDecisionUnavailable || runtimeBindingsNotComposed || missingConfiguration.length > 0
         ? "not_configured"
         : reviewBlocks
           ? "blocked"
           : "structurally_present";
     const status =
-      ownStatus === "structurally_present" && unavailableDependencies.length > 0
+      blockedDependencies.length > 0 ||
+      (ownStatus === "structurally_present" && unavailableDependencies.length > 0)
         ? "blocked"
         : ownStatus;
     const reason =
-      missingConfiguration.length > 0
+      infrastructureDecisionUnavailable
+        ? `Nimbus infrastructure decision is unavailable: ${infrastructureDecisionReason}. No provider, runtime, region, or cost was selected.`
+        : runtimeBindingsNotComposed
+        ? "Concrete runtime ports have not been composed. Environment-name presence and passing source/build checks are not runtime activation evidence."
+        : missingConfiguration.length > 0
         ? `Missing externally configured environment names: ${missingConfiguration.join(", ")}`
         : reviewBlocks
           ? "Quartz requires source changes before this graph can advance."
-          : ownStatus === "structurally_present" && unavailableDependencies.length > 0
-            ? `Blocked by unavailable source dependencies: ${unavailableDependencies.join(", ")}`
+          : blockedDependencies.length > 0
+            ? `Blocked by source dependencies requiring changes: ${blockedDependencies.join(", ")}`
+            : ownStatus === "structurally_present" && unavailableDependencies.length > 0
+              ? `Blocked by unavailable source dependencies: ${unavailableDependencies.join(", ")}`
             : artifact.summary;
     nodes.push(
       ProductionArtifactNodeSchema.parse({
@@ -2054,6 +2452,14 @@ export async function buildProductionArtifactGraph(input: {
   }
 
   assertArtifactRelationships(requirements, artifacts, availableEnvNames, descriptors);
+  if (artifacts.nimbus) {
+    await assertNimbusDecisionRecord({
+      files: input.files,
+      requirements,
+      provenancePath: provenance.contractPath,
+      artifact: artifacts.nimbus,
+    });
+  }
 
   const unsigned = {
     kind: "helix_production_source_graph" as const,

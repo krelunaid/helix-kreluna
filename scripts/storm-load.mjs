@@ -63,6 +63,9 @@ export function parseStormArguments(argv = []) {
   const config = {
     target: DEFAULT_TARGET,
     confirmed: false,
+    capacity: false,
+    artifactSha256: undefined,
+    deploySha256: undefined,
     requests: STORM_LIMITS.requests.default,
     concurrency: STORM_LIMITS.concurrency.default,
     durationMs: STORM_LIMITS.durationMs.default,
@@ -79,6 +82,10 @@ export function parseStormArguments(argv = []) {
 
     if (option === "--confirm-load-test") {
       config.confirmed = true;
+      continue;
+    }
+    if (option === "--capacity") {
+      config.capacity = true;
       continue;
     }
     if (option === "--help") {
@@ -98,6 +105,10 @@ export function parseStormArguments(argv = []) {
       config.durationMs = boundedInteger(value, option, STORM_LIMITS.durationMs);
     } else if (option === "--timeout-ms") {
       config.timeoutMs = boundedInteger(value, option, STORM_LIMITS.timeoutMs);
+    } else if (option === "--artifact-sha256") {
+      config.artifactSha256 = value;
+    } else if (option === "--deploy-sha256") {
+      config.deploySha256 = value;
     } else {
       throw new StormConfigurationError("unknown_option", `Unsupported Storm option: ${option}.`);
     }
@@ -493,11 +504,219 @@ export async function runStormLoad(options = {}) {
   };
 }
 
+export const STORM_CAPACITY_THRESHOLDS = Object.freeze({
+  errorRate: 0.05,
+  latencyMultiplier: 2,
+  throughputGainFloor: 0.15,
+});
+
+function capacityLevels(maxConcurrency) {
+  const levels = [1];
+  while (levels.at(-1) < maxConcurrency) {
+    levels.push(Math.min(maxConcurrency, levels.at(-1) * 2));
+  }
+  return [...new Set(levels)];
+}
+
+function successfulRequestsPerSecond(report) {
+  const seconds = Math.max(report.metrics.elapsedMs / 1_000, Number.EPSILON);
+  return report.metrics.successfulRequests / seconds;
+}
+
+function capacityStageSummary(report) {
+  return {
+    concurrency: report.metrics.concurrency.configured,
+    attemptedRequests: report.metrics.attemptedRequests,
+    successfulRequests: report.metrics.successfulRequests,
+    failedRequests: report.metrics.failedRequests,
+    requestsPerSecond: report.metrics.requestsPerSecond,
+    errorRate: report.metrics.errorRate,
+    p95LatencyMs: report.metrics.latencyMs.p95,
+  };
+}
+
+/**
+ * Run bounded, progressively concurrent real HTTP stages until saturation is
+ * observed. Only a completed result matches StormCapacityReportSchema and can
+ * be admitted into an Augur evidence bundle by a privileged ingestion path.
+ */
+export async function runStormCapacityLoad(options = {}) {
+  const rawTarget = options.target ?? DEFAULT_TARGET;
+  let limits;
+  try {
+    limits = validateRunBounds(options);
+  } catch (error) {
+    if (error instanceof StormConfigurationError) {
+      return notRunReport(rawTarget, undefined, error.code, error.message);
+    }
+    throw error;
+  }
+  if (options.confirmed !== true) {
+    return notRunReport(
+      rawTarget,
+      limits,
+      "confirmation_required",
+      "No traffic was sent. Capacity mode also requires --confirm-load-test.",
+    );
+  }
+  if (
+    !/^[0-9a-f]{64}$/.test(options.artifactSha256 ?? "") ||
+    !/^[0-9a-f]{64}$/.test(options.deploySha256 ?? "")
+  ) {
+    return notRunReport(
+      rawTarget,
+      limits,
+      "capacity_binding_invalid",
+      "Capacity mode requires exact artifact and deploy SHA-256 bindings before traffic starts.",
+    );
+  }
+  try {
+    validateStormTarget(rawTarget, options.env ?? process.env);
+  } catch (error) {
+    if (error instanceof StormConfigurationError) {
+      return notRunReport(rawTarget, limits, error.code, error.message);
+    }
+    throw error;
+  }
+
+  const levels = capacityLevels(limits.concurrency);
+  if (levels.length < 2) {
+    return notRunReport(
+      rawTarget,
+      limits,
+      "capacity_levels_insufficient",
+      "Capacity mode requires a maximum concurrency of at least 2.",
+    );
+  }
+  const stageRequests = Math.floor(limits.requests / levels.length);
+  if (levels.some((concurrency) => stageRequests < concurrency * 2)) {
+    return notRunReport(
+      rawTarget,
+      limits,
+      "capacity_samples_insufficient",
+      "The request budget must provide at least two samples per worker at every stage.",
+    );
+  }
+  const stageDurationMs = Math.max(
+    STORM_LIMITS.durationMs.min,
+    Math.floor(limits.durationMs / levels.length),
+  );
+  const reports = [];
+  let stableReport = null;
+  let saturationReport = null;
+
+  for (const concurrency of levels) {
+    const report = await runStormLoad({
+      target: rawTarget,
+      confirmed: true,
+      requests: stageRequests,
+      concurrency,
+      durationMs: stageDurationMs,
+      timeoutMs: Math.min(limits.timeoutMs, stageDurationMs),
+      env: options.env ?? process.env,
+    });
+    if (report.status !== "completed") {
+      return {
+        ...failedReport(
+          rawTarget,
+          limits,
+          "capacity_stage_failed",
+          "A measured capacity stage failed before saturation could be established.",
+        ),
+        executedStages: reports.map(capacityStageSummary),
+      };
+    }
+    reports.push(report);
+    const prior = reports.at(-2) ?? null;
+    const priorSuccessfulRate = prior ? successfulRequestsPerSecond(prior) : 0;
+    const currentSuccessfulRate = successfulRequestsPerSecond(report);
+    const saturatedByErrors = report.metrics.errorRate >= STORM_CAPACITY_THRESHOLDS.errorRate;
+    const saturatedByLatency = Boolean(
+      prior &&
+        report.metrics.latencyMs.p95 >=
+          prior.metrics.latencyMs.p95 * STORM_CAPACITY_THRESHOLDS.latencyMultiplier &&
+        currentSuccessfulRate <=
+          priorSuccessfulRate * (1 + STORM_CAPACITY_THRESHOLDS.throughputGainFloor),
+    );
+    const saturatedByThroughput = Boolean(
+      prior && currentSuccessfulRate < priorSuccessfulRate * 0.9,
+    );
+    if (saturatedByErrors || saturatedByLatency || saturatedByThroughput) {
+      saturationReport = report;
+      stableReport = prior;
+      break;
+    }
+    stableReport = report;
+  }
+
+  if (!saturationReport || !stableReport) {
+    return {
+      ...failedReport(
+        rawTarget,
+        limits,
+        "saturation_not_observed",
+        "Real traffic ran within the configured bounds, but saturation was not observed; no capacity evidence was produced.",
+      ),
+      executedStages: reports.map(capacityStageSummary),
+    };
+  }
+
+  const attemptedRequests = reports.reduce(
+    (sum, report) => sum + report.metrics.attemptedRequests,
+    0,
+  );
+  const successfulRequests = reports.reduce(
+    (sum, report) => sum + report.metrics.successfulRequests,
+    0,
+  );
+  const failedRequests = reports.reduce((sum, report) => sum + report.metrics.failedRequests, 0);
+  const stableRequestsPerSecond = round(successfulRequestsPerSecond(stableReport));
+  const saturationRequestsPerSecond = round(
+    Math.max(stableRequestsPerSecond, saturationReport.metrics.requestsPerSecond),
+  );
+  return {
+    kind: "storm_capacity_load_test",
+    version: "1.0.0",
+    status: "completed",
+    evidence: "measured",
+    artifactSha256: options.artifactSha256,
+    deploySha256: options.deploySha256,
+    observedAt: saturationReport.generatedAt,
+    source: "storm://helix-storm-node-fetch/confirmed-capacity-run",
+    runner: "helix-storm-node-fetch",
+    targetSha256: saturationReport.targetSha256,
+    durationMs: Math.max(
+      1,
+      Math.round(reports.reduce((sum, report) => sum + report.metrics.elapsedMs, 0)),
+    ),
+    metrics: {
+      attemptedRequests,
+      successfulRequests,
+      failedRequests,
+      stableRequestsPerSecond,
+      saturationRequestsPerSecond,
+      errorRate: round(failedRequests / attemptedRequests, 6),
+      latencyMs: {
+        p50: Math.max(...reports.map((report) => report.metrics.latencyMs.p50)),
+        p95: Math.max(...reports.map((report) => report.metrics.latencyMs.p95)),
+        p99: Math.max(...reports.map((report) => report.metrics.latencyMs.p99)),
+      },
+      concurrency: {
+        configured: saturationReport.metrics.concurrency.configured,
+        peak: Math.max(...reports.map((report) => report.metrics.concurrency.peak)),
+        saturation: saturationReport.metrics.concurrency.configured,
+      },
+      saturationObserved: true,
+    },
+  };
+}
+
 function usage() {
   return [
     "Storm sends no traffic without --confirm-load-test.",
     `Default target: ${DEFAULT_TARGET}`,
     "Options: --target URL --requests N --concurrency N --duration-ms N --timeout-ms N",
+    "Capacity mode: --capacity --artifact-sha256 HEX --deploy-sha256 HEX",
     `External targets require an exact origin in ${ALLOWLIST_ENV}.`,
   ].join(" ");
 }
@@ -531,7 +750,9 @@ export async function runStormCli(argv = process.argv.slice(2), env = process.en
     };
   }
 
-  const report = await runStormLoad({ ...config, env });
+  const report = config.capacity
+    ? await runStormCapacityLoad({ ...config, env })
+    : await runStormLoad({ ...config, env });
   const exitCode =
     report.status === "failed"
       ? 1

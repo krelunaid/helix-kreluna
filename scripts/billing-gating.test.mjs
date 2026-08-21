@@ -4,24 +4,35 @@ import test from "node:test";
 
 const serverSource = await readFile(new URL("../src/lib/server/vetra.ts", import.meta.url), "utf8");
 const pricingSource = await readFile(new URL("../src/routes/pricing.tsx", import.meta.url), "utf8");
-const deploySource = await readFile(new URL("../src/lib/server/deploy.ts", import.meta.url), "utf8");
-const creditsSource = await readFile(new URL("../src/lib/server/credits.ts", import.meta.url), "utf8");
+const deploySource = await readFile(
+  new URL("../src/lib/server/deploy.ts", import.meta.url),
+  "utf8",
+);
+const creditsSource = await readFile(
+  new URL("../src/lib/server/credits.ts", import.meta.url),
+  "utf8",
+);
 
 function section(start, end) {
   return serverSource.slice(serverSource.indexOf(start), serverSource.indexOf(end));
 }
 
-test("paid plans fail closed when no verified payment provider is configured", () => {
+test("paid plans start hosted Checkout and never grant credits locally", () => {
   const choosePlan = section("export const choosePlan", "export const buyExtraCredits");
-  assert.match(choosePlan, /plan\.id !== "free"/);
-  assert.match(choosePlan, /PAYMENTS_NOT_AVAILABLE/);
+  assert.match(choosePlan, /isPaidPlanId\(plan\.id\)/);
+  assert.match(choosePlan, /startSubscriptionCheckout/);
+  assert.match(choosePlan, /requestId/);
   assert.doesNotMatch(choosePlan, /credits_balance\s*=\s*credits_balance\s*\+/);
   assert.doesNotMatch(choosePlan, /plan_grant/);
 });
 
-test("top-ups cannot mutate credits without a verified payment", () => {
-  const buyExtraCredits = serverSource.slice(serverSource.indexOf("export const buyExtraCredits"));
-  assert.match(buyExtraCredits, /throw new BillingError\("PAYMENTS_NOT_AVAILABLE"\)/);
+test("top-ups create Checkout and cannot mutate credits directly", () => {
+  const buyExtraCredits = section(
+    "export const buyExtraCredits",
+    "export const createBillingPortalSession",
+  );
+  assert.match(buyExtraCredits, /startTopUpCheckout/);
+  assert.match(buyExtraCredits, /requestId/);
   assert.doesNotMatch(buyExtraCredits, /update profiles/i);
   assert.doesNotMatch(buyExtraCredits, /insert into credit_ledger/i);
 });
@@ -34,15 +45,20 @@ test("the free allowance is inserted once and never granted by plan switching", 
   assert.doesNotMatch(choosePlan, /credits_balance/);
 });
 
-test("pricing labels and disables unavailable purchases", () => {
-  assert.match(pricingSource, /disabled=\{p\.id !== "free"/);
+test("pricing redirects paid actions to Stripe and fails closed when unavailable", () => {
+  assert.match(pricingSource, /choosePlan\([\s\S]*crypto\.randomUUID\(\)/);
+  assert.match(pricingSource, /window\.location\.assign\(next\.url\)/);
+  assert.match(pricingSource, /buyExtraCredits/);
+  assert.match(pricingSource, /window\.location\.assign\(checkout\.url\)/);
+  assert.match(pricingSource, /!billing\?\.available/);
   assert.match(pricingSource, /t\("pricing\.unavailable"\)/);
-  assert.doesNotMatch(pricingSource, /buyExtraCredits/);
 });
 
-test("hosting and web publish share one idempotent charge and commit atomically", () => {
+test("legacy hosting is retired and web publish owns the only idempotent hosting charge", () => {
   assert.match(creditsSource, /web-host:\$\{projectId\}:initial/);
-  assert.match(serverSource, /initialWebHostingIdempotencyKey\(id\)/);
+  const legacyHost = section("export const hostProject", "export const choosePlan");
+  assert.match(legacyHost, /throw new LegacyHostingRetiredError\(\)/);
+  assert.doesNotMatch(legacyHost, /initialWebHostingIdempotencyKey|apply_credit_entry/);
   const publishWeb = deploySource.slice(
     deploySource.indexOf("export const publishWeb"),
     deploySource.indexOf("export const publishGuest"),

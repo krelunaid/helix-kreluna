@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Download, Github, Globe, Monitor, Wifi } from "lucide-react";
 import { AppStoreMark, PlayStoreMark } from "@/components/store-marks";
@@ -10,10 +10,13 @@ import { getProject, type Profile, type Project } from "@/lib/server/vetra";
 import {
   DEPLOY_COST,
   downloadNativePack,
+  getStoreReadiness,
   listDeploys,
   publishWeb,
+  refreshStoreSubmission,
   shipStore,
   type Deploy,
+  type StoreReadiness,
 } from "@/lib/server/deploy";
 import type { KrelunaScore } from "@/lib/score";
 import { ScoreCard } from "@/components/score-card";
@@ -38,9 +41,30 @@ function Launch() {
   const [deploys, setDeploys] = useState<Deploy[]>([]);
   const [appleTeam, setAppleTeam] = useState("");
   const [bundleId, setBundleId] = useState("");
-  const [busy, setBusy] = useState<"web" | "ios" | "android" | "windows" | "zip-ios" | "zip-android" | "zip-windows" | "workspace" | "gh" | null>(null);
+  const [easProjectId, setEasProjectId] = useState("");
+  const [storeConfirmed, setStoreConfirmed] = useState({ ios: false, android: false });
+  const storeRequestIds = useRef({ ios: crypto.randomUUID(), android: crypto.randomUUID() });
+  const [storeReadinessState, setStoreReadinessState] = useState<{
+    ios: StoreReadiness | null;
+    android: StoreReadiness | null;
+  }>({ ios: null, android: null });
+  const [refreshingStore, setRefreshingStore] = useState<string | null>(null);
+  const [busy, setBusy] = useState<
+    | "web"
+    | "ios"
+    | "android"
+    | "windows"
+    | "zip-ios"
+    | "zip-android"
+    | "zip-windows"
+    | "workspace"
+    | "gh"
+    | null
+  >(null);
   const [ghUrl, setGhUrl] = useState<string | null>(null);
-  const [web, setWeb] = useState<{ url: string; testersUrl: string; testersCode: string } | null>(null);
+  const [web, setWeb] = useState<{ url: string; testersUrl: string; testersCode: string } | null>(
+    null,
+  );
   const [score, setScore] = useState<KrelunaScore | null>(null);
   const [job, setJob] = useState<PublicBuildJob | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -63,7 +87,16 @@ function Launch() {
     void listDeploys({ data: id })
       .then(setDeploys)
       .catch((error) => setLoadError(error instanceof Error ? error.message : t("launch.err")));
+    void Promise.all([getStoreReadiness({ data: "ios" }), getStoreReadiness({ data: "android" })])
+      .then(([ios, android]) => setStoreReadinessState({ ios, android }))
+      .catch((error) => setLoadError(error instanceof Error ? error.message : t("launch.err")));
   }, [user?.id, id, t]);
+
+  useEffect(() => {
+    // An uncertain transport failure must reuse the same logical request. A
+    // changed release identity intentionally starts a new request instead.
+    storeRequestIds.current = { ios: crypto.randomUUID(), android: crypto.randomUUID() };
+  }, [job?.id, appleTeam, bundleId, easProjectId]);
 
   if (isPending) {
     return (
@@ -75,7 +108,7 @@ function Launch() {
   if (!user) return <RedirectToSignIn />;
 
   async function goWeb() {
-    if (!job) return;
+    if (!job || project?.buildLevel === "production") return;
     setBusy("web");
     try {
       const r = await publishWeb({
@@ -96,7 +129,7 @@ function Launch() {
   }
 
   async function goStore(target: "ios" | "android") {
-    if (!job) return;
+    if (!job || project?.buildLevel === "production") return;
     setBusy(target);
     try {
       const r = await shipStore({
@@ -106,24 +139,17 @@ function Launch() {
           target,
           appleTeam,
           bundleId,
-          requestId: crypto.randomUUID(),
+          easProjectId,
+          requestId: storeRequestIds.current[target],
+          confirmSubmission: storeConfirmed[target],
         },
       });
       setDeploys(await listDeploys({ data: id }));
       const next = await getProject({ data: id });
       setProfile(next.profile);
-      if (r.pack?.base64) {
-        const bin = atob(r.pack.base64);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        const blob = new Blob([bytes], { type: "application/zip" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = r.pack.filename;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      }
-      toast.success(target === "ios" ? t("launch.iosOk") : t("launch.andOk"));
+      setStoreConfirmed((current) => ({ ...current, [target]: false }));
+      storeRequestIds.current[target] = crypto.randomUUID();
+      toast.success(t("launch.storeAccepted", { status: r.status }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("launch.err"));
     } finally {
@@ -142,6 +168,7 @@ function Launch() {
           target,
           appleTeam,
           bundleId,
+          easProjectId,
         },
       });
       const bin = atob(pack.base64);
@@ -153,11 +180,32 @@ function Launch() {
       a.download = pack.filename;
       a.click();
       URL.revokeObjectURL(a.href);
-      toast.success(target === "windows" ? t("launch.winOk") : target === "ios" ? t("launch.iosOk") : t("launch.andOk"));
+      toast.success(
+        target === "windows"
+          ? t("launch.winOk")
+          : target === "ios"
+            ? t("launch.iosOk")
+            : t("launch.andOk"),
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("launch.err"));
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function refreshStore(releaseId: string) {
+    setRefreshingStore(releaseId);
+    try {
+      const result = await refreshStoreSubmission({
+        data: { projectId: id, releaseId },
+      });
+      setDeploys(await listDeploys({ data: id }));
+      toast.success(t("launch.storeRefreshed", { status: result.status }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("launch.err"));
+    } finally {
+      setRefreshingStore(null);
     }
   }
 
@@ -188,8 +236,9 @@ function Launch() {
   }
 
   const showWindows = wantsDesktop(project?.prompt ?? "");
-  const gateReady =
-    job?.queue?.status === "approved" || job?.queue?.status === "deployed";
+  const gateReady = job?.queue?.status === "approved" || job?.queue?.status === "deployed";
+  const productionWebUnavailable = project?.buildLevel === "production";
+  const productionNativeUnavailable = project?.buildLevel === "production";
 
   return (
     <div className="min-h-screen">
@@ -204,22 +253,22 @@ function Launch() {
               </h1>
               {project ? (
                 <span className="rounded-full border border-border px-2 py-1 text-[10px] tracking-wide text-muted uppercase">
-                  {project.buildLevel === "production"
-                    ? t("desk.production")
-                    : t("desk.prototype")}
+                  {project.buildLevel === "production" ? t("desk.production") : t("desk.prototype")}
                 </span>
               ) : null}
             </div>
             <p className="mt-2 max-w-xl text-sm text-muted">{t("launch.lead")}</p>
           </div>
-          <Link to="/studio/$id" params={{ id }} className="text-sm text-muted underline-offset-4 hover:text-fg hover:underline">
+          <Link
+            to="/studio/$id"
+            params={{ id }}
+            className="text-sm text-muted underline-offset-4 hover:text-fg hover:underline"
+          >
             {t("launch.back")}
           </Link>
         </div>
         <div className="mt-4">
-          {loadError ? (
-            <p className="mb-3 text-sm text-danger">{loadError}</p>
-          ) : null}
+          {loadError ? <p className="mb-3 text-sm text-danger">{loadError}</p> : null}
           {!gateReady ? (
             <div className="mb-4 rounded-xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm">
               <p className="font-medium">{t("gate.releaseBlocked")}</p>
@@ -227,60 +276,63 @@ function Launch() {
             </div>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
-          {ghUrl ? (
-            <a href={ghUrl} target="_blank" rel="noreferrer" className="text-sm text-accent underline-offset-2 hover:underline">
-              {ghUrl}
-            </a>
-          ) : (
+            {ghUrl ? (
+              <a
+                href={ghUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm text-accent underline-offset-2 hover:underline"
+              >
+                {ghUrl}
+              </a>
+            ) : (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!project?.html || !job || !gateReady || busy === "gh"}
+                onClick={() => {
+                  if (!job) return;
+                  setBusy("gh");
+                  void githubStatus()
+                    .then((s) => {
+                      if (!s.login) {
+                        toast.message(t("acc.ghWho"));
+                        throw new Error("no-gh");
+                      }
+                      return pushProjectGithub({
+                        data: { projectId: id, jobId: job.id },
+                      });
+                    })
+                    .then((r) => {
+                      if (!r) return;
+                      setGhUrl(r.url);
+                      toast.success(t("acc.ghPushed"));
+                    })
+                    .catch((err) => {
+                      if (err instanceof Error && err.message === "no-gh") return;
+                      toast.error(err instanceof Error ? err.message : t("acc.ghErr"));
+                    })
+                    .finally(() => setBusy(null));
+                }}
+              >
+                <Github className="size-4" />
+                {t("acc.ghPush")}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="secondary"
-              disabled={!project?.html || !job || !gateReady || busy === "gh"}
-              onClick={() => {
-                if (!job) return;
-                setBusy("gh");
-                void githubStatus()
-                  .then((s) => {
-                    if (!s.login) {
-                      toast.message(t("acc.ghWho"));
-                      throw new Error("no-gh");
-                    }
-                    return pushProjectGithub({
-                      data: { projectId: id, jobId: job.id },
-                    });
-                  })
-                  .then((r) => {
-                    if (!r) return;
-                    setGhUrl(r.url);
-                    toast.success(t("acc.ghPushed"));
-                  })
-                  .catch((err) => {
-                    if (err instanceof Error && err.message === "no-gh") return;
-                    toast.error(err instanceof Error ? err.message : t("acc.ghErr"));
-                  })
-                  .finally(() => setBusy(null));
-              }}
+              disabled={!job?.workspace || !gateReady || busy === "workspace"}
+              onClick={() => void downloadWorkspace()}
             >
-              <Github className="size-4" />
-              {t("acc.ghPush")}
+              <Download className="size-4" />
+              {busy === "workspace" ? t("launch.shipping") : t("workspace.download")}
             </Button>
-          )}
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={!job?.workspace || !gateReady || busy === "workspace"}
-            onClick={() => void downloadWorkspace()}
-          >
-            <Download className="size-4" />
-            {busy === "workspace"
-              ? t("launch.shipping")
-              : t("workspace.download")}
-          </Button>
-          {job?.workspace ? (
-            <span className="text-xs text-subtle">
-              {job.workspace.fileCount} {t("workspace.files")} · {job.workspace.buildLevel}
-            </span>
-          ) : null}
+            {job?.workspace ? (
+              <span className="text-xs text-subtle">
+                {job.workspace.fileCount} {t("workspace.files")} · {job.workspace.buildLevel}
+              </span>
+            ) : null}
           </div>
         </div>
 
@@ -316,9 +368,58 @@ function Launch() {
                 className="mt-1 w-full rounded-md bg-elevated px-3 py-2 text-sm text-fg outline-none shadow-[0_0_0_1px_rgb(255_255_255/0.08)]"
               />
             </label>
-            <p className="mt-3 text-xs text-subtle">{DEPLOY_COST.ios} cr</p>
-            <Button className="mt-3 w-full" disabled={!!busy || !project?.html || !gateReady} onClick={() => void goStore("ios")}>
-              {busy === "ios" ? t("launch.shipping") : t("launch.iosCta")}
+            <label className="mt-3 block text-xs text-subtle">
+              {t("launch.easProjectId")}
+              <input
+                value={easProjectId}
+                onChange={(e) => setEasProjectId(e.target.value)}
+                placeholder="00000000-0000-4000-8000-000000000000"
+                className="mt-1 w-full rounded-md bg-elevated px-3 py-2 text-sm text-fg outline-none shadow-[0_0_0_1px_rgb(255_255_255/0.08)]"
+              />
+            </label>
+            <Button
+              className="mt-3 w-full"
+              variant="secondary"
+              disabled={!!busy || !project?.html || !gateReady}
+              onClick={() => void zip("ios")}
+            >
+              <Download className="size-4" />
+              {busy === "zip-ios" ? t("launch.shipping") : t("launch.iosCta")}
+            </Button>
+            <p className="mt-3 text-xs text-subtle">
+              {productionNativeUnavailable
+                ? t("launch.productionNativeUnavailable")
+                : storeReadinessState.ios?.runnerConfigured
+                  ? t("launch.storeRunnerReady")
+                  : t("launch.storeRunnerUnavailable")}
+            </p>
+            <label className="mt-3 flex items-start gap-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                checked={storeConfirmed.ios}
+                onChange={(event) =>
+                  setStoreConfirmed((current) => ({ ...current, ios: event.target.checked }))
+                }
+                className="mt-0.5"
+              />
+              <span>{t("launch.storeConfirm", { credits: DEPLOY_COST.ios })}</span>
+            </label>
+            <Button
+              className="mt-3 w-full"
+              disabled={
+                !!busy ||
+                !project?.html ||
+                !gateReady ||
+                productionNativeUnavailable ||
+                !storeReadinessState.ios?.runnerConfigured ||
+                !appleTeam ||
+                !bundleId ||
+                !easProjectId ||
+                !storeConfirmed.ios
+              }
+              onClick={() => void goStore("ios")}
+            >
+              {busy === "ios" ? t("launch.shipping") : t("launch.iosSubmitCta")}
             </Button>
           </article>
 
@@ -326,39 +427,110 @@ function Launch() {
             <PlayStoreMark className="h-10 w-[135px]" />
             <h2 className="mt-3 text-lg">{t("launch.and")}</h2>
             <p className="mt-1 text-sm text-muted">{t("launch.andBody")}</p>
-            <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.android} cr</p>
-            <Button className="mt-4 w-full" disabled={!!busy || !project?.html || !gateReady} onClick={() => void goStore("android")}>
-              {busy === "android" ? t("launch.shipping") : t("launch.andCta")}
+            <label className="mt-4 block text-xs text-subtle">
+              Package name
+              <input
+                value={bundleId}
+                onChange={(e) => setBundleId(e.target.value)}
+                className="mt-1 w-full rounded-md bg-elevated px-3 py-2 text-sm text-fg outline-none shadow-[0_0_0_1px_rgb(255_255_255/0.08)]"
+              />
+            </label>
+            <label className="mt-3 block text-xs text-subtle">
+              {t("launch.easProjectId")}
+              <input
+                value={easProjectId}
+                onChange={(e) => setEasProjectId(e.target.value)}
+                placeholder="00000000-0000-4000-8000-000000000000"
+                className="mt-1 w-full rounded-md bg-elevated px-3 py-2 text-sm text-fg outline-none shadow-[0_0_0_1px_rgb(255_255_255/0.08)]"
+              />
+            </label>
+            <Button
+              className="mt-3 w-full"
+              variant="secondary"
+              disabled={!!busy || !project?.html || !gateReady}
+              onClick={() => void zip("android")}
+            >
+              <Download className="size-4" />
+              {busy === "zip-android" ? t("launch.shipping") : t("launch.andCta")}
+            </Button>
+            <p className="mt-3 text-xs text-subtle">
+              {productionNativeUnavailable
+                ? t("launch.productionNativeUnavailable")
+                : storeReadinessState.android?.runnerConfigured
+                  ? t("launch.storeRunnerReady")
+                  : t("launch.storeRunnerUnavailable")}
+            </p>
+            <label className="mt-3 flex items-start gap-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                checked={storeConfirmed.android}
+                onChange={(event) =>
+                  setStoreConfirmed((current) => ({ ...current, android: event.target.checked }))
+                }
+                className="mt-0.5"
+              />
+              <span>{t("launch.storeConfirm", { credits: DEPLOY_COST.android })}</span>
+            </label>
+            <Button
+              className="mt-3 w-full"
+              disabled={
+                !!busy ||
+                !project?.html ||
+                !gateReady ||
+                productionNativeUnavailable ||
+                !storeReadinessState.android?.runnerConfigured ||
+                !bundleId ||
+                !easProjectId ||
+                !storeConfirmed.android
+              }
+              onClick={() => void goStore("android")}
+            >
+              {busy === "android" ? t("launch.shipping") : t("launch.andSubmitCta")}
             </Button>
           </article>
 
           <article className="rounded-2xl bg-surface p-5 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
             <Globe className="size-5 text-accent" />
             <h2 className="mt-3 text-lg">{t("launch.web")}</h2>
-            <p className="mt-1 text-sm text-muted">{t("launch.webBody")}</p>
+            <p className="mt-1 text-sm text-muted">
+              {productionWebUnavailable
+                ? t("launch.productionWebUnavailable")
+                : t("launch.webBody")}
+            </p>
             <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.web} cr</p>
-            <Button className="mt-4 w-full" disabled={!!busy || !project?.html || !gateReady} onClick={() => void goWeb()}>
+            <Button
+              className="mt-4 w-full"
+              disabled={!!busy || !project?.html || !gateReady || productionWebUnavailable}
+              onClick={() => void goWeb()}
+            >
               <Wifi className="size-4" />
               {busy === "web" ? t("launch.shipping") : t("launch.webCta")}
             </Button>
             {web ? (
-              <a href={web.url} className="mt-3 block truncate text-sm text-accent underline-offset-2 hover:underline">
+              <a
+                href={web.url}
+                className="mt-3 block truncate text-sm text-accent underline-offset-2 hover:underline"
+              >
                 {web.url}
               </a>
             ) : null}
           </article>
 
           {showWindows ? (
-          <article className="rounded-2xl bg-surface p-5 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
-            <Monitor className="size-5 text-accent" />
-            <h2 className="mt-3 text-lg">{t("launch.win")}</h2>
-            <p className="mt-1 text-sm text-muted">{t("launch.winBody")}</p>
-            <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.windows} cr</p>
-            <Button className="mt-4 w-full" disabled={!!busy || !project?.html || !gateReady} onClick={() => void zip("windows")}>
-              <Download className="size-4" />
-              {busy === "zip-windows" ? t("launch.shipping") : t("launch.winCta")}
-            </Button>
-          </article>
+            <article className="rounded-2xl bg-surface p-5 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
+              <Monitor className="size-5 text-accent" />
+              <h2 className="mt-3 text-lg">{t("launch.win")}</h2>
+              <p className="mt-1 text-sm text-muted">{t("launch.winBody")}</p>
+              <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.windows} cr</p>
+              <Button
+                className="mt-4 w-full"
+                disabled={!!busy || !project?.html || !gateReady}
+                onClick={() => void zip("windows")}
+              >
+                <Download className="size-4" />
+                {busy === "zip-windows" ? t("launch.shipping") : t("launch.winCta")}
+              </Button>
+            </article>
           ) : null}
         </div>
 
@@ -366,7 +538,10 @@ function Launch() {
           <div className="mt-6 rounded-2xl bg-accent/10 px-5 py-4 text-sm">
             <p className="font-medium">{t("launch.track")}</p>
             <p className="mt-1 text-muted">{t("launch.trackBody", { code: web.testersCode })}</p>
-            <a href={web.testersUrl} className="mt-2 inline-block text-accent underline-offset-2 hover:underline">
+            <a
+              href={web.testersUrl}
+              className="mt-2 inline-block text-accent underline-offset-2 hover:underline"
+            >
               {web.testersUrl}
             </a>
           </div>
@@ -377,21 +552,41 @@ function Launch() {
             <p className="text-xs tracking-[0.16em] text-subtle uppercase">{t("launch.harbor")}</p>
             <ul className="mt-3 space-y-3">
               {deploys.map((d) => (
-                <li key={d.id} className="rounded-xl bg-surface px-4 py-3 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
+                <li
+                  key={d.id}
+                  className="rounded-xl bg-surface px-4 py-3 shadow-[0_0_0_1px_rgb(255_255_255/0.06)]"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm">
                       {d.target === "web"
                         ? "Web"
                         : d.target === "ios"
-                          ? t("launch.iosPackage")
+                          ? t("launch.iosRelease")
                           : d.target === "windows"
                             ? "Windows"
-                            : t("launch.androidPackage")} · {d.status}
+                            : t("launch.androidRelease")}{" "}
+                      · {d.status}
                     </p>
                     {d.url ? (
-                      <a href={d.url} className="text-xs text-accent underline-offset-2 hover:underline">
+                      <a
+                        href={d.url}
+                        className="text-xs text-accent underline-offset-2 hover:underline"
+                      >
                         {d.url}
                       </a>
+                    ) : null}
+                    {d.store_release_id &&
+                    !["distributed", "failed", "action_required"].includes(d.status) ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={refreshingStore === d.store_release_id}
+                        onClick={() => void refreshStore(d.store_release_id as string)}
+                      >
+                        {refreshingStore === d.store_release_id
+                          ? t("launch.shipping")
+                          : t("launch.storeRefresh")}
+                      </Button>
                     ) : null}
                   </div>
                   <ol className="mt-2 space-y-1">

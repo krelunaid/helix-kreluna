@@ -3,46 +3,37 @@
 import { htmlForPrompt } from "@/lib/templates";
 import { titleFromPrompt } from "@/lib/utils";
 import { LOCALE_NAME } from "@/lib/i18n-core";
-import type {
-	AgentId,
-	AgentStep,
-	BuildJob,
-} from "@/lib/agent-types";
-import { HOUSE_BY_ID, agentByName, craftOf, knowledgeHints, localExperts, orchestrate, stackFor, type HouseId } from "@/lib/house";
+import type { BuildJob } from "@/lib/agent-types";
+import { knowledgeHints, localExperts, orchestrate, stackFor, type HouseId } from "@/lib/house";
 import { GEMS } from "@/lib/gems";
-import { computeScore } from "@/lib/score";
+import { computeScore, type KrelunaScore } from "@/lib/score";
 import { classifyBrief, briefLine } from "@/lib/brief";
 import { persistBuildJob } from "@/lib/server/persistence/build-jobs";
-import { requestAgentCompletion } from "@/lib/server/ai/gateway";
-import { AiProviderError } from "@/lib/server/ai/types";
-import {
-	extractHtml,
-	isValidHtmlArtifact,
-} from "@/lib/server/agents/html";
-import { selectDesignDirection } from "@/lib/server/agents/design";
-import {
-	AGENT_CONTRACTS,
-	type AgentContractId,
-} from "@/lib/server/agents/contracts";
-import {
-	applyControlledGemPatch,
-	sha256Hex,
-} from "@/lib/server/agents/patch";
-import { HELIX_PIPELINE_VERSION } from "@/lib/server/jobs/pipeline";
-import { BuildJobLeaseLostError } from "@/lib/server/jobs/queue";
+import { isValidHtmlArtifact } from "@/lib/server/agents/html";
+import { AGENT_CONTRACTS } from "@/lib/server/agents/contracts";
+import { sha256Hex } from "@/lib/server/agents/patch";
+import { applyAndValidateGemPatch } from "@/lib/server/agents/gem";
+import { reconcileBuildJobPipeline } from "@/lib/server/jobs/pipeline";
+import { agentPlan } from "@/lib/server/agents/nova";
+import { agentArchitecture } from "@/lib/server/agents/atlas";
+import { agentDesign } from "@/lib/server/agents/lumen";
+import { agentBuild } from "@/lib/server/agents/forge";
+import { agentGem } from "@/lib/server/agents/gems";
 import { runIrisReview, runSuperiorFix } from "@/lib/server/review/agents";
 import { finalizeReleaseCandidate } from "@/lib/server/release/candidate";
 import { runAegisStaticScan } from "@/lib/server/quality/aegis";
 import { runBrowserQuality } from "@/lib/server/quality/runner";
+import { runProductionCrew } from "@/lib/server/orchestrator/production";
 import type { AegisReport } from "@/lib/server/quality/types";
 import {
-	atlasSystemPrompt,
-	forgeLogicSystemPrompt,
-	forgeUiSystemPrompt,
-	gemSystemPrompt,
-	lumenSystemPrompt,
-	novaSystemPrompt,
-} from "@/lib/server/prompts/helix";
+	checkpoint,
+	loadPipeline,
+	pulse,
+	remember,
+	setBrowserEvidenceStep,
+	setStep,
+	think,
+} from "@/lib/server/orchestrator/state";
 import {
 	AgentOutputError,
 	ArchitectureSchema,
@@ -51,9 +42,6 @@ import {
 	ProductPlanSchema,
 	ReviewResultSchema,
 	type Architecture,
-	type AgentBuildInput,
-	type AgentGemInput,
-	type ChatGrokOptions,
 	type DesignDirection,
 	type DesignSelection,
 	type GemPatch,
@@ -62,192 +50,42 @@ import {
 	type RunCrewResult,
 } from "@/lib/server/agents/types";
 
-export type { AgentId, AgentStep, BuildJob };
-
-const CONTRACT_BY_HOUSE_ID: Partial<Record<HouseId, AgentContractId>> = {
-	gemini: "helix",
-	nova: "nova",
-	atlas: "atlas",
-	lumen: "lumen",
-	forge: "forgeLogic",
-	iris: "iris",
-	patch: "superior",
-};
-
-function stepKind(id: HouseId): AgentStep["kind"] {
-	if (CONTRACT_BY_HOUSE_ID[id]) {
-		return id === "gemini" ? "orchestrator" : "ai_agent";
-	}
-	if (["aegis", "veil", "echo"].includes(id)) return "scanner";
-	if (["twin", "storm", "harbor", "nimbus", "warden", "orbit", "cedar"].includes(id)) {
-		return "service";
-	}
-	if (["seal"].includes(id)) return "gate";
-	if (["swift", "moth", "quill", "senate", "augur", "kiln", "beacon", "ledger", "mend"].includes(id)) {
-		return "validator";
-	}
-	return "rule";
-}
-
-function stepFor(
-	id: HouseId,
-	status: AgentStep["status"] = "queued",
-	detail = "",
-): AgentStep {
-	const a = HOUSE_BY_ID[id];
-	const contractId = CONTRACT_BY_HOUSE_ID[id];
-	const contract = contractId ? AGENT_CONTRACTS[contractId] : undefined;
-	const localContract = id === "aegis"
-		? { version: "1.0.0", artifact: "static_security_report" }
-		: undefined;
-	return {
-		id,
-		agent: a.name,
-		role: a.role,
-		desk: a.desk,
-		kind: stepKind(id),
-		...(contract
-			? { version: contract.version, artifact: contract.artifact }
-			: localContract ?? {}),
-		status,
-		detail
-	};
-}
-function setStep(
-	job: BuildJob,
-	id: HouseId,
-	patch: Partial<Omit<AgentStep, "id">>,
-): void {
-	const i = job.steps.findIndex((s) => s.id === id);
-	if (i < 0) job.steps.push({
-		...stepFor(id),
-		...patch
-	});
-	else job.steps[i] = {
-		...job.steps[i],
-		...patch
-	};
-}
-function setBrowserEvidenceStep(
-	job: BuildJob,
-	id: "twin" | "echo" | "swift",
-	label: string,
-	report: {
-		status: "completed" | "failed" | "not_run";
-		evidence: "measured" | "not_run";
-		durationMs?: number;
-		errorCode?: string;
-		reasonCode?: string;
-	},
-): void {
-	const completed = report.status === "completed";
-	const failed = report.status === "failed";
-	setStep(job, id, {
-		status: completed ? "done" : failed ? "error" : "skipped",
-		detail: completed
-			? `${label} measured · ${report.durationMs ?? 0} ms`
-			: failed
-				? `${label} failed · ${report.errorCode ?? "unknown error"}`
-				: `${label} not run · ${report.reasonCode ?? "runner unavailable"}`,
-		validation: report.evidence === "measured" ? "validated" : "not_run",
-	});
-}
-function think(job: BuildJob, agent: string, it: string, en: string): void {
-	const a = agentByName(agent);
-	const gem = GEMS.find((g) => g.name === agent);
-	const craft = a ? (job.locale === "it" ? a.craftIt : a.craft) : gem ? (job.locale === "it" ? gem.craftIt : gem.craft) : "";
-	const role = a ? (job.locale === "it" ? a.roleIt : a.role) : gem ? (job.locale === "it" ? gem.craftIt : gem.craft) : "";
-	const text = job.locale === "it" ? it : en;
-	job.thoughts = [...job.thoughts ?? [], {
-		at: Date.now(),
-		agent,
-		text,
-		role,
-		craft
-	}];
-	if (job.thoughts.length > 50) job.thoughts = job.thoughts.slice(-40);
-}
-function pulse(
-	job: BuildJob,
-	agent: string,
-	doingIt: string,
-	doingEn: string,
-): () => void {
-	const start = Date.now();
-	const id = setInterval(() => {
-		const s = Math.round((Date.now() - start) / 1e3);
-		const it = `${doingIt} ${s}s.`;
-		const en = `${doingEn} ${s}s.`;
-		const text = job.locale === "it" ? it : en;
-		const prev = job.thoughts ?? [];
-		const last = prev[prev.length - 1];
-		if (last?.agent === agent && /\d+s/.test(last.text)) {
-			last.text = text;
-			last.at = Date.now();
-			if (!last.craft) last.craft = craftOf(agent, job.locale);
-			if (!last.role) last.role = agentByName(agent)?.role ?? "";
-		} else job.thoughts = [...prev, {
-			at: Date.now(),
-			agent,
-			text,
-			craft: craftOf(agent, job.locale),
-			role: agentByName(agent)?.role ?? ""
-		}];
-	}, 4e3);
-	return () => clearInterval(id);
-}
-function remember(job: BuildJob, agent: string, decision: string): void {
-	job.memory = [...job.memory ?? [], {
-		at: Date.now(),
-		agent,
-		decision
-	}];
-}
-function loadPipeline(
-	job: BuildJob,
-	active: HouseId[],
-	standby: HouseId[],
-	why: string,
-): void {
-	setStep(job, "gemini", {
-		status: "done",
-		detail: why
-	});
-	const rest = active.filter((id) => id !== "gemini");
-	job.steps = [
-		job.steps.find((s) => s.id === "gemini") ?? stepFor("gemini", "done", why),
-		...rest.map((id) => stepFor(id)),
-		...standby.map((id) => stepFor(id, "standby", "Standby"))
-	];
-}
-
-type CheckpointStage = NonNullable<BuildJob["checkpoint"]>["stage"];
-type CheckpointArtifacts = NonNullable<
-	NonNullable<BuildJob["checkpoint"]>["artifacts"]
->;
-
-function checkpoint(
-	job: BuildJob,
-	stage: CheckpointStage,
-	artifacts: CheckpointArtifacts = {},
-	gemIndex = job.checkpoint?.gemIndex,
-): void {
-	if (!job.requestFingerprint) {
-		throw new AgentOutputError("BUILD_JOB_FINGERPRINT_MISSING", false);
-	}
-	job.checkpoint = {
-		pipelineVersion: HELIX_PIPELINE_VERSION,
-		requestFingerprint: job.requestFingerprint,
-		stage,
-		artifacts: {
-			...(job.checkpoint?.artifacts ?? {}),
-			...artifacts,
-		},
-		...(gemIndex === undefined ? {} : { gemIndex }),
-	};
-}
+export type { AgentId, AgentStep, BuildJob } from "@/lib/agent-types";
 
 const persist = persistBuildJob;
+
+function applyPrototypeCapacitySteps(job: BuildJob, score: KrelunaScore): void {
+	const forecast = score.capacityForecast;
+	const hasStep = (id: HouseId) => job.steps.some((step) => step.id === id);
+	if (hasStep("storm")) {
+		if (forecast.status === "completed" && job.quality?.capacity) {
+			const metrics = job.quality.capacity.profiles.storm.metrics;
+			setStep(job, "storm", {
+				status: "done",
+				detail: `Persisted measured evidence accepted · ${metrics.stableRequestsPerSecond} stable RPS · ${metrics.saturationRequestsPerSecond} saturation RPS · p95 ${metrics.latencyMs.p95} ms`,
+				validation: "validated",
+			});
+		} else {
+			setStep(job, "storm", {
+				status: "skipped",
+				detail: job.quality?.capacity
+					? `Supplied load evidence rejected · ${forecast.missingEvidence.join("; ")}`
+					: "Load test not executed · no traffic was launched by the Prototype job",
+				validation: "not_run",
+			});
+		}
+	}
+	if (hasStep("augur")) {
+		setStep(job, "augur", {
+			status: forecast.status === "completed" ? "done" : "skipped",
+			detail:
+				forecast.status === "completed"
+					? `${forecast.verdict} · deploy ${forecast.deploySha256.slice(0, 12)}`
+					: `${forecast.verdict} · ${forecast.missingEvidence.join("; ")}`,
+			validation: forecast.status === "completed" ? "estimated" : "not_run",
+		});
+	}
+}
 
 export { persistBuildJob };
 export async function runCrew(job: BuildJob): Promise<RunCrewResult> {
@@ -264,25 +102,13 @@ export async function runCrew(job: BuildJob): Promise<RunCrewResult> {
 	if (!validatedInput.success) {
 		throw new AgentOutputError("HELIX_INPUT_INVALID", false);
 	}
-	if (job.buildLevel !== "prototype") {
-		throw new AgentOutputError("PRODUCTION_PIPELINE_NOT_CONFIGURED", false);
-	}
+	if (job.buildLevel === "production") return runProductionCrew(job);
 	const lang = LOCALE_NAME[job.locale];
 	const mode = job.mode === "host" ? "generate" : job.mode;
 	if (!job.requestFingerprint) {
 		throw new AgentOutputError("BUILD_JOB_FINGERPRINT_MISSING", false);
 	}
-	const compatibleCheckpoint =
-		job.checkpoint?.pipelineVersion === HELIX_PIPELINE_VERSION &&
-		job.checkpoint.requestFingerprint === job.requestFingerprint;
-	if (!compatibleCheckpoint) {
-		job.checkpoint = {
-			pipelineVersion: HELIX_PIPELINE_VERSION,
-			requestFingerprint: job.requestFingerprint,
-			stage: "queued",
-		};
-		job.gems = [];
-	}
+	reconcileBuildJobPipeline(job, job.requestFingerprint);
 	const resumedStage = job.checkpoint?.stage;
 	const savedArtifacts = job.checkpoint?.artifacts;
 	if (
@@ -309,6 +135,7 @@ export async function runCrew(job: BuildJob): Promise<RunCrewResult> {
 			job.quality,
 			job.locale,
 		);
+		applyPrototypeCapacitySteps(job, resumedScore);
 		const resumedFlow = orchestrate(
 			job.prompt,
 			mode,
@@ -748,7 +575,8 @@ export async function runCrew(job: BuildJob): Promise<RunCrewResult> {
 			stopGem();
 		}
 		if (change) {
-			const rewritten = await applyControlledGemPatch(page, change);
+			const validatedPatch = await applyAndValidateGemPatch(page, change);
+			const rewritten = validatedPatch.html;
 			page = rewritten;
 			html = rewritten;
 			job.html = rewritten;
@@ -756,7 +584,12 @@ export async function runCrew(job: BuildJob): Promise<RunCrewResult> {
 			job.gems.push({
 				id: gem.id,
 				name: gem.name,
-				did: `${change.operation} · ${change.target}`
+				did: `${change.operation} · ${change.target}`,
+				validation: {
+					checks: change.validation,
+					artifactSha256: validatedPatch.artifactSha256,
+					aegisPassed: validatedPatch.aegis.passed,
+				},
 			});
 			think(job, gem.name, `Patch verificata su ${change.target}.`, `Verified patch on ${change.target}.`);
 		} else job.gems.push({
@@ -992,6 +825,7 @@ export async function runCrew(job: BuildJob): Promise<RunCrewResult> {
 		...browserQuality,
 	};
 	score = await computeScore(page, job.prompt, job.quality, job.locale);
+	applyPrototypeCapacitySteps(job, score);
 	if (on("senate")) {
 		setStep(job, "senate", {
 			status: "done",
@@ -1156,278 +990,4 @@ export async function runCrew(job: BuildJob): Promise<RunCrewResult> {
 	});
 	if (!output.success) throw new AgentOutputError("HELIX_OUTPUT_INVALID");
 	return output.data;
-}
-async function agentPlan(
-	prompt: string,
-	lang: string,
-	lock: string,
-	job: BuildJob,
-): Promise<ProductPlan> {
-	const contract = AGENT_CONTRACTS.nova;
-	const contractInput = contract.inputSchema.safeParse({
-		prompt,
-		language: lang,
-		briefLock: lock,
-	});
-	if (!contractInput.success) throw new AgentOutputError("NOVA_INPUT_INVALID", false);
-	const parsed = contract.outputSchema.safeParse(parseJson<unknown>(await chatGrok({
-		system: novaSystemPrompt(lang, lock),
-		user: prompt,
-		maxTokens: contract.maxTokens,
-		timeoutMs: contract.timeoutMs,
-		temperature: .4,
-		effort: "low",
-		model: contract.model ?? undefined,
-		job,
-		agent: "Nova",
-		contractId: "nova",
-		logicalCallKey: "nova:plan",
-	})));
-	if (parsed.success) return parsed.data;
-	throw new AgentOutputError("NOVA_PRD_INVALID");
-}
-async function agentArchitecture(
-	prompt: string,
-	plan: ProductPlan | null,
-	lang: string,
-	lock: string,
-	job: BuildJob,
-): Promise<Architecture> {
-	const contract = AGENT_CONTRACTS.atlas;
-	const contractInput = contract.inputSchema.safeParse({
-		prompt,
-		language: lang,
-		briefLock: lock,
-		plan,
-	});
-	if (!contractInput.success) throw new AgentOutputError("ATLAS_INPUT_INVALID", false);
-	const parsed = contract.outputSchema.safeParse(parseJson<unknown>(await chatGrok({
-		system: atlasSystemPrompt(lang, lock),
-		user: `${prompt}\n\nPRD:\n${JSON.stringify(plan)}`,
-		maxTokens: contract.maxTokens,
-		timeoutMs: contract.timeoutMs,
-		temperature: .3,
-		effort: "low",
-		model: contract.model ?? undefined,
-		job,
-		agent: "Atlas",
-		contractId: "atlas",
-		logicalCallKey: "atlas:architecture",
-	})));
-	if (parsed.success) return parsed.data;
-	throw new AgentOutputError("ATLAS_ARCHITECTURE_INVALID");
-}
-async function agentDesign(
-	prompt: string,
-	plan: ProductPlan | null,
-	architecture: Architecture | null,
-	lang: string,
-	job: BuildJob,
-): Promise<DesignSelection> {
-	const contract = AGENT_CONTRACTS.lumen;
-	const contractInput = contract.inputSchema.safeParse({
-		prompt,
-		language: lang,
-		plan,
-		architecture,
-	});
-	if (!contractInput.success) throw new AgentOutputError("LUMEN_INPUT_INVALID", false);
-	const parsed = contract.outputSchema.safeParse(parseJson<unknown>(await chatGrok({
-			system: lumenSystemPrompt(lang),
-		user: `${prompt}\n\nPLAN:\n${JSON.stringify(plan)}\n\nARCHITECTURE:\n${JSON.stringify(architecture)}`,
-		maxTokens: contract.maxTokens,
-		timeoutMs: contract.timeoutMs,
-		temperature: .7,
-		effort: "low",
-		model: contract.model ?? undefined,
-		job,
-		agent: "Lumen",
-		contractId: "lumen",
-		logicalCallKey: "lumen:directions",
-	})));
-	if (parsed.success) return selectDesignDirection(parsed.data);
-	throw new AgentOutputError("LUMEN_DESIGN_INVALID");
-}
-async function agentBuild(
-	input: AgentBuildInput,
-	phase: "ui" | "logic",
-	retryIndex = 0,
-	logicalCallKey = phase === "ui" ? "forge:ui" : "forge:logic",
-): Promise<string | null> {
-	const contract = phase === "ui"
-		? AGENT_CONTRACTS.forgeUi
-		: AGENT_CONTRACTS.forgeLogic;
-	const contractInput = contract.inputSchema.safeParse({
-		prompt: input.prompt,
-		locale: input.locale,
-		language: input.lang,
-		mode: input.mode,
-		currentHtml: input.currentHtml,
-		plan: input.plan,
-		architecture: input.architecture,
-		design: input.design,
-		notes: input.extra,
-	});
-	if (!contractInput.success) {
-		throw new AgentOutputError(
-			phase === "ui" ? "FORGE_UI_INPUT_INVALID" : "FORGE_LOGIC_INPUT_INVALID",
-			false,
-		);
-	}
-	const userParts = [input.prompt];
-	if (input.plan) userParts.push("\nPLAN:\n", JSON.stringify(input.plan));
-	if (input.architecture) userParts.push("\nARCHITECTURE:\n", JSON.stringify(input.architecture));
-	if (input.design) userParts.push("\nDESIGN:\n", JSON.stringify(input.design));
-	if (input.extra?.length) userParts.push("\nHOUSE NOTES:\n", input.extra.join("\n"));
-	if (input.currentHtml && phase === "logic") {
-		userParts.push("\nSTRUCTURE HTML:\n", input.currentHtml.slice(0, 7e4));
-	}
-	const html = extractHtml(await chatGrok({
-		system: phase === "ui"
-			? forgeUiSystemPrompt({ language: input.lang, locale: input.locale })
-			: forgeLogicSystemPrompt({ mode: input.mode, language: input.lang, locale: input.locale }),
-		user: userParts.join(""),
-		maxTokens: contract.maxTokens,
-		timeoutMs: contract.timeoutMs,
-		temperature: .5,
-		model: contract.model ?? undefined,
-		effort: input.extra?.includes("MAX") ? "high" : "low",
-		job: input.job,
-		agent: phase === "ui" ? "Forge UI" : "Forge Logic",
-		contractId: phase === "ui" ? "forgeUi" : "forgeLogic",
-		logicalCallKey,
-		retryIndex,
-	}));
-	const parsed = contract.outputSchema.safeParse(html);
-	return parsed.success ? parsed.data : null;
-}
-async function agentGem(input: AgentGemInput): Promise<GemPatch> {
-	const contract = AGENT_CONTRACTS.gemPatch;
-	const contractInput = contract.inputSchema.safeParse({
-		prompt: input.prompt,
-		locale: input.locale,
-		language: input.lang,
-		html: input.html,
-		gemName: input.gem,
-		brief: input.brief,
-	});
-	if (!contractInput.success) throw new AgentOutputError("GEM_INPUT_INVALID", false);
-	const beforeHash = await sha256Hex(input.html);
-	const parsed = contract.outputSchema.safeParse(parseJson<unknown>(await chatGrok({
-		system: gemSystemPrompt({ name: input.gem, brief: input.brief, language: input.lang }),
-		user: `BRIEF:\n${input.prompt}\n\nCURRENT_HTML_SHA256:\n${beforeHash}\n\nCURRENT HTML:\n${input.html.slice(0, 65e3)}`,
-		maxTokens: contract.maxTokens,
-		timeoutMs: contract.timeoutMs,
-		temperature: .4,
-		model: contract.model ?? undefined,
-		effort: "low",
-		job: input.job,
-		agent: input.gem,
-		contractId: "gemPatch",
-		logicalCallKey: `gem:${input.gem.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 80)}`,
-	})));
-	if (parsed.success) return parsed.data;
-	throw new AgentOutputError("GEM_PATCH_INVALID");
-}
-type TrackedChatOptions = ChatGrokOptions & {
-	job: BuildJob;
-	agent: string;
-	contractId: Exclude<AgentContractId, "helix">;
-	logicalCallKey: string;
-	retryIndex?: number;
-};
-
-async function chatGrok(opts: TrackedChatOptions): Promise<string> {
-	const job = opts.job;
-	const agent = opts.agent;
-	const model = opts.model ?? "grok-4.5";
-	const t0 = Date.now();
-	let ticker: ReturnType<typeof setInterval> | undefined;
-	if (job && agent) {
-		const craft = craftOf(agent, job.locale);
-		job.beat = t0;
-		job.wire = job.locale === "it"
-			? `${agent} · ${craft} · al lavoro · 0s · segnale vivo`
-			: `${agent} · ${craft} · working · 0s · live signal`;
-		await persist(job);
-		ticker = setInterval(() => {
-			const s = Math.round((Date.now() - t0) / 1e3);
-			job.beat = Date.now();
-			job.wire = job.locale === "it"
-				? `${agent} · ${craft} · al lavoro · ${s}s · segnale vivo`
-				: `${agent} · ${craft} · working · ${s}s · live signal`;
-		}, 2500);
-	}
-	try {
-			const response = await requestAgentCompletion({
-				job,
-				contractId: opts.contractId,
-				agentId: agent,
-				logicalCallKey: opts.logicalCallKey,
-				retryIndex: opts.retryIndex,
-				system: opts.system,
-				user: opts.user,
-				temperature: opts.temperature,
-				effort: opts.effort,
-			});
-			if (job && agent) {
-				job.beat = Date.now();
-				const craft = craftOf(agent, job.locale);
-				job.wire = job.locale === "it"
-					? `${agent} · ${craft} · ha consegnato · ${response.latencyMs}ms`
-					: `${agent} · ${craft} · delivered · ${response.latencyMs}ms`;
-				await persist(job);
-			}
-			return response.content;
-		} catch (error) {
-			if (error instanceof BuildJobLeaseLostError) throw error;
-			const normalized = error instanceof AiProviderError
-				? error
-				: typeof error === "object" && error !== null && "code" in error
-					? error as { code: string; retryable: boolean }
-				: new AiProviderError(
-					job?.runtime?.abortSignal.aborted
-						? "BUILD_JOB_ABORTED"
-						: error instanceof DOMException && error.name === "TimeoutError"
-							? "XAI_TIMEOUT"
-							: "XAI_NETWORK_ERROR",
-					{ retryable: true, cause: error },
-				);
-			if (job && agent) {
-			job.beat = Date.now();
-			const craft = craftOf(agent, job.locale);
-				job.wire = `${agent} · ${craft} · ${normalized.code}`;
-				think(
-					job,
-					agent,
-					`Errore modello: ${normalized.code}. Il job non viene dichiarato completato.`,
-					`Model error: ${normalized.code}. The job will not be marked complete.`,
-				);
-					if (!job.runtime?.abortSignal.aborted) await persist(job);
-			}
-			console.error(JSON.stringify({
-				level: "error",
-				event: "xai_request_failed",
-				jobId: job?.id,
-				agent,
-				model,
-				code: normalized.code,
-				retryable: normalized.retryable,
-			}));
-			throw normalized;
-	} finally {
-		if (ticker) clearInterval(ticker);
-	}
-}
-function parseJson<T>(text: string): T | null {
-	if (!text) return null;
-	const raw = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? text;
-	const start = raw.indexOf("{");
-	const end = raw.lastIndexOf("}");
-	if (start < 0 || end <= start) return null;
-	try {
-		return JSON.parse(raw.slice(start, end + 1)) as T;
-	} catch {
-		return null;
-	}
 }

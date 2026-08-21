@@ -16,6 +16,7 @@ import { createTwinNotRunReport } from "@/lib/server/twin";
 import { normalizePersistedScore } from "@/lib/score";
 import { parseBuildLevel } from "@/lib/build-level";
 import { sealBuildJobWorkspace } from "@/lib/server/release/workspace";
+import { assertSealedProductionBuildJobWorkspace } from "@/lib/server/release/production-workspace";
 
 export type BuildQueueStatus = NonNullable<BuildJob["queue"]>["status"];
 
@@ -91,6 +92,16 @@ export function serializeBuildJob(
   return JSON.stringify(persisted);
 }
 
+function assertCurrentPipelineJob(job: BuildJob): void {
+  if (
+    job.checkpoint?.pipelineVersion !== HELIX_PIPELINE_VERSION ||
+    !job.requestFingerprint ||
+    job.checkpoint.requestFingerprint !== job.requestFingerprint
+  ) {
+    throw new BuildJobLeaseLostError();
+  }
+}
+
 function hydrateBuildJob(row: BuildJobRow): BuildJob {
   const payload = JSON.parse(row.payload) as BuildJob;
   return {
@@ -115,7 +126,7 @@ function hydrateBuildJob(row: BuildJobRow): BuildJob {
     checkpoint: {
       ...(payload.checkpoint ?? {}),
       pipelineVersion: row.pipeline_version,
-      requestFingerprint: row.request_fingerprint,
+      requestFingerprint: payload.checkpoint?.requestFingerprint ?? "",
       stage: payload.checkpoint?.stage ?? "queued",
     },
     queue: {
@@ -268,6 +279,7 @@ export async function saveBuildJobSnapshot(
   job: BuildJob,
   workerId: string,
 ): Promise<void> {
+  assertCurrentPipelineJob(job);
   const sql = await getSql();
   const rows = await sql<{ id: string }>`
     update build_jobs
@@ -280,7 +292,7 @@ export async function saveBuildJobSnapshot(
           ? new Date(job.guestAccessExpiresAt).toISOString()
           : null},
         heartbeat_at = now(),
-        pipeline_version = ${job.checkpoint?.pipelineVersion ?? HELIX_PIPELINE_VERSION},
+        pipeline_version = ${HELIX_PIPELINE_VERSION},
         lock_expires_at = now() + interval '90 seconds',
         updated_at = now()
     where id = ${job.id}
@@ -288,12 +300,15 @@ export async function saveBuildJobSnapshot(
       and queue_status = 'running'
       and cancel_requested_at is null
       and lock_expires_at > now()
+      and request_fingerprint = ${job.requestFingerprint}
+      and pipeline_version in ('helix-v2', ${HELIX_PIPELINE_VERSION})
     returning id
   `;
   if (!rows[0]) throw new BuildJobLeaseLostError();
 }
 
 export async function markBuildJobReady(job: BuildJob, workerId: string): Promise<void> {
+  assertCurrentPipelineJob(job);
   if (!job.html) throw new Error("BUILD_JOB_ARTIFACT_MISSING");
   const artifactSha256 = await sha256Hex(job.html);
   const suppliedBrowserEvidence = [
@@ -347,7 +362,11 @@ export async function markBuildJobReady(job: BuildJob, workerId: string): Promis
   const aegis = await runAegisStaticScan(job.html);
   assertAegisReleasePassed(aegis, artifactSha256);
   job.quality = { ...(job.quality ?? {}), aegis };
-  await sealBuildJobWorkspace(job);
+  if (job.buildLevel === "production") {
+    await assertSealedProductionBuildJobWorkspace(job);
+  } else {
+    await sealBuildJobWorkspace(job);
+  }
   const aegisJson = JSON.stringify(aegis);
   const sql = await getSql();
   const rows = await sql<{ id: string }>`
@@ -359,6 +378,8 @@ export async function markBuildJobReady(job: BuildJob, workerId: string): Promis
         and queue_status = 'running'
         and cancel_requested_at is null
         and lock_expires_at > now()
+        and request_fingerprint = ${job.requestFingerprint}
+        and pipeline_version in ('helix-v2', ${HELIX_PIPELINE_VERSION})
       for update
     ), browser_input as materialized (
       select *
@@ -415,6 +436,7 @@ export async function markBuildJobReady(job: BuildJob, workerId: string): Promis
           locked_by = null,
           lock_expires_at = null,
           heartbeat_at = now(),
+          pipeline_version = ${HELIX_PIPELINE_VERSION},
           last_error_code = null,
           last_error_message = null,
           last_error_trace = null,

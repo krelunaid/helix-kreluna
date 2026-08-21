@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { normalizePublicHostname, publicOriginFromHostname } from "@/lib/env.shared";
+import { WardenPolicySchema } from "@/lib/server/operations/warden";
 
 const optionalText = z.preprocess(
   (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined),
@@ -13,6 +14,36 @@ const rawEnvironmentSchema = z.object({
   BETTER_AUTH_URL: optionalText,
   GUEST_RATE_LIMIT_SALT: optionalText,
   HELIX_QUEUE_DISPATCH_SECRET: optionalText,
+  STRIPE_BILLING_ENABLED: z.enum(["true", "false"]).optional(),
+  STRIPE_MODE: z.enum(["test", "live"]).optional(),
+  STRIPE_SECRET_KEY: optionalText,
+  STRIPE_WEBHOOK_SECRET: optionalText,
+  STRIPE_PRICE_STANDARD: optionalText,
+  STRIPE_PRICE_PRO: optionalText,
+  STRIPE_PRICE_TEAM: optionalText,
+  STRIPE_PRICE_EXTRA_50: optionalText,
+  STRIPE_PORTAL_CONFIGURATION_ID: optionalText,
+  HELIX_BILLING_DISPATCH_SECRET: optionalText,
+  HELIX_WARDEN_ENABLED: z.enum(["true", "false"]).optional(),
+  HELIX_WARDEN_ADAPTER_ID: optionalText,
+  HELIX_WARDEN_SOURCE_ID: optionalText,
+  HELIX_WARDEN_SOURCE_URL: optionalText,
+  HELIX_WARDEN_SOURCE_TOKEN: optionalText,
+  HELIX_WARDEN_POLICY_JSON: optionalText,
+  HELIX_WARDEN_ALERT_DEDUP_TTL_MS: optionalText,
+  HELIX_WARDEN_DISPATCH_SECRET: optionalText,
+  HELIX_NIMBUS_EVIDENCE_URL: optionalText,
+  HELIX_NIMBUS_EVIDENCE_TOKEN: optionalText,
+  HELIX_NIMBUS_EVIDENCE_SOURCE_ID: optionalText,
+  HELIX_NIMBUS_EVIDENCE_KEY_ID: optionalText,
+  HELIX_NIMBUS_EVIDENCE_HMAC_SECRET: optionalText,
+  HELIX_NIMBUS_EVIDENCE_MAX_AGE_MS: optionalText,
+  HELIX_AUGUR_EVIDENCE_URL: optionalText,
+  HELIX_AUGUR_EVIDENCE_TOKEN: optionalText,
+  HELIX_AUGUR_EVIDENCE_SOURCE_ID: optionalText,
+  HELIX_AUGUR_EVIDENCE_KEY_ID: optionalText,
+  HELIX_AUGUR_EVIDENCE_HMAC_SECRET: optionalText,
+  HELIX_AUGUR_EVIDENCE_MAX_AGE_MS: optionalText,
   VITE_AUTH_ENABLED: z.enum(["true", "false"]).optional(),
   VITE_PUBLIC_HOSTNAME: optionalText,
   VITE_PUBLIC_ORIGIN: optionalText,
@@ -25,9 +56,10 @@ const rawEnvironmentSchema = z.object({
   HELIX_BROWSER_RUNNER_SECRET: optionalText,
   HELIX_WORKSPACE_RUNNER_URL: optionalText,
   HELIX_WORKSPACE_RUNNER_SECRET: optionalText,
-  APPLE_TEAM_ID: optionalText,
-  PLAY_SERVICE_JSON: optionalText,
-  EXPO_TOKEN: optionalText,
+  HELIX_STORE_RUNNER_URL: optionalText,
+  HELIX_STORE_RUNNER_SECRET: optionalText,
+  VITE_PRODUCTION_BUILDS_ENABLED: z.enum(["true", "false"]).optional(),
+  VITE_PRODUCTION_CREDITS: optionalText,
   VITE_STUN_URLS: optionalText,
   VITE_PROJECT_ID: optionalText,
   VITE_OG_SERVICE_URL: optionalText,
@@ -35,6 +67,7 @@ const rawEnvironmentSchema = z.object({
   X_CREATOR_ID: optionalText,
   NETLIFY: optionalText,
   CONTEXT: optionalText,
+  COMMIT_REF: optionalText,
 });
 
 export class ConfigurationError extends Error {
@@ -83,9 +116,18 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
 
   const values = parsed.data;
   const invalid: string[] = [];
+  const required = (name: keyof typeof values, condition = true) => {
+    if (condition && !values[name]) invalid.push(name);
+  };
   const isNetlify = values.NETLIFY === "true";
   const isProduction = isNetlify && values.CONTEXT === "production";
   const authEnabled = values.VITE_AUTH_ENABLED === "true";
+  const stripeBillingEnabled = values.STRIPE_BILLING_ENABLED === "true";
+  const productionBuildsEnabled = values.VITE_PRODUCTION_BUILDS_ENABLED === "true";
+  const wardenEnabled = values.HELIX_WARDEN_ENABLED === "true";
+  const productionBuildCredits = values.VITE_PRODUCTION_CREDITS
+    ? Number(values.VITE_PRODUCTION_CREDITS)
+    : null;
 
   if (values.VITE_PUBLIC_ORIGIN) invalid.push("VITE_PUBLIC_ORIGIN (deprecated)");
 
@@ -104,16 +146,6 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   }
   if (values.GROK_AUTH_ISSUER && !isOriginOnly(values.GROK_AUTH_ISSUER, isNetlify)) {
     invalid.push("GROK_AUTH_ISSUER");
-  }
-  if (values.PLAY_SERVICE_JSON) {
-    try {
-      const parsedJson: unknown = JSON.parse(values.PLAY_SERVICE_JSON);
-      if (!parsedJson || typeof parsedJson !== "object" || Array.isArray(parsedJson)) {
-        invalid.push("PLAY_SERVICE_JSON");
-      }
-    } catch {
-      invalid.push("PLAY_SERVICE_JSON");
-    }
   }
   if (
     values.GITHUB_TOKEN_ENCRYPTION_KEY &&
@@ -173,10 +205,264 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   ) {
     invalid.push("HELIX_WORKSPACE_RUNNER_URL", "HELIX_WORKSPACE_RUNNER_SECRET");
   }
+  if (values.HELIX_STORE_RUNNER_URL) {
+    try {
+      const runnerUrl = new URL(values.HELIX_STORE_RUNNER_URL);
+      const loopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(runnerUrl.hostname);
+      if (
+        (runnerUrl.protocol !== "https:" && !(loopback && runnerUrl.protocol === "http:")) ||
+        runnerUrl.username ||
+        runnerUrl.password ||
+        runnerUrl.search ||
+        runnerUrl.hash
+      ) {
+        invalid.push("HELIX_STORE_RUNNER_URL");
+      }
+    } catch {
+      invalid.push("HELIX_STORE_RUNNER_URL");
+    }
+  }
+  if (values.HELIX_STORE_RUNNER_SECRET && values.HELIX_STORE_RUNNER_SECRET.length < 32) {
+    invalid.push("HELIX_STORE_RUNNER_SECRET");
+  }
+  if (Boolean(values.HELIX_STORE_RUNNER_URL) !== Boolean(values.HELIX_STORE_RUNNER_SECRET)) {
+    invalid.push("HELIX_STORE_RUNNER_URL", "HELIX_STORE_RUNNER_SECRET");
+  }
+  if (
+    productionBuildCredits !== null &&
+    (!Number.isInteger(productionBuildCredits) ||
+      productionBuildCredits < 1 ||
+      productionBuildCredits > 100_000)
+  ) {
+    invalid.push("VITE_PRODUCTION_CREDITS");
+  }
+  if (productionBuildsEnabled) {
+    required("VITE_PRODUCTION_CREDITS");
+    required("HELIX_WORKSPACE_RUNNER_URL");
+    required("HELIX_WORKSPACE_RUNNER_SECRET");
+    if (!authEnabled) invalid.push("VITE_AUTH_ENABLED");
+  } else if (values.VITE_PRODUCTION_CREDITS) {
+    invalid.push("VITE_PRODUCTION_BUILDS_ENABLED");
+  }
 
-  const required = (name: keyof typeof values, condition = true) => {
-    if (condition && !values[name]) invalid.push(name);
-  };
+  const stripeNames = [
+    "STRIPE_MODE",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_PRICE_STANDARD",
+    "STRIPE_PRICE_PRO",
+    "STRIPE_PRICE_TEAM",
+    "STRIPE_PRICE_EXTRA_50",
+    "STRIPE_PORTAL_CONFIGURATION_ID",
+    "HELIX_BILLING_DISPATCH_SECRET",
+  ] as const;
+  const stripeValuesPresent = stripeNames.filter((name) => Boolean(values[name]));
+  if (stripeBillingEnabled || stripeValuesPresent.length > 0) {
+    for (const name of stripeNames) required(name);
+  }
+  required("VITE_PUBLIC_HOSTNAME", stripeBillingEnabled);
+  if (!stripeBillingEnabled && stripeValuesPresent.length > 0) {
+    invalid.push("STRIPE_BILLING_ENABLED");
+  }
+  if (
+    values.STRIPE_SECRET_KEY &&
+    !/^(?:sk|rk)_(?:test|live)_[A-Za-z0-9]+$/.test(values.STRIPE_SECRET_KEY)
+  ) {
+    invalid.push("STRIPE_SECRET_KEY");
+  }
+  if (values.STRIPE_WEBHOOK_SECRET && !/^whsec_[A-Za-z0-9]+$/.test(values.STRIPE_WEBHOOK_SECRET)) {
+    invalid.push("STRIPE_WEBHOOK_SECRET");
+  }
+  for (const name of [
+    "STRIPE_PRICE_STANDARD",
+    "STRIPE_PRICE_PRO",
+    "STRIPE_PRICE_TEAM",
+    "STRIPE_PRICE_EXTRA_50",
+  ] as const) {
+    if (values[name] && !/^price_[A-Za-z0-9]+$/.test(values[name])) invalid.push(name);
+  }
+  if (
+    values.STRIPE_PORTAL_CONFIGURATION_ID &&
+    !/^bpc_[A-Za-z0-9]+$/.test(values.STRIPE_PORTAL_CONFIGURATION_ID)
+  ) {
+    invalid.push("STRIPE_PORTAL_CONFIGURATION_ID");
+  }
+  if (values.HELIX_BILLING_DISPATCH_SECRET && values.HELIX_BILLING_DISPATCH_SECRET.length < 32) {
+    invalid.push("HELIX_BILLING_DISPATCH_SECRET");
+  }
+  if (values.STRIPE_SECRET_KEY && values.STRIPE_MODE) {
+    const keyMode = values.STRIPE_SECRET_KEY.includes("_live_") ? "live" : "test";
+    if (keyMode !== values.STRIPE_MODE) invalid.push("STRIPE_MODE", "STRIPE_SECRET_KEY");
+  }
+  if (stripeBillingEnabled && isProduction && values.STRIPE_MODE !== "live") {
+    invalid.push("STRIPE_MODE");
+  }
+
+  const wardenNames = [
+    "HELIX_WARDEN_ADAPTER_ID",
+    "HELIX_WARDEN_SOURCE_ID",
+    "HELIX_WARDEN_SOURCE_URL",
+    "HELIX_WARDEN_SOURCE_TOKEN",
+    "HELIX_WARDEN_POLICY_JSON",
+    "HELIX_WARDEN_ALERT_DEDUP_TTL_MS",
+    "HELIX_WARDEN_DISPATCH_SECRET",
+  ] as const;
+  const wardenValuesPresent = wardenNames.filter((name) => Boolean(values[name]));
+  if (wardenEnabled || wardenValuesPresent.length > 0) {
+    for (const name of wardenNames) required(name);
+  }
+  required("COMMIT_REF", wardenEnabled);
+  if (!wardenEnabled && wardenValuesPresent.length > 0) {
+    invalid.push("HELIX_WARDEN_ENABLED");
+  }
+  if (
+    values.HELIX_WARDEN_ADAPTER_ID &&
+    !/^[a-z0-9][a-z0-9._-]{0,79}$/.test(values.HELIX_WARDEN_ADAPTER_ID)
+  ) {
+    invalid.push("HELIX_WARDEN_ADAPTER_ID");
+  }
+  if (
+    values.HELIX_WARDEN_SOURCE_ID &&
+    !/^[A-Za-z0-9][A-Za-z0-9._:/ -]{0,159}$/.test(values.HELIX_WARDEN_SOURCE_ID)
+  ) {
+    invalid.push("HELIX_WARDEN_SOURCE_ID");
+  }
+  if (values.HELIX_WARDEN_SOURCE_URL) {
+    try {
+      const url = new URL(values.HELIX_WARDEN_SOURCE_URL);
+      const loopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(url.hostname);
+      if (
+        (url.protocol !== "https:" && !(loopback && url.protocol === "http:")) ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash
+      ) {
+        invalid.push("HELIX_WARDEN_SOURCE_URL");
+      }
+    } catch {
+      invalid.push("HELIX_WARDEN_SOURCE_URL");
+    }
+  }
+  if (values.HELIX_WARDEN_SOURCE_TOKEN && values.HELIX_WARDEN_SOURCE_TOKEN.length < 32) {
+    invalid.push("HELIX_WARDEN_SOURCE_TOKEN");
+  }
+  if (values.HELIX_WARDEN_DISPATCH_SECRET && values.HELIX_WARDEN_DISPATCH_SECRET.length < 32) {
+    invalid.push("HELIX_WARDEN_DISPATCH_SECRET");
+  }
+  if (values.HELIX_WARDEN_POLICY_JSON) {
+    try {
+      WardenPolicySchema.parse(JSON.parse(values.HELIX_WARDEN_POLICY_JSON) as unknown);
+    } catch {
+      invalid.push("HELIX_WARDEN_POLICY_JSON");
+    }
+  }
+  if (values.HELIX_WARDEN_ALERT_DEDUP_TTL_MS) {
+    const ttl = Number(values.HELIX_WARDEN_ALERT_DEDUP_TTL_MS);
+    if (!Number.isInteger(ttl) || ttl < 1 || ttl > 30 * 24 * 60 * 60 * 1_000) {
+      invalid.push("HELIX_WARDEN_ALERT_DEDUP_TTL_MS");
+    }
+  }
+
+  const nimbusEvidenceNames = [
+    "HELIX_NIMBUS_EVIDENCE_URL",
+    "HELIX_NIMBUS_EVIDENCE_TOKEN",
+    "HELIX_NIMBUS_EVIDENCE_SOURCE_ID",
+    "HELIX_NIMBUS_EVIDENCE_KEY_ID",
+    "HELIX_NIMBUS_EVIDENCE_HMAC_SECRET",
+    "HELIX_NIMBUS_EVIDENCE_MAX_AGE_MS",
+  ] as const;
+  const configuredNimbusEvidenceNames = nimbusEvidenceNames.filter((name) => Boolean(values[name]));
+  if (
+    configuredNimbusEvidenceNames.length > 0 &&
+    configuredNimbusEvidenceNames.length !== nimbusEvidenceNames.length
+  ) {
+    for (const name of nimbusEvidenceNames) required(name);
+  }
+  if (values.HELIX_NIMBUS_EVIDENCE_URL) {
+    try {
+      const url = new URL(values.HELIX_NIMBUS_EVIDENCE_URL);
+      const loopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(url.hostname);
+      if (
+        (url.protocol !== "https:" && !(loopback && url.protocol === "http:")) ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash
+      ) {
+        invalid.push("HELIX_NIMBUS_EVIDENCE_URL");
+      }
+    } catch {
+      invalid.push("HELIX_NIMBUS_EVIDENCE_URL");
+    }
+  }
+  for (const name of [
+    "HELIX_NIMBUS_EVIDENCE_TOKEN",
+    "HELIX_NIMBUS_EVIDENCE_HMAC_SECRET",
+  ] as const) {
+    if (values[name] && values[name].length < 32) invalid.push(name);
+  }
+  for (const name of ["HELIX_NIMBUS_EVIDENCE_SOURCE_ID", "HELIX_NIMBUS_EVIDENCE_KEY_ID"] as const) {
+    if (values[name] && !/^[a-z0-9][a-z0-9._-]{0,79}$/.test(values[name])) {
+      invalid.push(name);
+    }
+  }
+  if (values.HELIX_NIMBUS_EVIDENCE_MAX_AGE_MS) {
+    const maxAge = Number(values.HELIX_NIMBUS_EVIDENCE_MAX_AGE_MS);
+    if (!Number.isInteger(maxAge) || maxAge < 1 || maxAge > 30 * 24 * 60 * 60 * 1_000) {
+      invalid.push("HELIX_NIMBUS_EVIDENCE_MAX_AGE_MS");
+    }
+  }
+
+  const augurEvidenceNames = [
+    "HELIX_AUGUR_EVIDENCE_URL",
+    "HELIX_AUGUR_EVIDENCE_TOKEN",
+    "HELIX_AUGUR_EVIDENCE_SOURCE_ID",
+    "HELIX_AUGUR_EVIDENCE_KEY_ID",
+    "HELIX_AUGUR_EVIDENCE_HMAC_SECRET",
+    "HELIX_AUGUR_EVIDENCE_MAX_AGE_MS",
+  ] as const;
+  const configuredAugurEvidenceNames = augurEvidenceNames.filter((name) => Boolean(values[name]));
+  if (
+    configuredAugurEvidenceNames.length > 0 &&
+    configuredAugurEvidenceNames.length !== augurEvidenceNames.length
+  ) {
+    for (const name of augurEvidenceNames) required(name);
+  }
+  if (values.HELIX_AUGUR_EVIDENCE_URL) {
+    try {
+      const url = new URL(values.HELIX_AUGUR_EVIDENCE_URL);
+      const loopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(url.hostname);
+      if (
+        (url.protocol !== "https:" && !(loopback && url.protocol === "http:")) ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash
+      ) {
+        invalid.push("HELIX_AUGUR_EVIDENCE_URL");
+      }
+    } catch {
+      invalid.push("HELIX_AUGUR_EVIDENCE_URL");
+    }
+  }
+  for (const name of [
+    "HELIX_AUGUR_EVIDENCE_TOKEN",
+    "HELIX_AUGUR_EVIDENCE_HMAC_SECRET",
+  ] as const) {
+    if (values[name] && values[name].length < 32) invalid.push(name);
+  }
+  for (const name of ["HELIX_AUGUR_EVIDENCE_SOURCE_ID", "HELIX_AUGUR_EVIDENCE_KEY_ID"] as const) {
+    if (values[name] && !/^[a-z0-9][a-z0-9._-]{0,79}$/.test(values[name])) {
+      invalid.push(name);
+    }
+  }
+  if (values.HELIX_AUGUR_EVIDENCE_MAX_AGE_MS) {
+    const maxAge = Number(values.HELIX_AUGUR_EVIDENCE_MAX_AGE_MS);
+    if (!Number.isInteger(maxAge) || maxAge < 1 || maxAge > 30 * 24 * 60 * 60 * 1_000) {
+      invalid.push("HELIX_AUGUR_EVIDENCE_MAX_AGE_MS");
+    }
+  }
 
   if (isNetlify) {
     required("DATABASE_URL");
@@ -225,6 +511,10 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   return Object.freeze({
     ...values,
     authEnabled,
+    stripeBillingEnabled,
+    wardenEnabled,
+    productionBuildsEnabled,
+    productionBuildCredits,
     hostname,
     publicOrigin,
     isNetlify,

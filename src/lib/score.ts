@@ -2,6 +2,10 @@ import type {
   BuildQualityEvidence,
   TwinBrowserReport,
 } from "@/lib/server/quality/types";
+import {
+  computeCapacityForecast,
+  type CapacityForecast as AugurCapacityForecast,
+} from "@/lib/capacity-evidence";
 
 export type TwinReport = TwinBrowserReport;
 
@@ -65,23 +69,7 @@ export type CouncilSignal = {
   source: string;
 };
 
-export type CapacityForecast =
-  | {
-      status: "not_run";
-      evidence: "not_run";
-      confidence: 0;
-      range: null;
-      missingEvidence: string[];
-      verdict: string;
-    }
-  | {
-      status: "completed";
-      evidence: "estimated";
-      confidence: number;
-      range: { min: number; max: number; unit: string };
-      missingEvidence: [];
-      verdict: string;
-    };
+export type CapacityForecast = AugurCapacityForecast;
 
 export type KrelunaScore = {
   schemaVersion: "2.0.0";
@@ -247,6 +235,11 @@ export async function computeScore(
   prompt: string,
   quality?: BuildQualityEvidence | null,
   locale: string = "en",
+  options: {
+    now?: number;
+    capacityMaxAgeMs?: number;
+    expectedDeploySha256?: string;
+  } = {},
 ): Promise<KrelunaScore> {
   const it = locale.toLowerCase().startsWith("it");
   const p = prompt.toLowerCase();
@@ -755,6 +748,24 @@ export async function computeScore(
     source: entry.source,
   });
   const criticalItems = unique(critical).slice(0, 6);
+  const capacityForecast = await computeCapacityForecast(
+    quality?.capacity,
+    artifactSha256,
+    locale,
+    {
+      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.capacityMaxAgeMs === undefined
+        ? {}
+        : { maxAgeMs: options.capacityMaxAgeMs }),
+      ...(options.expectedDeploySha256 === undefined &&
+      quality?.capacityDeploySha256 === undefined
+        ? {}
+        : {
+            expectedDeploySha256:
+              options.expectedDeploySha256 ?? quality?.capacityDeploySha256,
+          }),
+    },
+  );
   const council = {
     kind: "automated_formula" as const,
     evidence: "estimated" as const,
@@ -780,45 +791,23 @@ export async function computeScore(
       {
         seat: "Capacity forecast",
         score: null,
-        evidence: "not_run" as const,
-        confidence: 0,
-        source: it
-          ? "Load test e dati infrastrutturali mancanti"
-          : "Load test and infrastructure evidence missing",
+        evidence: capacityForecast.evidence,
+        confidence: capacityForecast.confidence,
+        source:
+          capacityForecast.status === "completed"
+            ? capacityForecast.verdict
+            : it
+              ? "Load test e dati infrastrutturali mancanti o non validi"
+              : "Load test and infrastructure evidence missing or invalid",
       },
     ],
-  };
-
-  const capacityForecast: CapacityForecast = {
-    status: "not_run",
-    evidence: "not_run",
-    confidence: 0,
-    range: null,
-    missingEvidence: it
-      ? [
-          "load test di produzione",
-          "profilo e capacità del database",
-          "topologia del deploy",
-          "telemetria dei costi",
-          "limiti di concorrenza",
-        ]
-      : [
-          "production load test",
-          "database profile and capacity",
-          "deployment topology",
-          "cost telemetry",
-          "concurrency limits",
-        ],
-    verdict: it
-      ? "Capacity forecast NON ESEGUITA: mancano prove misurate sufficienti."
-      : "Capacity forecast NOT RUN: sufficient measured evidence is missing.",
   };
 
   const result: KrelunaScore = {
     schemaVersion: "2.0.0",
     formulaVersion: "kreluna-score-v2",
     artifactSha256,
-    generatedAt: new Date().toISOString(),
+    generatedAt: new Date(options.now ?? Date.now()).toISOString(),
     readiness,
     readinessEvidence,
     metrics,
@@ -948,6 +937,57 @@ function isScoreMetric(value: unknown, id: ScoreMetricId): value is ScoreMetric 
   return value.value === null;
 }
 
+function isCapacityForecast(
+  value: unknown,
+  artifactSha256: string,
+): value is CapacityForecast {
+  if (
+    !isRecord(value) ||
+    typeof value.verdict !== "string" ||
+    !Array.isArray(value.missingEvidence) ||
+    !value.missingEvidence.every((item) => typeof item === "string")
+  ) {
+    return false;
+  }
+  if (value.status === "not_run") {
+    return (
+      value.evidence === "not_run" &&
+      value.confidence === 0 &&
+      value.range === null &&
+      value.missingEvidence.length > 0
+    );
+  }
+  if (
+    value.status !== "completed" ||
+    value.evidence !== "estimated" ||
+    !isFiniteRange(value.confidence, 0, 1) ||
+    value.confidence === 0 ||
+    value.artifactSha256 !== artifactSha256 ||
+    !/^[a-f0-9]{64}$/.test(String(value.deploySha256)) ||
+    !/^[a-f0-9]{64}$/.test(String(value.evidenceSha256)) ||
+    value.missingEvidence.length !== 0 ||
+    !isRecord(value.range) ||
+    value.range.unit !== "requests/second" ||
+    typeof value.range.min !== "number" ||
+    !Number.isFinite(value.range.min) ||
+    value.range.min <= 0 ||
+    typeof value.range.max !== "number" ||
+    !Number.isFinite(value.range.max) ||
+    value.range.max < value.range.min ||
+    !Array.isArray(value.basis) ||
+    value.basis.length < 5 ||
+    !value.basis.every((item) => typeof item === "string" && item.length > 0) ||
+    !Array.isArray(value.limitations) ||
+    value.limitations.length < 1 ||
+    !value.limitations.every(
+      (item) => typeof item === "string" && item.length > 0,
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Scores are stored inside the durable job payload. New v2 scores are accepted
  * only when their evidence contract is structurally valid and bound to the
@@ -980,15 +1020,7 @@ export function normalizePersistedScore(
     !isRecord(value.council) ||
     value.council.kind !== "automated_formula" ||
     !Array.isArray(value.council.signals) ||
-    !isRecord(value.capacityForecast)
-  ) {
-    return undefined;
-  }
-  if (
-    value.capacityForecast.status === "not_run" &&
-    (value.capacityForecast.evidence !== "not_run" ||
-      value.capacityForecast.confidence !== 0 ||
-      value.capacityForecast.range !== null)
+    !isCapacityForecast(value.capacityForecast, sealedArtifactSha256)
   ) {
     return undefined;
   }

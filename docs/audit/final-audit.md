@@ -1,165 +1,177 @@
 # Audit finale Helix / Kreluna
 
-Data: 2026-08-20
+Data: 2026-08-21
 
-Stato complessivo: **NON COMPLETATO**.
+Ramo di lavoro: `fix/helix-audit-20260820`
 
-Questo audit confronta i 62 requisiti originali e le 20 condizioni della Definition of Done con le sole prove disponibili nei report `phase-1.md`–`phase-9.md`, `follow-up-1.md`–`follow-up-4.md`, nel codice corrente e nei test correnti. Non interpreta una UI, un contratto o un messaggio come prova di un servizio esterno eseguito.
+Commit di base: `a194ffce842db62bfa2d32ded52ea199f50f189e`
 
-## Criteri di classificazione
+## Verdetto
 
-- **RISOLTO:** implementato e verificato nel perimetro richiesto con una prova disponibile.
-- **PARZIALE:** una parte sostanziale è implementata, ma almeno un requisito o una prova necessaria manca.
-- **NON RISOLTO:** la capacità centrale non esiste ancora oppure è esplicitamente disabilitata.
-- **NON VERIFICATO:** il codice può essere presente, ma manca la verifica nell'ambiente richiesto.
+**Implementazione locale completata; completamento end-to-end esterno non ancora dichiarabile.**
+
+- Requisiti 1–62: **38 RISOLTO_LOCALMENTE / 24 PARZIALE_ESTERNO / 0 MANCANTE**.
+- Definition of Done: **16 RISOLTO_LOCALMENTE / 4 PARZIALE_ESTERNO / 0 MANCANTE**.
+- P0 aperti: **0**.
+- P1 aperti: **1**, limitato a una credenziale OAuth preview ancora presente nella storia Git raggiungibile.
+
+`RISOLTO_LOCALMENTE` significa che il comportamento è implementato e coperto da prove locali pertinenti. Non implica un deploy, un pagamento, una chiamata AI, un browser runner, un database gestito o una submission Store reali. `PARZIALE_ESTERNO` significa che il percorso locale è implementato e fail-closed, ma l'accettazione completa richiede credenziali, infrastruttura o prove esterne non autorizzate/disponibili. `MANCANTE` significa che manca ancora la capacità locale centrale.
 
 ## Confine delle prove
 
-- **Verificato localmente:** matrice corrente con 248/248 test, typecheck strict, lint con 0 errori e 5 warning legacy, `npm run build` client/SSR, smoke dell'output Netlify, migration integrity fino a `0017`, scan robusto del worktree su 297 file esistenti Git tracked/untracked con 0 finding e audit production con 0 vulnerabilità. Git elenca 298 path perché include anche un file tracked già rimosso dal worktree.
-- **Audit dipendenze completo non verde:** includendo le dev dependency restano 10 advisory high transitivi nella toolchain Netlify; non vengono confusi con l'audit production a zero vulnerabilità.
-- **Non verificato su deploy:** nessun deploy Netlify preview o production è stato pubblicato o sondato. Gli smoke esercitano l'handler prodotto localmente, non un URL Netlify live.
-- **Non verificato con provider reali:** il gateway AI è testato end-to-end con transport controllato, ma nessuna chiamata xAI live/fatturata, transazione Stripe, pubblicazione GitHub live, build EAS, signing o submission App Store/Google Play è documentata.
-- **Browser reale non eseguito:** in questo ambiente Playwright/Chromium e runner remoto non sono configurati. Twin, Echo e Swift producono correttamente `NOT_RUN`; non esistono click o screenshot misurati di un build Helix reale.
-- **Sandbox Production reale non eseguita:** adapter, protocollo e core del servizio runner sono testati end-to-end con sandbox finta iniettata. Non esistono provider sandbox, replay store persistente, container o endpoint runner pubblicato; i vincoli OS/egress restano non verificati.
+- Nessun servizio esterno è stato simulato come prova di produzione.
+- Nessuna chiamata xAI fatturata, transazione Stripe, migrazione DB remota, deploy Netlify, provisioning, EAS build, signing o submission Store è stata eseguita.
+- Le modifiche sono raccolte nel commit locale che contiene questo audit; nessun push, merge, force push, deploy o cancellazione è stato eseguito.
+- Il runner Production, Twin, Warden, Nimbus, Augur e Store falliscono chiusi quando mancano adapter, evidence o credenziali reali.
+- La QA Chrome descritta sotto è una verifica manuale della build locale compilata; non è un report Twin remoto firmato.
 
-## P0 — Sicurezza, deploy e protezione prodotto
+## Gate finali locali
 
-| #   | Requisito                                             | Stato        | Prova e limite                                                                                                                                                                                                                                                                                   |
-| --- | ----------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | Deploy Netlify full-stack                             | **PARZIALE** | L'adapter ufficiale TanStack Start/Netlify, SSR, `/api/auth/*`, CSRF e una `createServerFn` passano build e smoke sull'handler locale (`phase-1.md`, `phase-8.md`). Preview e production Netlify live non sono stati eseguiti.                                                                   |
-| 2   | Environment variable coerenti e validate              | **RISOLTO**  | Inventario, `.env.example`, documentazione e validazione server sono centralizzati; `VITE_PUBLIC_HOSTNAME` è la convenzione canonica e le env obbligatorie mancanti falliscono senza mostrare valori (`phase-1.md`). Credenziali non utilizzate non sono state inventate.                        |
-| 3   | Rimozione e rotazione secret OAuth                    | **PARZIALE** | Lo scanner robusto non trova secret nei 297 file Git tracked/untracked correnti e non stampa valori. La cronologia contiene ancora tre occorrenze dello stesso secret; revoca/rotazione provider e riscrittura Git non sono state eseguite (`phase-5.md`, `follow-up-4.md`).                     |
-| 4   | Bloccare piani/top-up finti e preparare billing reale | **PARZIALE** | Paid plan e top-up falliscono chiusi con `PAYMENTS_NOT_AVAILABLE` e non accreditano nulla. Stripe Checkout, webhook verificato, subscription, rinnovo, cancellazione, failure lifecycle, ricevute e ledger di pagamento non esistono (`phase-2.md`).                                             |
-| 5   | Crediti atomici, idempotenti e senza saldo negativo   | **RISOLTO**  | `apply_credit_entry`, ledger e mutazione applicativa sono atomici; concorrenza, insufficienza, retry, refund e rollback sono coperti da test DB (`phase-2.md`, matrice Fase 8).                                                                                                                  |
-| 6   | Ownership di `getBuildJob` e capability guest         | **RISOLTO**  | Auth middleware, ownership job/progetto, token guest casuale a 256 bit, hash a riposo, expiry, scope e risposte 401/403 sono testati (`phase-2.md`).                                                                                                                                             |
-| 7   | Protezione generazione guest                          | **RISOLTO**  | Quota DB per IP trusted, limiti richieste/byte/costo stimato, un job concorrente, lease, timeout e 429 sono implementati e testati. Turnstile non è configurato, ma era indicato come misura eventuale (`phase-2.md`).                                                                           |
-| 8   | Protezione `publishGuest`                             | **PARZIALE** | Pubblicazione 24 ore, capability, expiry, quota, concorrenza, limite byte, no-index e HTML protetto sono implementati. Cleanup fisico atomico e schedulato ogni 15 minuti è coperto da test DB; l'esecuzione della schedule su un deploy Netlify pubblicato non è verificata (`follow-up-1.md`). |
-| 9   | CSP e sandbox serie per app generate                  | **RISOLTO**  | CSP offline deny-by-default, `connect-src` chiuso, allowlist esplicita, iframe senza same-origin/popup/modal/navigation e wrapper fail-closed sono coperti da test di bypass (`phase-2.md`, `phase-5.md`). Non viene equiparata a una sandbox di rete di sistema.                                |
-| 10  | Human Gate reale                                      | **RISOLTO**  | Stato persistente, arresto in attesa, approve/reject/modify atomici, ownership, idempotenza, candidate corrente, audit append-only e blocco di ogni publish/deploy pre-approvazione sono testati (`phase-4.md`, `phase-8.md`).                                                                   |
+Ambiente: Node `22.23.2`, npm `10.9.8`, installazione pulita con `npm ci --include=dev`.
 
-## P1 — Motore Helix e agenti
+| Gate | Esito |
+| --- | --- |
+| TypeScript strict | PASS |
+| ESLint completo | PASS, 0 errori; 5 warning legacy `react-refresh` in `src/lib/i18n.tsx` |
+| Suite completa | PASS, **374/374** |
+| Build client/SSR | PASS |
+| Smoke output Netlify | PASS |
+| Secret scan worktree | PASS, 0 finding |
+| `npm audit --omit=dev` | PASS, 0 vulnerabilità runtime |
+| `git diff --check` | PASS |
+| Audit npm completo | FAIL: 10 advisory `high`, tutte transitive nella toolchain dev Netlify; npm riporta “No fix available” |
+| Secret scan storia | FAIL atteso: 3 finding della stessa credenziale OAuth preview in commit raggiungibili |
 
-| #   | Requisito                                      | Stato           | Prova e limite                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --- | ---------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 11  | Un solo motore AI                              | **RISOLTO**     | Guest, utente e iterate passano dalla pipeline Helix persistente; il generatore diretto è ritirato e l'endpoint legacy restituisce 410 (`phase-3.md`).                                                                                                                                                                                                                                                                                         |
-| 12  | Spezzare `agents.ts` e rimuovere `@ts-nocheck` | **RISOLTO**     | `agents.ts` è una facciata strict; orchestrator, agents, jobs, grok, prompts, persistence, review e release sono separati. L'unico `@ts-nocheck` trovato è nel file generato `routeTree.gen.ts`, non nel motore (`phase-3.md`, ricerca corrente).                                                                                                                                                                                              |
-| 13  | Job queue persistente                          | **PARZIALE**    | DB queue, `SKIP LOCKED`, lease, heartbeat, fencing, retry, attempt, timeout, cancel, resume, recovery e Netlify background/scheduled function sono implementati e testati localmente. Non è stata ripetuta la prova su PostgreSQL/Neon multi-istanza reale (`phase-3.md`).                                                                                                                                                                     |
-| 14  | Non nascondere errori                          | **RISOLTO**     | La ricerca corrente non trova `catch {}` vuoti nel codice applicativo; errori provider/worker sono strutturati e un failure xAI non diventa `done` (`phase-3.md`, `phase-4.md`).                                                                                                                                                                                                                                                               |
-| 15  | Contratto standard degli agenti reali          | **PARZIALE**    | Il registry e lo stato runtime, considerati insieme, dichiarano id/versione, tipo, ruolo, Zod input/output, tool, timeout, retry, modello, token/cost ceiling, artefatto, validation, status ed error code; output non valido viene rifiutato. Questi campi non sono però ancora raccolti in un singolo contratto agente uniforme e `error` non è un campo obbligatorio del contratto (`phase-3.md`, `agents/contracts.ts`, `agent-types.ts`). |
-| 16  | Distinguere agenti da validator/service/gate   | **RISOLTO**     | Modello dati e UI separano `AI Agent`, `Validator`, `Scanner`, `Service`, `Gate` e `Rule`; i servizi non eseguiti restano standby/skipped (`phase-3.md`).                                                                                                                                                                                                                                                                                      |
-| 17  | Helix Supervisor reale                         | **PARZIALE**    | Con transport controllato Helix legge brief, produce piano/architettura/design, seleziona il flusso, persiste dipendenze/checkpoint, valida artefatti, gestisce retry/budget e si ferma al Human Gate. Non è documentata una build completa tramite xAI live e le fasi Production restano contratti disabilitati (`phase-3.md`, `phase-9.md`, `follow-up-4.md`).                                                                               |
-| 18  | Nova con PRD strutturato                       | **PARZIALE**    | `ProductPlanSchema` richiede target, problema, use case, MVP, P0/P1/P2, non-goal, journey e acceptance criteria; persistenza JSON/Markdown e rifiuto degli output invalidi sono testati con transport controllato. Non è attestata una generazione Nova tramite provider live (`phase-3.md`).                                                                                                                                                  |
-| 19  | Atlas con architettura reale                   | **PARZIALE**    | Lo schema richiede product type, frontend/backend, data flow, screen/route map, API contract, DB, auth, permission, integration, deploy target e failure mode; persistenza e validazione sono testate con transport controllato. Non è attestata una generazione Atlas tramite provider live e la descrizione non equivale a servizi implementati (`phase-3.md`).                                                                              |
-| 20  | Lumen con tre direzioni distinte               | **PARZIALE**    | Esattamente tre direzioni con palette/font/layout/density/grid/motion/iconography/geometry/imagery/reference/cliché vietati e scoring coerente sono validate; Forge riceve la direzione scelta nei test controllati. Non è attestata una selezione Lumen tramite provider live né una verifica browser della resa (`phase-3.md`).                                                                                                              |
-| 21  | Forge UI, Logic e Integration separate         | **PARZIALE**    | Forge UI/Structure e Forge Logic sono chiamate separate e ordinate. Esiste ora un contratto Forge Integration hash-bound che collega componenti, client, trasporto, auth, API e stati, ma è `disabled_contract_only`: nessun agente Production lo esegue (`phase-3.md`, `follow-up-4.md`).                                                                                                                                                     |
-| 22  | Gemme come patch controllate                   | **RISOLTO**     | Target, operazione, frammento, before hash, patch e validation sono tipizzati; hash stale, target duplicato e HTML finale invalido sono rifiutati (`phase-3.md`).                                                                                                                                                                                                                                                                              |
-| 23  | Prism reale                                    | **NON RISOLTO** | Schema Zod, ownership dei path e dipendenze richiedono migration, FK, indici, constraint, ownership, timestamp, retention e test coerenti. Non esiste però un'esecuzione Prism che li produca per un progetto generato; il fixture contrattuale non è un database reale (`follow-up-4.md`).                                                                                                                                                    |
-| 24  | Quartz reale                                   | **NON RISOLTO** | Il contratto impone review delle migration Prism esatte, query/index, rollback, backup, test e blocco su `changes_required`. Nessun Quartz reale ha prodotto o eseguito review/EXPLAIN su un progetto generato; `explainEvidence` resta `not_run` (`follow-up-4.md`).                                                                                                                                                                          |
-| 25  | Vault/Basalt reali                             | **NON RISOLTO** | I contratti collegano runtime, moduli, env/error contract, route, schemi, authz, business rule, rate limit, idempotenza e test. La pipeline disabilitata non genera ancora backend/API deployable; i file fixture non sono prova di implementazione (`follow-up-4.md`).                                                                                                                                                                        |
-| 26  | Nexus reale                                    | **NON RISOLTO** | Il contratto impedisce Stripe/OAuth/client-secret incoerenti e richiede adapter, env schema, test connessione, webhook, retry ed error map. Nessun adapter è stato generato o connesso a credenziali reali; le env mancanti producono `not_configured` (`follow-up-4.md`).                                                                                                                                                                     |
-| 27  | Key/auth reale per i progetti generati         | **NON RISOLTO** | Il contratto collega provider non mock, sessione, env, ruoli, permission, route protette, logout e recovery a Vault/Forge. Helix applicazione usa auth reale per sé, ma nessun progetto Production generato ha eseguito Key (`phase-3.md`, `follow-up-4.md`).                                                                                                                                                                                  |
-| 28  | Orbit/Cedar onesti o realmente nativi          | **RISOLTO**     | Gli output sono dichiarati source package web-to-native Expo/WebView e web-to-desktop Electron, non app native complete o binari compilati; build/signing/submission restano `not_executed` (`phase-4.md`, `phase-5.md`).                                                                                                                                                                                                                      |
+Le advisory dev provengono da `extract-zip`, `image-size` e `sharp` tramite pacchetti di sviluppo Netlify. Non sono state nascoste né classificate come vulnerabilità runtime.
 
-## P1 — Digital Twin, QA e Score
+## QA Chrome della build compilata
 
-| #   | Requisito                           | Stato        | Prova e limite                                                                                                                                                                                                                                          |
-| --- | ----------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 29  | Twin con browser reale              | **PARZIALE** | Runner, harness e adapter remoto implementano viewport, azioni, form, navigazione, screenshot, console/runtime e blocco rete. In questo ambiente non è stato eseguito Chromium su un build Helix: i report sono correttamente `NOT_RUN` (`phase-5.md`). |
-| 30  | Storm come load test reale          | **PARZIALE** | Il CLI invia richieste reali solo con conferma, limiti e allowlist e calcola RPS, error rate e p50/p95/p99. Non è integrato nel job né eseguito contro un deploy production o fino a saturazione (`phase-5.md`).                                        |
-| 31  | Aegis con security check reali      | **PARZIALE** | Scanner statico hash-bound, secret scan, dependency audit, CSP, sink DOM/XSS/rete/chiavi e blocco release esistono. Non è una suite SAST completa e non sostituisce review authz/SQL end-to-end (`phase-5.md`).                                         |
-| 32  | Echo accessibility                  | **PARZIALE** | Il runner controlla label, landmark, ARIA, focus, tastiera, lingua e immagini. Axe-core, contrasto completo, screen reader e una sessione browser reale in questo ambiente mancano (`phase-5.md`).                                                      |
-| 33  | Swift performance                   | **PARZIALE** | Il contratto misura load, DOMContentLoaded, FCP, LCP, CLS, TBT, richieste e byte per viewport. INP e misure CDN production mancano; il runner non è stato eseguito qui (`phase-5.md`).                                                                  |
-| 34  | Iris QA con prove complete          | **PARZIALE** | Iris riceve brief, acceptance criteria, HTML completo, report hash-bound, errori e screenshot disponibile; static-only non può passare. Mancano screenshot/report browser completati di un build reale (`phase-5.md`).                                  |
-| 35  | Kreluna Score measured vs estimated | **RISOLTO**  | Score v2 separa `measured`, `estimated`, `not_run`, valori null, confidence, source e hash; le prove stale non aumentano lo score e non vengono dichiarate capacità non misurate (`phase-6.md`).                                                        |
-| 36  | Senate/Council onesto               | **RISOLTO**  | È denominato `Automated Council Score`, espone segnali di una formula deterministica e non simula cinque voti AI indipendenti (`phase-6.md`).                                                                                                           |
-| 37  | Augur come capacity forecast        | **PARZIALE** | Il contratto richiede prove e senza load test/DB/architettura/costo restituisce range nullo, confidence 0 e `NOT_RUN`. Non esiste ancora una previsione completata alimentata da un benchmark reale (`phase-6.md`).                                     |
+La preview locale compilata è stata aperta in Chrome su `/vetrina` e sulle sei route flagship. Per ogni app sono state esercitate almeno cinque interazioni con verifica del nuovo stato:
 
-## P1 — Vetrina e sei flagship
+| Flagship | Interazioni verificate |
+| --- | --- |
+| Orbit Command | selezione Vega-2, livello detriti, zoom, pianificazione accensione, conferma manovra |
+| Neura | regione tronco encefalico, vista segnali, simulazione, snapshot, nota |
+| Synapse | documento, ricerca, nuovo nodo, allineamento, collegamento/filtro decisioni |
+| Vanta | simbolo, periodo 1W, profondità, lato vendita, quantità e ordine paper |
+| Arc City | livello qualità aria, quartiere Porto, zoom, ispezione, scenario serale |
+| Morph | assetto strada, materiale perla, ruota Track 22, interni inchiostro, luci |
 
-| #   | Requisito                           | Stato        | Prova e limite                                                                                                                                                                                                                                         |
-| --- | ----------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 38  | Ridurre la Vetrina a sei flagship   | **RISOLTO**  | Il catalogo principale contiene esattamente Orbit Command, Neura, Synapse, Vanta, Arc City e Morph; le 15 demo precedenti sono archiviate, non cancellate (`phase-7.md`).                                                                              |
-| 39  | Niente foto stock come cover        | **RISOLTO**  | Le flagship non hanno `cover`; ProjectCard usa il `MiniShot` derivato dall'HTML reale dell'app e non usa Unsplash (`phase-7.md`).                                                                                                                      |
-| 40  | Sei demo visualmente differenti     | **PARZIALE** | Sei shell, information architecture e linguaggi visuali distinti sono implementati e verificati staticamente sui 36 render localizzati. La differenza e la qualità visuale finale non sono state certificate in browser (`phase-7.md`).                |
-| 41  | Design system diverso per ogni demo | **PARZIALE** | Font di sistema, spacing, navigation, shape, density, color, motion e struttura variano staticamente per flagship e non condividono una sola dashboard/sidebar/card shell. Manca la verifica visuale e responsive in browser (`phase-7.md`).           |
-| 42  | Eliminare il look “template AI”     | **PARZIALE** | I builder implementano sei art direction specifiche e le verifiche statiche vietano stock, shell ripetuta, gradient blob generici e glass card condivise. Senza visual QA browser non viene certificato il risultato percettivo finale (`phase-7.md`). |
-| 43  | Demo realmente interattive          | **PARZIALE** | Ogni flagship contiene almeno 10 controlli e almeno cinque listener/comportamenti che modificano DOM/stato; la suite statica passa. Twin non li ha esercitati in Chromium in questo ambiente (`phase-7.md`).                                           |
-| 44  | Vetrina con proof veritiero         | **RISOLTO**  | Card con preview reale, nome, tipo, prompt, capability e proof; agenti, build time e Score sono omessi in assenza di prove persistite hash-bound (`phase-7.md`).                                                                                       |
-| 45  | Home con tre flagship diverse       | **RISOLTO**  | Home seleziona esplicitamente Morph, Vanta e Orbit Command, senza `slice(0,3)` (`phase-7.md`).                                                                                                                                                         |
-| 46  | Internazionalizzazione demo         | **RISOLTO**  | Le sei nuove flagship centralizzano copy/aria in it/en/es/fr/de/pt e producono 36 documenti con `lang` corretto. Le demo legacy archiviate non sono interamente localizzate, ma non fanno parte delle nuove sei (`phase-7.md`).                        |
+Risultato: cambi di stato visibili e coerenti, **0 errori e 0 warning console** osservati. A viewport `390×844` la vetrina mostrava menu mobile e tutte le sei flagship; Morph misurava `390/390` sia nel documento esterno sia nell'app incorporata, senza overflow orizzontale. Il viewport è stato ripristinato al termine.
 
-## P2 — Generazione di app vere
+## Matrice requisiti 1–62
 
-| #   | Requisito                                      | Stato           | Prova e limite                                                                                                                                                                                                                                                                                                                                                          |
-| --- | ---------------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 47  | Da one-HTML a project workspace Production     | **NON RISOLTO** | Esistono candidate multi-file, grafo sorgente/provenance hash-bound, adapter firmato e core provider-neutral del runner. La pipeline resta disabilitata, non genera ancora app/server/db/test/infra compilabili e nessun provider sandbox reale è collegato (`phase-8.md`, `follow-up-4.md`).                                                                           |
-| 48  | Due livelli espliciti Prototype/Production     | **PARZIALE**    | Livelli, persistenza, UI, fingerprint e policy fail-closed sono espliciti. Prototype funziona; Production è visibile ma non disponibile e non possiede backend/DB/auth/deploy (`phase-8.md`).                                                                                                                                                                           |
-| 49  | Artefatti completi per ogni build Production   | **NON RISOLTO** | Candidate e grafo rifiutano ruoli, contratti, output, test, evidence, provenance e relazioni mancanti o incoerenti. Nessun build Production viene però generato: i fixture testano il contratto, non dimostrano source, migration, test o deploy creati dagli agenti (`follow-up-4.md`).                                                                                |
-| 50  | Validazione output prima della fase successiva | **PARZIALE**    | JSON/Zod, snapshot PRD/architettura, path/ruoli, provenance, hash, dipendenze, patch, Aegis, candidate e manifest sono fail-closed; protocollo runner `1.1.0` rifiuta firma, replay, hash, ordine, timeout, output e cleanup non validi. Il grafo resta strutturale e nessun container esterno ha compilato un workspace generato (`follow-up-3.md`, `follow-up-4.md`). |
+| # | Stato | Evidenza locale o limite residuo |
+| ---: | --- | --- |
+| 1 | PARZIALE_ESTERNO | Adapter TanStack Start/Netlify e smoke SSR/server/API locali presenti; manca un probe su deploy Netlify reale. |
+| 2 | RISOLTO_LOCALMENTE | Inventario env, gruppi all-or-none e startup fail-closed in `.env.example` e `src/lib/env.server.ts`. |
+| 3 | PARZIALE_ESTERNO | Worktree senza secret e scanner history-aware; revoca/rotazione provider e bonifica storia non eseguite. |
+| 4 | PARZIALE_ESTERNO | Checkout hosted, webhook raw-body verificato, inbox, ledger, subscription/top-up e Portal mode-aware implementati; nessun flusso Stripe Test Mode reale. |
+| 5 | RISOLTO_LOCALMENTE | Crediti atomici/idempotenti, saldo non negativo, ledger coerente e test concorrenti. |
+| 6 | RISOLTO_LOCALMENTE | Ownership utente e capability guest con token casuale, hash, scope ed expiry. |
+| 7 | RISOLTO_LOCALMENTE | Rate, quota, costo, byte e concorrenza guest persistenti. |
+| 8 | PARZIALE_ESTERNO | Pubblicazione guest temporanea, tokenizzata e limitata; scheduler/hosting live non verificati. |
+| 9 | RISOLTO_LOCALMENTE | CSP e allowlist rete deny-by-default, sandbox e test di bypass. |
+| 10 | RISOLTO_LOCALMENTE | Human Gate persistente, auditabile e hash/version-fenced per Prototype e Production. |
+| 11 | RISOLTO_LOCALMENTE | Tutte le generazioni passano dall'orchestratore; generatore legacy ritirato. |
+| 12 | RISOLTO_LOCALMENTE | Moduli separati, boundary testati e nessun `@ts-nocheck` nel motore. |
+| 13 | RISOLTO_LOCALMENTE | Queue DB-backed con lease, heartbeat, retry, timeout, cancel, resume e fencing v2→v3. |
+| 14 | RISOLTO_LOCALMENTE | Errori persistiti e strutturati; nessun `catch {}` applicativo che trasformi failure in successo. |
+| 15 | RISOLTO_LOCALMENTE | Contratti agenti versionati, Zod, tool allowlist, timeout, retry, budget, artifact hash e validation. |
+| 16 | RISOLTO_LOCALMENTE | Tipi/UI distinguono AI Agent, validator, scanner, service, gate e rule. |
+| 17 | PARZIALE_ESTERNO | Supervisor seleziona dipendenze, checkpoint, retry, budget e gate; manca una generazione completa con modelli/provider live. |
+| 18 | PARZIALE_ESTERNO | Nova produce PRD JSON/Markdown strutturato; provider AI live non verificato. |
+| 19 | PARZIALE_ESTERNO | Atlas produce architettura, data flow, route/API/DB/auth/integration; provider live non verificato. |
+| 20 | PARZIALE_ESTERNO | Lumen produce tre direzioni distinte e scoring; selezione tramite modello live non verificata. |
+| 21 | PARZIALE_ESTERNO | Forge UI, Logic e Integration sono separati e generano binding/client; provider AI live non verificato. |
+| 22 | RISOLTO_LOCALMENTE | Gem applica patch target/hash-bound e validation deterministica prima della persistenza. |
+| 23 | RISOLTO_LOCALMENTE | Prism genera schema, migration, FK, indici, ownership e test di contratto. |
+| 24 | PARZIALE_ESTERNO | Quartz genera review/rollback/backup strategy; EXPLAIN, apply e restore su DB reale restano `not_run`. |
+| 25 | RISOLTO_LOCALMENTE | Vault/Basalt generano route, schema, authz, error mapping, rate limit, idempotenza e test. |
+| 26 | PARZIALE_ESTERNO | Nexus genera adapter, OAuth/webhook sicuri, retry ed error mapping; connessione provider reale assente. |
+| 27 | PARZIALE_ESTERNO | Key genera session/authz/recovery library e mantiene l'issuer non configurato finché manca un provider reale. |
+| 28 | RISOLTO_LOCALMENTE | Orbit/Cedar dichiarano onestamente wrapper/source package, non binari nativi completi. |
+| 29 | PARZIALE_ESTERNO | Twin ha browser runner, azioni, screenshot, rete negata e replay DB; runner remoto firmato non eseguito. |
+| 30 | RISOLTO_LOCALMENTE | Storm esegue traffico HTTP solo con conferma e misura progressione fino a saturazione. |
+| 31 | PARZIALE_ESTERNO | Aegis esegue scan secret/dependency/DOM/XSS/CSP/authz/SQL; nessun SAST esterno e restano advisory dev Netlify. |
+| 32 | PARZIALE_ESTERNO | Echo controlla label, contrasto, ARIA, landmark, tastiera e focus; manca il runner browser remoto/full axe. |
+| 33 | PARZIALE_ESTERNO | Swift misura LCP/CLS/TBT/load/risorse; manca una misura su deploy live e INP. |
+| 34 | PARZIALE_ESTERNO | Iris consuma criteri, Twin/Echo/Swift, errori e screenshot; modello/runner live non eseguiti. |
+| 35 | RISOLTO_LOCALMENTE | Score separa measured, estimated e unavailable con confidence/source/hash. |
+| 36 | RISOLTO_LOCALMENTE | Council formulaico è etichettato onestamente `Automated Council Score`. |
+| 37 | PARZIALE_ESTERNO | Augur ha source HMAC, freshness, nonce, claim/cooldown pre-I/O, binding deploy e persistenza append-only; nessun bundle provider reale. |
+| 38 | RISOLTO_LOCALMENTE | Catalogo primario esattamente di sei flagship; precedenti esperimenti archiviati. |
+| 39 | RISOLTO_LOCALMENTE | Card basate sulle app reali e nessuna cover stock nelle flagship. |
+| 40 | RISOLTO_LOCALMENTE | Sei app con sei signature visive distinte. |
+| 41 | RISOLTO_LOCALMENTE | Font, shell, navigazione, geometry, density, palette e motion differenziati. |
+| 42 | RISOLTO_LOCALMENTE | Test sui 36 artefatti localizzati bloccano shell ripetute, cliché e asset stock. |
+| 43 | RISOLTO_LOCALMENTE | Chrome ha esercitato almeno cinque comportamenti in ognuna delle sei flagship con stato verificato e console pulita. |
+| 44 | RISOLTO_LOCALMENTE | Prompt, capability ed evidence mostrati; score/tempo/agenti assenti senza prove. |
+| 45 | RISOLTO_LOCALMENTE | Home usa Morph, Vanta e Orbit Command. |
+| 46 | RISOLTO_LOCALMENTE | Tutte le sei flagship supportano sei lingue e `html lang` coerente. |
+| 47 | RISOLTO_LOCALMENTE | Production genera workspace multi-file; Prototype può restare single-file. |
+| 48 | RISOLTO_LOCALMENTE | Livelli Prototype/Production espliciti e nessun downgrade silenzioso. |
+| 49 | RISOLTO_LOCALMENTE | Workspace include README, PRD, architecture, source, env, migration, test, config, decisions e score. |
+| 50 | PARZIALE_ESTERNO | Runner valida install/typecheck/lint/test/build/security con report firmato; sandbox provider reale non configurata. |
+| 51 | PARZIALE_ESTERNO | Harbor persiste provider/deploy ID/status/URL/hash/rollback e blocca Production non supportata; nessun deploy hosting live. |
+| 52 | RISOLTO_LOCALMENTE | Stato Store deriva solo da evidence provider e non dichiara upload inesistenti. |
+| 53 | RISOLTO_LOCALMENTE | Android readiness non è hardcoded e richiede configurazione/signing/evidence. |
+| 54 | PARZIALE_ESTERNO | Pipeline EAS firmata, idempotente, concorrente e persistente; nessun upload App Store/Play reale. |
+| 55 | RISOLTO_LOCALMENTE | Telemetria per chiamata/job distingue provider da application cache. |
+| 56 | RISOLTO_LOCALMENTE | Limiti di costo/call/retry/durata con reserve/settle atomici. |
+| 57 | RISOLTO_LOCALMENTE | Response cache persistente tenant/provider/model/contract-bound, validata prima del riuso. |
+| 58 | RISOLTO_LOCALMENTE | Registry provider esplicito e nessun fallback automatico. |
+| 59 | PARZIALE_ESTERNO | CI, CodeQL e Dependabot configurati; run hosted, required checks e history scan in CI non verificati. |
+| 60 | RISOLTO_LOCALMENTE | Suite locale copre accesso, guest, crediti, billing, queue, gate, provider failure, score, deploy/store e locale. |
+| 61 | PARZIALE_ESTERNO | Warden ha source autenticata, freshness, dedupe, persistenza e policy senza autopublish; monitoring reale assente. |
+| 62 | PARZIALE_ESTERNO | Nimbus decide runtime/DB/storage/CDN/costi da evidence verificata e resta fail-closed; provisioning/provider live assenti. |
 
-## P2 — Deploy e store
+## Definition of Done
 
-| #   | Requisito                               | Stato           | Prova e limite                                                                                                                                                                                                                                            |
-| --- | --------------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 51  | Harbor web deploy reale                 | **PARZIALE**    | Il public-app store Kreluna persiste provider, deploy ID, URL, artifact/hash, timestamp e rollback ref atomicamente dopo approvazione. Non è un deploy Netlify multi-asset e non è stato verificato tramite URL/CDN esterno (`phase-4.md`, `phase-8.md`). |
-| 52  | Nessuna store submission inventata      | **RISOLTO**     | UI e server dichiarano soltanto `package_prepared` / `not_executed`; non esistono TestFlight, track, submission ID o status finti (`phase-4.md`).                                                                                                         |
-| 53  | Rimuovere bug Android readiness         | **RISOLTO**     | Il fallback booleano sempre vero applicato a `playReady` è rimosso; readiness resta falsa senza build, signing e provider reali (`phase-4.md`).                                                                                                           |
-| 54  | Store pipeline reale quando configurata | **NON RISOLTO** | Non esistono EAS/native build, signing, Apple Team/provisioning, AAB, service account, upload, track/TestFlight o release/submission ID. Viene preparato soltanto source package (`phase-4.md`).                                                          |
+| # | Stato | Valutazione |
+| ---: | --- | --- |
+| 1 | PARZIALE_ESTERNO | Output Netlify full-stack validato localmente; nessuna server function invocata su deploy reale. |
+| 2 | PARZIALE_ESTERNO | Worktree senza secret; la storia contiene ancora la credenziale OAuth preview. |
+| 3 | RISOLTO_LOCALMENTE | Nessun piano/top-up accredita senza evento di pagamento server-side verificato. |
+| 4 | RISOLTO_LOCALMENTE | Crediti atomici e idempotenti. |
+| 5 | RISOLTO_LOCALMENTE | Ownership job e capability guest protette. |
+| 6 | RISOLTO_LOCALMENTE | Limiti guest persistenti. |
+| 7 | RISOLTO_LOCALMENTE | Human Gate arresta realmente publish/deploy fino ad approvazione. |
+| 8 | RISOLTO_LOCALMENTE | Twin esegue browser reale solo se configurato, altrimenti riporta `not_run`. |
+| 9 | RISOLTO_LOCALMENTE | Score distingue misurato/stimato/non disponibile. |
+| 10 | RISOLTO_LOCALMENTE | Store non dichiara upload senza evidence. |
+| 11 | RISOLTO_LOCALMENTE | Readiness Android non hardcoded. |
+| 12 | RISOLTO_LOCALMENTE | Motore strict senza `@ts-nocheck`. |
+| 13 | RISOLTO_LOCALMENTE | Queue persistente DB-backed. |
+| 14 | PARZIALE_ESTERNO | Contratti impediscono `done` senza artefatti, ma agenti/provider live non sono stati eseguiti. |
+| 15 | RISOLTO_LOCALMENTE | Sei flagship distinte e interattive, verificate anche in Chrome. |
+| 16 | RISOLTO_LOCALMENTE | Card e routing usano le app preview reali. |
+| 17 | RISOLTO_LOCALMENTE | Prototype e Production distinti. |
+| 18 | RISOLTO_LOCALMENTE | Production crea workspace multi-file reale e validabile. |
+| 19 | PARZIALE_ESTERNO | Workflow CI presente, ma nessuna run GitHub-hosted/branch protection sul diff finale. |
+| 20 | RISOLTO_LOCALMENTE | Typecheck, lint, test e build locali verdi. |
 
-## P2 — Observability, costi e CI
+## P1 residuo: secret OAuth nella storia
 
-| #   | Requisito                             | Stato        | Prova e limite                                                                                                                                                                                                                                                                                                                                                                                |
-| --- | ------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 55  | Tracciare costo AI per chiamata e job | **PARZIALE** | Tutte le chiamate model-backed attraversano un gateway che persiste agente, provider, modelli, token input/output/cache/total, latenza, response/result hash, costo provider e stato; il riepilogo job distingue costo effettivo, ignoto e contabilizzato (`phase-9.md`). Nessuna chiamata xAI fatturata è stata eseguita e un costo assente resta correttamente `unknown`, non stimato.      |
-| 56  | Budget per job                        | **PARZIALE** | PostgreSQL prenota atomicamente e con fencing massimo 16 chiamate, 2 retry, 10 minuti e 9 USD contabilizzati; recovery e overshoot sono testati (`phase-9.md`). Il costo effettivo è noto solo dopo la risposta: una singola chiamata può superare la prenotazione prima che Helix la registri e blocchi il job; un hard spend cap assoluto richiede anche il provider.                       |
-| 57  | Caching provider e contesto           | **PARZIALE** | I checkpoint evitano di ripetere fasi completate, i prompt mantengono prefissi statici e Helix registra i cached token dichiarati da xAI (`phase-3.md`, `phase-9.md`). Non esiste una response cache applicativa persistente cross-job/cross-user e non viene dichiarato un cache hit se il provider non lo riporta.                                                                          |
-| 58  | Architettura multi-model              | **PARZIALE** | Interfaccia, registry, gateway e selezione fail-closed sono provider-neutral; il client Grok parallelo è stato eliminato (`phase-9.md`). L'unico adapter configurato è xAI: nessun secondo provider è implementato, selezionato automaticamente o simulato.                                                                                                                                   |
-| 59  | GitHub Actions obbligatoria           | **PARZIALE** | La workflow read-only su push `main`, pull request e manuale esegue lo scanner robusto worktree-only prima dell'install, `npm ci`, typecheck, lint, `npm test`, audit production, build non mutativo e smoke. La matrice locale corrente è 248/248 e la policy locale passa 3/3 (`phase-9.md`, `follow-up-4.md`). Non è stata osservata una run GitHub hosted né un required check su `main`. |
-| 60  | Test critici richiesti                | **PARZIALE** | La matrice 248/248 copre anche il grafo Production: downgrade, env drift, provenance, ownership, authz, integrazioni, review blocker e tamper. Restano E2E browser/live e prove esterne reali per sandbox, provider, deploy e store (`follow-up-1.md`, `follow-up-3.md`, `follow-up-4.md`).                                                                                                   |
+`npm run security:history` rileva la stessa credenziale in `src/lib/auth/preview.ts` nei commit raggiungibili `30ec14f`, `6e4bbe1` e `7627c1c`. Il valore non è riportato qui. Lo scan del worktree corrente riporta zero finding.
 
-## P3 — Manutenzione e infrastruttura
+Per chiudere il P1 servono azioni fuori dal perimetro autorizzato:
 
-| #   | Requisito                   | Stato           | Prova e limite                                                                                                                                                                                                                                                                                        |
-| --- | --------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 61  | Warden con monitoring reale | **NON RISOLTO** | La telemetria AI registra costo/uso delle chiamate, ma non equivale a monitoring operativo. Warden resta `standby`: error tracking, uptime, SLO di latenza, dependency feed, deploy health e alert esterni non sono configurati; non pubblica autonomamente (`phase-9.md`).                           |
-| 62  | Nimbus con infra reale      | **NON RISOLTO** | Il contratto Nimbus collega Netlify, runtime, DB/storage binding, CDN, secret name, monitoring e range di costo stimato ai requisiti; env mancanti non diventano readiness. Nimbus resta però `disabled_contract_only`: nessuna infrastruttura è stata generata o verificata live (`follow-up-4.md`). |
+1. revoca/rotazione della credenziale presso il provider, con prova;
+2. decisione coordinata sulla riscrittura della storia Git;
+3. eventuale force push di tutti i riferimenti interessati.
 
-## Definition of Done finale — 1–20
+La riscrittura/force push è incompatibile con il divieto esplicito corrente e non è stata tentata.
 
-| #   | Condizione                                  | Stato              | Valutazione                                                                                                                                                                                                                                                                                                        |
-| --- | ------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | Netlify esegue realmente frontend + server  | **NON VERIFICATO** | Build e handler locale sono full-stack e lo smoke passa; nessun deploy Netlify live è stato pubblicato o sondato.                                                                                                                                                                                                  |
-| 2   | Nessun secret è nel repository              | **PARZIALE**       | Worktree: 0 finding robusti su 297 file esistenti Git tracked/untracked; Git elenca 298 path includendo un file tracked rimosso. Storia Git: tre occorrenze storiche; revoca/rotazione e rewrite non eseguiti.                                                                                                     |
-| 3   | Nessun piano paid accredita senza pagamento | **RISOLTO**        | Paid e top-up sono disabilitati fail-closed e i test confermano zero mutazioni.                                                                                                                                                                                                                                    |
-| 4   | Crediti atomici                             | **RISOLTO**        | Transazione, idempotenza, ledger e concorrenza sono testati.                                                                                                                                                                                                                                                       |
-| 5   | Job privati non leggibili da altri utenti   | **RISOLTO**        | Ownership job/progetto e risposte 401/403 sono testate.                                                                                                                                                                                                                                                            |
-| 6   | Guest abuse limitato                        | **RISOLTO**        | Quota, concorrenza, budget, expiry, byte limit e capability sono persistenti e testati.                                                                                                                                                                                                                            |
-| 7   | Human Gate ferma davvero il deploy          | **RISOLTO**        | Pre-approval produce 409 e nessuna app/deploy/addebito; decisioni e audit sono server-side.                                                                                                                                                                                                                        |
-| 8   | Twin reale o dichiara non eseguito          | **RISOLTO**        | Il runner browser è implementato ma non operativo in questo ambiente; senza browser restituisce `NOT_RUN` e non simula click, screenshot o misure.                                                                                                                                                                 |
-| 9   | Score measured vs estimated                 | **RISOLTO**        | Score v2 separa evidence, confidence, valori null e source.                                                                                                                                                                                                                                                        |
-| 10  | Store non dichiara upload falsi             | **RISOLTO**        | Solo package preparato; submission `not_executed`.                                                                                                                                                                                                                                                                 |
-| 11  | Android readiness non hardcoded             | **RISOLTO**        | Bypass rimosso, readiness falsa senza prove.                                                                                                                                                                                                                                                                       |
-| 12  | `agents.ts` senza `@ts-nocheck`             | **RISOLTO**        | Motore strict; il solo marker residuo appartiene al route tree generato.                                                                                                                                                                                                                                           |
-| 13  | Job non dipendono da `Map` volatile         | **RISOLTO**        | La coda autorevole è DB-backed; nessuna `const jobs = new Map()` resta nel motore. La prova multi-istanza live resta separatamente non verificata.                                                                                                                                                                 |
-| 14  | Agenti attivi producono prove reali         | **PARZIALE**       | Contratti, Zod, artefatti, gateway unico, telemetria e budget impediscono a una chiamata attiva di aggirare le prove; servizi non eseguiti restano standby. Il percorso DB→provider→settle è testato con transport controllato, ma non è documentata una generazione xAI live/fatturata end-to-end (`phase-9.md`). |
-| 15  | Sei flagship impressionanti e differenti    | **PARZIALE**       | Distinzione strutturale/visuale e interazioni sono verificate staticamente su 36 render; qualità visuale e responsive non sono certificate in browser.                                                                                                                                                             |
-| 16  | Card mostrano il prodotto, non stock        | **RISOLTO**        | Le card usano preview dell'HTML reale e le flagship non espongono cover stock.                                                                                                                                                                                                                                     |
-| 17  | Prototype e Production distinti             | **RISOLTO**        | Livello esplicito, persistito, mostrato e fail-closed; nessun downgrade. Production resta indisponibile.                                                                                                                                                                                                           |
-| 18  | Production crea progetti multi-file veri    | **NON RISOLTO**    | Candidate, grafo sorgente/provenance, adapter e core del runner sono implementati e fail-closed, ma generatore, provider sandbox, persistenza delle prove e finalizzazione Production non lo sono (`follow-up-4.md`).                                                                                              |
-| 19  | CI passa                                    | **NON VERIFICATO** | La workflow read-only è definita e i gate equivalenti sono verdi localmente, inclusi 248/248 test, policy 3/3 e guardie build/migration 4/4. Nessuna run GitHub Actions hosted né branch protection required-check è documentata (`phase-9.md`, `follow-up-4.md`).                                                 |
-| 20  | Typecheck, lint, test e build verdi         | **RISOLTO**        | Matrice corrente: typecheck PASS, lint 0 errori/5 warning legacy, test 248/248, build full-stack PASS e smoke Netlify PASS. Scan robusto: 297 file/0 finding; audit production: 0 vulnerabilità. L'audit completo resta separatamente rosso con 10 high nelle dev dependency Netlify (`follow-up-4.md`).           |
+## Attivazioni e prove esterne ancora necessarie
 
-## Verdetto e blocchi prima di poter dichiarare “completato”
+1. Deploy preview Netlify autorizzato con probe SSR/server function/API/auth/CSP e scheduled/background functions.
+2. Stripe Test Mode/Test Clock con Checkout, webhook provider, invoice, rinnovo, cancellazione, failure e Portal reali.
+3. Esecuzione xAI fatturata con telemetria confrontata al provider e limiti provider-side.
+4. Workspace/Twin runner remoti con isolamento, egress, replay store e report firmati osservati.
+5. PostgreSQL/Neon, auth, storage e integrazioni reali per un workspace Production.
+6. Fonti reali per Warden, Nimbus e Augur; nessun provisioning automatico senza approvazione.
+7. Run GitHub-hosted di CI/CodeQL, Dependabot e required checks/branch protection.
+8. EAS, Apple e Google con signing e submission evidence reali.
 
-Helix non soddisfa ancora la Definition of Done finale. I blocchi principali sono:
-
-1. deploy Netlify preview/production e probe live di frontend, server function, auth e CSP;
-2. revoca/rotazione del secret storico e riscrittura coordinata della storia Git;
-3. generatore Production multi-file, provider sandbox/replay store operativi e persistenza delle prove firmate di install/compile/test/runtime;
-4. generazione reale di backend, API, database, auth, integrazioni e monitoring;
-5. deploy multi-asset, store pipeline e provider esterni reali;
-6. esecuzione browser Twin/Echo/Swift e visual/E2E QA su build e flagship;
-7. chiamata provider live, hosted CI/branch protection, hard spend cap provider-side, response cache e un secondo adapter provider;
-8. Warden e Nimbus collegati a telemetria e infrastruttura reali.
-
-Nessun commit, push, deploy preview, deploy production, browser QA completato, chiamata xAI fatturata, transazione Stripe, pubblicazione GitHub live, build/signing store o revoca credenziale è attestato da questo audit.
+Questi punti non sono sostituibili con fixture locali e richiedono nuove credenziali o autorizzazioni esplicite. Fino ad allora Helix resta localmente completo e operativamente fail-closed, ma non viene dichiarato pubblicato o verificato end-to-end sui provider.

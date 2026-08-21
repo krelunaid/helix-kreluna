@@ -5,6 +5,7 @@ import test from "node:test";
 import { createServer } from "vite";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const REQUEST_FINGERPRINT = "a".repeat(64);
 
 function makeJob(overrides = {}) {
   return {
@@ -19,7 +20,13 @@ function makeJob(overrides = {}) {
     usedAi: false,
     title: "Queue test",
     userId: "queue-test-user",
+    requestFingerprint: REQUEST_FINGERPRINT,
     createdAt: Date.now(),
+    checkpoint: {
+      pipelineVersion: "helix-v3",
+      requestFingerprint: REQUEST_FINGERPRINT,
+      stage: "queued",
+    },
     ...overrides,
   };
 }
@@ -28,7 +35,7 @@ function enqueueInput(job, suffix, overrides = {}) {
   return {
     job,
     idempotencyKey: `queue-test:${suffix}`,
-    requestFingerprint: "a".repeat(64),
+    requestFingerprint: REQUEST_FINGERPRINT,
     ...overrides,
   };
 }

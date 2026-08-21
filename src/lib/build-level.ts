@@ -3,11 +3,12 @@ import { ACTIONS, type ActionId } from "@/lib/plans";
 export const BUILD_LEVELS = ["prototype", "production"] as const;
 export type BuildLevel = (typeof BUILD_LEVELS)[number];
 
-export const BUILD_LEVEL_POLICY_VERSION = "helix-build-level-v1";
+export const BUILD_LEVEL_POLICY_VERSION = "helix-build-level-v2";
 
 export type BuildLevelReasonCode =
   | "PRODUCTION_MODE_NOT_AVAILABLE"
   | "PRODUCTION_MODE_REQUIRES_ACCOUNT"
+  | "PRODUCTION_ACTION_UNSUPPORTED"
   | "INVALID_BUILD_LEVEL";
 
 export type BuildQuote = {
@@ -50,30 +51,53 @@ export function parseBuildLevel(value: unknown): BuildLevel {
   throw new BuildLevelError("INVALID_BUILD_LEVEL");
 }
 
+export function publicProductionBuildCredits(
+  environment: Readonly<Record<string, unknown>> = import.meta.env,
+): number | null {
+  if (environment.VITE_PRODUCTION_BUILDS_ENABLED !== "true") return null;
+  const credits = Number(environment.VITE_PRODUCTION_CREDITS);
+  return Number.isInteger(credits) && credits > 0 && credits <= 100_000
+    ? credits
+    : null;
+}
+
 export function getBuildQuote(input: {
   buildLevel: BuildLevel;
   action?: BuildQuote["action"];
   authenticated: boolean;
+  productionCredits?: number | null;
 }): BuildQuote {
   const action = input.action ?? "generate";
   if (input.buildLevel === "production") {
+    const configuredCredits = input.productionCredits;
+    const configured =
+      Number.isInteger(configuredCredits) &&
+      Number(configuredCredits) > 0 &&
+      Number(configuredCredits) <= 100_000;
+    const available = input.authenticated && action === "generate" && configured;
     return {
       buildLevel: "production",
       action,
-      available: false,
-      credits: null,
+      available,
+      credits: available ? Number(configuredCredits) : null,
       policyVersion: BUILD_LEVEL_POLICY_VERSION,
-      reasonCode: input.authenticated
-        ? "PRODUCTION_MODE_NOT_AVAILABLE"
-        : "PRODUCTION_MODE_REQUIRES_ACCOUNT",
+      ...(!available
+        ? {
+            reasonCode: !input.authenticated
+              ? ("PRODUCTION_MODE_REQUIRES_ACCOUNT" as const)
+              : action !== "generate"
+                ? ("PRODUCTION_ACTION_UNSUPPORTED" as const)
+                : ("PRODUCTION_MODE_NOT_AVAILABLE" as const),
+          }
+        : {}),
       deliverables: [
         "Versioned multi-file workspace",
         "Source, PRD, architecture, tests and deployment configuration",
         "Capability evidence bound to the approved workspace",
       ],
       limitations: [
-        "Production generation remains disabled until build, test and runtime validation are configured.",
-        "No request is downgraded to a prototype and no credits are charged.",
+        "Generation starts only when an authenticated isolated workspace runner and an explicit credit price are configured.",
+        "A failed or missing Production configuration is never downgraded to Prototype.",
       ],
     };
   }
@@ -99,6 +123,7 @@ export function assertBuildLevelAvailable(input: {
   buildLevel: BuildLevel;
   action?: BuildQuote["action"];
   authenticated: boolean;
+  productionCredits?: number | null;
 }): BuildQuote {
   const quote = getBuildQuote(input);
   if (!quote.available) {

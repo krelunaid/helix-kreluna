@@ -187,9 +187,26 @@ export function ScoreCard({
           <p className="text-[10px] tracking-[0.16em] text-subtle uppercase">
             {t("score.capacity")}
           </p>
-          <span className="text-xs text-danger">{t("score.notRun")}</span>
+          <span
+            className={cn(
+              "text-xs",
+              capacity.status === "completed" ? "text-accent" : "text-danger",
+            )}
+          >
+            {capacity.status === "completed"
+              ? t("score.estimated")
+              : t("score.notRun")}
+          </span>
         </div>
         <p className="mt-2 text-sm text-muted">{capacity.verdict}</p>
+        {capacity.status === "completed" ? (
+          <p className="mt-2 text-xs text-fg tabular-nums">
+            {capacity.range.min}–{capacity.range.max} {capacity.range.unit} ·{" "}
+            {t("score.confidence", {
+              n: Math.round(capacity.confidence * 100),
+            })}
+          </p>
+        ) : null}
         {capacity.status === "not_run" && capacity.missingEvidence.length ? (
           <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-subtle">
             {capacity.missingEvidence.map((item) => (

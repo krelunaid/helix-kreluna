@@ -1,5 +1,6 @@
 import { extractHtml, isValidHtmlArtifact } from "@/lib/server/agents/html";
 import { AGENT_CONTRACTS } from "@/lib/server/agents/contracts";
+import { parseAgentJson } from "@/lib/server/agents/json";
 import {
   AgentOutputError,
   IrisAssessmentSchema,
@@ -168,20 +169,10 @@ export async function runIrisReview(input: AgentReviewInput): Promise<ReviewResu
     user: content,
     temperature: 0.2,
     effort: "low",
+    validateContent: (content) =>
+      IrisAssessmentSchema.safeParse(parseAgentJson<unknown>(content)).success,
   });
-  const parsedText =
-    response.content.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? response.content;
-  const start = parsedText.indexOf("{");
-  const end = parsedText.lastIndexOf("}");
-  let candidate: unknown = null;
-  if (start >= 0 && end > start) {
-    try {
-      candidate = JSON.parse(parsedText.slice(start, end + 1)) as unknown;
-    } catch {
-      candidate = null;
-    }
-  }
-  const assessment = IrisAssessmentSchema.safeParse(candidate);
+  const assessment = IrisAssessmentSchema.safeParse(parseAgentJson<unknown>(response.content));
   if (!assessment.success) throw new AgentOutputError("IRIS_REVIEW_INVALID");
   return finalizeIrisReview({
     assessment: assessment.data,
@@ -213,6 +204,10 @@ export async function runSuperiorFix(input: AgentFixInput): Promise<string> {
     user: `PROMPT:\n${input.prompt}\n\nMUST FIX:\n${input.review.mustFix.join("\n")}\n\nISSUES:\n${input.review.issues.join("\n")}\n\nHTML:\n${input.html.slice(0, 70_000)}`,
     temperature: 0.35,
     effort: "low",
+    validateContent: (content) => {
+      const parsed = contract.outputSchema.safeParse(extractHtml(content));
+      return parsed.success && isValidHtmlArtifact(parsed.data);
+    },
   });
   const html = extractHtml(response.content);
   const parsed = contract.outputSchema.safeParse(html);

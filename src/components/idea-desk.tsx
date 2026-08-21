@@ -4,7 +4,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Gear } from "@/lib/house";
-import { getBuildQuote, type BuildLevel } from "@/lib/build-level";
+import {
+  getBuildQuote,
+  publicProductionBuildCredits,
+  type BuildLevel,
+} from "@/lib/build-level";
 
 type SpeechRecognitionResultEvent = Event & {
   results: ArrayLike<ArrayLike<{ transcript?: string }>>;
@@ -44,7 +48,8 @@ export function IdeaDesk({
   const [max, setMax] = useState(false);
   const [listening, setListening] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const buildLevel: BuildLevel = "prototype";
+  const [buildLevel, setBuildLevel] = useState<BuildLevel>("prototype");
+  const productionCredits = publicProductionBuildCredits();
   const prototypeQuote = getBuildQuote({
     buildLevel: "prototype",
     authenticated: Boolean(authenticated),
@@ -52,6 +57,7 @@ export function IdeaDesk({
   const productionQuote = getBuildQuote({
     buildLevel: "production",
     authenticated: Boolean(authenticated),
+    productionCredits,
   });
 
   function send() {
@@ -99,8 +105,14 @@ export function IdeaDesk({
         <button
           type="button"
           role="radio"
-          aria-checked="true"
-          className="rounded-xl border border-accent/50 bg-accent/10 px-3 py-2 text-left"
+          aria-checked={buildLevel === "prototype"}
+          onClick={() => setBuildLevel("prototype")}
+          className={cn(
+            "rounded-xl border px-3 py-2 text-left",
+            buildLevel === "prototype"
+              ? "border-accent/50 bg-accent/10"
+              : "border-border",
+          )}
         >
           <span className="block text-xs font-medium text-fg">
             {t("desk.prototype")} · {prototypeQuote.credits} cr
@@ -112,18 +124,29 @@ export function IdeaDesk({
         <button
           type="button"
           role="radio"
-          aria-checked="false"
-          aria-disabled="true"
-          disabled
-          className="rounded-xl border border-border px-3 py-2 text-left opacity-55"
+          aria-checked={buildLevel === "production"}
+          aria-disabled={!productionQuote.available}
+          disabled={!productionQuote.available}
+          onClick={() => setBuildLevel("production")}
+          className={cn(
+            "rounded-xl border px-3 py-2 text-left",
+            buildLevel === "production"
+              ? "border-accent/50 bg-accent/10"
+              : "border-border",
+            !productionQuote.available && "opacity-55",
+          )}
           title={productionQuote.reasonCode}
         >
           <span className="block text-xs font-medium text-fg">
-            {t("desk.production")} · {t("desk.unavailable")}
+            {t("desk.production")} · {productionQuote.available
+              ? `${productionQuote.credits} cr`
+              : t("desk.unavailable")}
           </span>
           <span className="mt-0.5 block text-[11px] leading-4 text-muted">
-            {authenticated
-              ? t("desk.productionHint")
+            {productionQuote.available
+              ? t("desk.productionReadyHint")
+              : authenticated
+                ? t("desk.productionHint")
               : t("desk.productionGuestHint")}
           </span>
         </button>

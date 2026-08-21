@@ -92,6 +92,7 @@ export function parseXaiChatCompletion(
     latencyMs: options.latencyMs,
     usage: telemetry.usage,
     cost: telemetry.cost,
+    delivery: "provider",
   };
 }
 

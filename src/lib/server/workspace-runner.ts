@@ -208,6 +208,11 @@ function runnerConfiguration(): { url: URL; secret: string } {
   return { url, secret };
 }
 
+/** Validate the server-only runner boundary without exposing its URL or secret. */
+export function assertProductionWorkspaceRunnerConfigured(): void {
+  runnerConfiguration();
+}
+
 function ownedArrayBuffer(bytes: ArrayLike<number>): ArrayBuffer {
   const output = new Uint8Array(bytes.length);
   for (let index = 0; index < bytes.length; index += 1) {
