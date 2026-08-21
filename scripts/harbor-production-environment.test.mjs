@@ -24,7 +24,7 @@ test("manual hosted runtimes fail closed without NETLIFY=true", async (t) => {
         NODE_ENV: "production",
         AWS_LAMBDA_FUNCTION_NAME: "netlify-manual-deploy-server",
       }),
-    /BETTER_AUTH_SECRET.*DATABASE_URL.*GROK_AUTH_CLIENT_SECRET/u,
+    /BETTER_AUTH_SECRET.*DATABASE_URL.*VITE_AUTH_ENABLED/u,
   );
   assert.throws(
     () => environment.validateServerEnvironment({ CONTEXT: "deploy-preview" }),
@@ -39,6 +39,7 @@ test("manual hosted runtimes fail closed without NETLIFY=true", async (t) => {
     DATABASE_URL: "postgresql://local:local@database.example.test/helix",
     VITE_PUBLIC_HOSTNAME: "helix.example.test",
     VITE_AUTH_ENABLED: "true",
+    VITE_GROK_AUTH_ENABLED: "true",
     BETTER_AUTH_SECRET: "A".repeat(32),
     BETTER_AUTH_URL: "https://helix.example.test",
     GROK_AUTH_CLIENT_ID: "offline-client-id",

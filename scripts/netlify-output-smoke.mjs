@@ -53,7 +53,12 @@ const failedStartup = spawnSync(
 );
 assert.notEqual(failedStartup.status, 0, "A misconfigured hosted runtime must fail");
 assert.match(failedStartup.stderr, /DATABASE_URL/);
-assert.match(failedStartup.stderr, /GROK_AUTH_CLIENT_SECRET/);
+assert.match(failedStartup.stderr, /BETTER_AUTH_SECRET/);
+assert.doesNotMatch(
+  failedStartup.stderr,
+  /GROK_AUTH_CLIENT_(?:ID|SECRET)/,
+  "The optional Grok OAuth broker must stay disabled unless explicitly enabled",
+);
 
 const { default: handleRequest } = await import(pathToFileURL(entry));
 assert.equal(typeof handleRequest, "function", "Netlify SSR handler is missing");

@@ -31,6 +31,13 @@ export const authClient = createAuthClient({
  */
 export const authEnabled = import.meta.env.VITE_AUTH_ENABLED === "true";
 
+/** Federated broker buttons are opt-in and independent from password auth. */
+export const grokAuthEnabled = authEnabled && import.meta.env.VITE_GROK_AUTH_ENABLED === "true";
+
+/** Password sign-in exists only for the operator-pinned Netlify PR preview. */
+export const previewPasswordSignInEnabled =
+  authEnabled && import.meta.env.VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED === "true";
+
 /** The upstream providers to render sign-in buttons for. */
 export { GROK_PROVIDERS };
 

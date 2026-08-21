@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { getConnectionString as getNetlifyDatabaseConnectionString } from "@netlify/database";
 import pg from "pg";
+import { attestPreviewDatabaseMutation } from "./preview-database-mutation-gate.mjs";
 
 const strictNetlifyProduction = process.argv.includes("--netlify-production");
 const strictNetlifyBranch = process.argv.includes("--netlify-branch");
@@ -81,6 +82,16 @@ if (strictNetlifyProduction) {
 }
 
 if (strictNetlifyBranch) {
+  try {
+    attestPreviewDatabaseMutation();
+  } catch (error) {
+    const safeCode =
+      typeof error?.code === "string" && /^[A-Z0-9_]{3,80}$/u.test(error.code)
+        ? error.code
+        : "PREVIEW_DATABASE_MUTATION_FORBIDDEN";
+    console.error(`[migrate] branch mutation gate failed: ${safeCode}`);
+    process.exit(1);
+  }
   const context = process.env.CONTEXT?.trim();
   if (
     process.env.NETLIFY !== "true" ||

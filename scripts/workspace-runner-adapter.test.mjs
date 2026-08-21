@@ -281,6 +281,7 @@ test("workspace runner environment values are paired and HTTPS-only off loopback
     VITE_PRODUCTION_BUILDS_ENABLED: "true",
     VITE_PRODUCTION_CREDITS: "40",
     VITE_AUTH_ENABLED: "true",
+    VITE_GROK_AUTH_ENABLED: "true",
     BETTER_AUTH_SECRET: "A".repeat(32),
     BETTER_AUTH_URL: "http://localhost:8080",
     GROK_AUTH_CLIENT_ID: "production-test-client",

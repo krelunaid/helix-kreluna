@@ -121,6 +121,7 @@ test("Netlify startup requires a valid GitHub envelope key and version", async (
     DATABASE_URL: "postgresql://example.invalid/helix",
     VITE_PUBLIC_HOSTNAME: "helix.example",
     VITE_AUTH_ENABLED: "true",
+    VITE_GROK_AUTH_ENABLED: "true",
     BETTER_AUTH_SECRET: "B".repeat(32),
     BETTER_AUTH_URL: "https://helix.example",
     GROK_AUTH_CLIENT_ID: "runtime-client-id",

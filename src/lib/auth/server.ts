@@ -1,8 +1,8 @@
 /**
  * Self-hosted Better Auth for THIS app (server-only).
  *
- * Pre-wired for live preview + deploy — do not rewrite this file. To enable
- * local email/password, flip the flag in `./email-password` only (see auth skill).
+ * Pre-wired for live preview + deploy — do not rewrite this file. Password
+ * sign-in is restricted to an operator-pinned Netlify PR Deploy Preview.
  *
  * The app runs its own Better Auth at `/api/auth/*`, so the session cookie stays
  * on this app's own origin. Sign-in federates to the shared **Grok auth broker**
@@ -32,7 +32,6 @@ import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import { ensureDbReady, getDatabaseConnectionString, getPglite } from "../db";
 import { serverEnv } from "../env.server";
-import { emailAndPasswordEnabled } from "./email-password";
 import { GROK_PROVIDERS } from "./providers";
 import { pgliteDialect } from "./pglite-dialect";
 import { GROK_ISSUER_DEFAULT, PREVIEW_ALLOWED_HOSTS } from "./preview";
@@ -63,8 +62,13 @@ const grokIssuer = serverEnv.GROK_AUTH_ISSUER ?? GROK_ISSUER_DEFAULT;
 const grokClientId = serverEnv.GROK_AUTH_CLIENT_ID;
 const grokClientSecret = serverEnv.GROK_AUTH_CLIENT_SECRET;
 
-/** True when federated sign-in is active (real auth is enforced). */
-export const authConfigured = !authDisabled && Boolean(grokClientId && grokClientSecret);
+/** True only when the optional federated broker is explicitly enabled. */
+const grokAuthConfigured =
+  !authDisabled && serverEnv.grokAuthEnabled && Boolean(grokClientId && grokClientSecret);
+
+/** True when at least one real sign-in method is active. */
+export const authConfigured =
+  !authDisabled && (serverEnv.previewPasswordSignInEnabled || grokAuthConfigured);
 
 // This app's own Better Auth origin. When deployed the deployer injects the
 // public URL. In the sandbox live preview there's no fixed URL (each preview gets
@@ -130,7 +134,7 @@ export const SESSION_TOKEN_COOKIE = "__Host-grok-auth.session_token";
 
 // Built separately so the `betterAuth({...})` call stays easy to edit without
 // breaking brackets (models often trip on the conditional plugin spread).
-const grokOAuthPlugin = authConfigured
+const grokOAuthPlugin = grokAuthConfigured
   ? genericOAuth({
       config: GROK_PROVIDERS.map(({ providerId, idp }) => ({
         providerId,
@@ -187,8 +191,17 @@ export const auth = betterAuth({
   // flicker-prevention guidance (gate on `isPending`; SSR the session).
   session: { cookieCache: { enabled: true, maxAge: 300 } },
 
-  // Local email/password — toggled only via `./email-password` (not a plugin).
-  ...(emailAndPasswordEnabled ? { emailAndPassword: { enabled: true } } : {}),
+  // Password sign-in is a narrow preview-only escape hatch. Accounts are
+  // provisioned out of band; HTTP sign-up remains unavailable.
+  ...(serverEnv.previewPasswordSignInEnabled
+    ? {
+        emailAndPassword: {
+          enabled: true,
+          disableSignUp: true,
+          minPasswordLength: 16,
+        },
+      }
+    : {}),
 
   // `__Host-` prefixed cookies: the browser REFUSES any same-named cookie that
   // carries a `Domain` attribute, so a sibling `*.grok.me` app cannot "toss" a

@@ -2,6 +2,8 @@ import { z } from "zod";
 import { getRuntimeDatabaseConnection } from "@/lib/database-connection.server";
 import { isHostedRuntimeEnvironment } from "@/lib/hosted-runtime";
 import { normalizePublicHostname, publicOriginFromHostname } from "@/lib/env.shared";
+import { verifyNetlifyPullRequestDeploy } from "@/lib/preview-deploy";
+import { PREVIEW_TEST_CREDIT_GRANT } from "@/lib/server/preview-credit-grant";
 import { WardenPolicySchema } from "@/lib/server/operations/warden";
 
 const optionalText = z.preprocess(
@@ -11,6 +13,12 @@ const optionalText = z.preprocess(
 
 const rawEnvironmentSchema = z.object({
   HELIX_AI_GATEWAY_ENABLED: z.enum(["true", "false"]).optional(),
+  HELIX_PREVIEW_CREDIT_GRANT_ENABLED: z.enum(["true", "false"]).optional(),
+  HELIX_PREVIEW_CREDIT_GRANT_AMOUNT: optionalText,
+  HELIX_PREVIEW_CREDIT_GRANT_USER_ID: optionalText,
+  HELIX_PREVIEW_CREDIT_GRANT_EMAIL: optionalText,
+  HELIX_PREVIEW_EXPECTED_REVIEW_ID: optionalText,
+  HELIX_PREVIEW_EXPECTED_COMMIT_REF: optionalText,
   NETLIFY_AI_GATEWAY_KEY: optionalText,
   NETLIFY_AI_GATEWAY_BASE_URL: optionalText,
   DATABASE_URL: optionalText,
@@ -50,6 +58,8 @@ const rawEnvironmentSchema = z.object({
   HELIX_AUGUR_EVIDENCE_HMAC_SECRET: optionalText,
   HELIX_AUGUR_EVIDENCE_MAX_AGE_MS: optionalText,
   VITE_AUTH_ENABLED: z.enum(["true", "false"]).optional(),
+  VITE_GROK_AUTH_ENABLED: z.enum(["true", "false"]).optional(),
+  VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED: z.enum(["true", "false"]).optional(),
   VITE_PUBLIC_HOSTNAME: optionalText,
   VITE_PUBLIC_ORIGIN: optionalText,
   GROK_AUTH_ISSUER: optionalText,
@@ -78,6 +88,10 @@ const rawEnvironmentSchema = z.object({
   NETLIFY_DEPLOY_ID: optionalText,
   DEPLOY_ID: optionalText,
   SITE_ID: optionalText,
+  SITE_NAME: optionalText,
+  PULL_REQUEST: optionalText,
+  REVIEW_ID: optionalText,
+  DEPLOY_PRIME_URL: optionalText,
   AWS_LAMBDA_FUNCTION_NAME: optionalText,
   LAMBDA_TASK_ROOT: optionalText,
   NODE_ENV: z.enum(["development", "production", "test"]).optional(),
@@ -135,9 +149,7 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
 
   const values = parsed.data;
   const invalid: string[] = [];
-  let runtimeDatabaseConnection:
-    | ReturnType<typeof getRuntimeDatabaseConnection>
-    | undefined;
+  let runtimeDatabaseConnection: ReturnType<typeof getRuntimeDatabaseConnection> | undefined;
   if (input === process.env) {
     try {
       runtimeDatabaseConnection = getRuntimeDatabaseConnection();
@@ -148,18 +160,29 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   const required = (name: keyof typeof values, condition = true) => {
     if (condition && !values[name]) invalid.push(name);
   };
-  const isHostedRuntime = isHostedRuntimeEnvironment(values);
+  const verifiedNetlifyPullRequestDeploy = verifyNetlifyPullRequestDeploy(values);
+  const isHostedRuntime =
+    isHostedRuntimeEnvironment(values) || verifiedNetlifyPullRequestDeploy !== null;
   // Preserve the public property used by auth origin policy, but broaden its
   // meaning to every positively identified hosted runtime. NODE_ENV alone is
   // deliberately insufficient because Vite production builds run locally.
   const isNetlify = isHostedRuntime;
   const isProduction =
     isHostedRuntime &&
+    verifiedNetlifyPullRequestDeploy === null &&
     (values.CONTEXT === "production" ||
       values.HELIX_RUNTIME_ENV === "production" ||
       (!values.CONTEXT && values.NODE_ENV === "production"));
   const authEnabled = values.VITE_AUTH_ENABLED === "true";
+  const grokAuthEnabled = values.VITE_GROK_AUTH_ENABLED === "true";
+  const previewPasswordSignInRequested = values.VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED === "true";
+  const previewPasswordSignInEnabled =
+    previewPasswordSignInRequested &&
+    authEnabled &&
+    !grokAuthEnabled &&
+    verifiedNetlifyPullRequestDeploy !== null;
   const aiGatewayEnabled = values.HELIX_AI_GATEWAY_ENABLED === "true";
+  const previewCreditGrantEnabled = values.HELIX_PREVIEW_CREDIT_GRANT_ENABLED === "true";
   const stripeBillingEnabled = values.STRIPE_BILLING_ENABLED === "true";
   const productionBuildsEnabled = values.VITE_PRODUCTION_BUILDS_ENABLED === "true";
   const wardenEnabled = values.HELIX_WARDEN_ENABLED === "true";
@@ -182,10 +205,7 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   if (values.NETLIFY_DB_URL && !isPostgresUrl(values.NETLIFY_DB_URL)) {
     invalid.push("NETLIFY_DB_URL");
   }
-  const aiGatewayNames = [
-    "NETLIFY_AI_GATEWAY_KEY",
-    "NETLIFY_AI_GATEWAY_BASE_URL",
-  ] as const;
+  const aiGatewayNames = ["NETLIFY_AI_GATEWAY_KEY", "NETLIFY_AI_GATEWAY_BASE_URL"] as const;
   const configuredAiGatewayNames = aiGatewayNames.filter((name) => Boolean(values[name]));
   if (
     configuredAiGatewayNames.length > 0 &&
@@ -196,9 +216,7 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   if (values.NETLIFY_AI_GATEWAY_BASE_URL) {
     try {
       const gatewayUrl = new URL(values.NETLIFY_AI_GATEWAY_BASE_URL);
-      const loopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(
-        gatewayUrl.hostname,
-      );
+      const loopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(gatewayUrl.hostname);
       if (
         (gatewayUrl.protocol !== "https:" && !(loopback && gatewayUrl.protocol === "http:")) ||
         gatewayUrl.username ||
@@ -213,7 +231,60 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
     }
   }
   const isolatedNetlifyBranch =
-    values.CONTEXT === "deploy-preview" || values.CONTEXT === "branch-deploy";
+    verifiedNetlifyPullRequestDeploy !== null ||
+    values.CONTEXT === "deploy-preview" ||
+    values.CONTEXT === "branch-deploy";
+  const previewGrantAmount = values.HELIX_PREVIEW_CREDIT_GRANT_AMOUNT
+    ? Number(values.HELIX_PREVIEW_CREDIT_GRANT_AMOUNT)
+    : null;
+  const previewGrantUserId = values.HELIX_PREVIEW_CREDIT_GRANT_USER_ID ?? "";
+  const previewGrantEmail = values.HELIX_PREVIEW_CREDIT_GRANT_EMAIL?.toLowerCase() ?? "";
+  const previewGrantHasDormantConfiguration =
+    !previewCreditGrantEnabled &&
+    Boolean(
+      values.HELIX_PREVIEW_CREDIT_GRANT_AMOUNT ||
+      values.HELIX_PREVIEW_CREDIT_GRANT_USER_ID ||
+      values.HELIX_PREVIEW_CREDIT_GRANT_EMAIL,
+    );
+  if (previewCreditGrantEnabled) {
+    required("HELIX_PREVIEW_CREDIT_GRANT_AMOUNT");
+    required("HELIX_PREVIEW_CREDIT_GRANT_USER_ID");
+    required("HELIX_PREVIEW_CREDIT_GRANT_EMAIL");
+  }
+  if (
+    previewGrantHasDormantConfiguration ||
+    (previewCreditGrantEnabled &&
+      (!Number.isSafeInteger(previewGrantAmount) ||
+        previewGrantAmount !== PREVIEW_TEST_CREDIT_GRANT.amount ||
+        previewGrantUserId.length < 1 ||
+        previewGrantUserId.length > 255 ||
+        [...previewGrantUserId].some((character) => {
+          const code = character.charCodeAt(0);
+          return code <= 31 || code === 127;
+        }) ||
+        previewGrantEmail.length > 254 ||
+        !/^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/u.test(previewGrantEmail)))
+  ) {
+    invalid.push(
+      "HELIX_PREVIEW_CREDIT_GRANT_ENABLED",
+      "HELIX_PREVIEW_CREDIT_GRANT_AMOUNT",
+      "HELIX_PREVIEW_CREDIT_GRANT_USER_ID",
+      "HELIX_PREVIEW_CREDIT_GRANT_EMAIL",
+    );
+  }
+  const hostedPreviewGrantContext =
+    isHostedRuntime &&
+    verifiedNetlifyPullRequestDeploy !== null &&
+    (runtimeDatabaseConnection?.source === "netlify" ||
+      (input !== process.env && Boolean(values.NETLIFY_DB_URL))) &&
+    authEnabled;
+  const localPreviewGrantContext = !isHostedRuntime && values.NODE_ENV === "test";
+  if (
+    previewCreditGrantEnabled &&
+    (stripeBillingEnabled || (!hostedPreviewGrantContext && !localPreviewGrantContext))
+  ) {
+    invalid.push("HELIX_PREVIEW_CREDIT_GRANT_ENABLED");
+  }
   const netlifyDeployContext = isolatedNetlifyBranch || values.CONTEXT === "production";
   if (
     netlifyDeployContext &&
@@ -228,6 +299,62 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   }
   if (values.GROK_AUTH_ISSUER && !isOriginOnly(values.GROK_AUTH_ISSUER, isHostedRuntime)) {
     invalid.push("GROK_AUTH_ISSUER");
+  }
+  const previewPasswordExpectationNames = [
+    "HELIX_PREVIEW_EXPECTED_REVIEW_ID",
+    "HELIX_PREVIEW_EXPECTED_COMMIT_REF",
+  ] as const;
+  const configuredPreviewPasswordExpectations = previewPasswordExpectationNames.filter((name) =>
+    Boolean(values[name]),
+  );
+  if (previewPasswordSignInRequested) {
+    for (const name of previewPasswordExpectationNames) required(name);
+    if (!authEnabled) invalid.push("VITE_AUTH_ENABLED");
+    if (grokAuthEnabled) {
+      invalid.push("VITE_GROK_AUTH_ENABLED", "VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED");
+    }
+    if (!verifiedNetlifyPullRequestDeploy) {
+      invalid.push(
+        "VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED",
+        "NETLIFY",
+        "CONTEXT",
+        "PULL_REQUEST",
+        "REVIEW_ID",
+        "COMMIT_REF",
+        "DEPLOY_ID",
+        "SITE_ID",
+        "SITE_NAME",
+        "DEPLOY_PRIME_URL",
+        ...previewPasswordExpectationNames,
+      );
+    } else {
+      const previewHostname = new URL(verifiedNetlifyPullRequestDeploy.deployPrimeUrl).hostname;
+      if (hostname !== previewHostname) invalid.push("VITE_PUBLIC_HOSTNAME");
+      if (values.BETTER_AUTH_URL !== verifiedNetlifyPullRequestDeploy.deployPrimeUrl) {
+        invalid.push("BETTER_AUTH_URL");
+      }
+    }
+  } else if (configuredPreviewPasswordExpectations.length > 0) {
+    invalid.push("VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED", ...previewPasswordExpectationNames);
+  }
+  const grokAuthCredentialNames = ["GROK_AUTH_CLIENT_ID", "GROK_AUTH_CLIENT_SECRET"] as const;
+  const configuredGrokAuthCredentials = grokAuthCredentialNames.filter((name) =>
+    Boolean(values[name]),
+  );
+  if (
+    configuredGrokAuthCredentials.length > 0 &&
+    configuredGrokAuthCredentials.length !== grokAuthCredentialNames.length
+  ) {
+    for (const name of grokAuthCredentialNames) required(name);
+  }
+  if (grokAuthEnabled) {
+    for (const name of grokAuthCredentialNames) required(name);
+    if (!authEnabled) invalid.push("VITE_AUTH_ENABLED");
+  } else if (configuredGrokAuthCredentials.length > 0) {
+    invalid.push("VITE_GROK_AUTH_ENABLED");
+  }
+  if (authEnabled && !previewPasswordSignInEnabled && !grokAuthEnabled) {
+    invalid.push("VITE_GROK_AUTH_ENABLED", "VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED");
   }
   if (
     values.GITHUB_TOKEN_ENCRYPTION_KEY &&
@@ -596,8 +723,6 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
     required("VITE_AUTH_ENABLED");
     required("BETTER_AUTH_SECRET");
     required("BETTER_AUTH_URL");
-    required("GROK_AUTH_CLIENT_ID");
-    required("GROK_AUTH_CLIENT_SECRET");
     required("HELIX_QUEUE_DISPATCH_SECRET");
     required("GITHUB_TOKEN_ENCRYPTION_KEY");
     required("GITHUB_TOKEN_KEY_VERSION");
@@ -605,8 +730,6 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   }
 
   if (authEnabled) {
-    required("GROK_AUTH_CLIENT_ID");
-    required("GROK_AUTH_CLIENT_SECRET");
     required("BETTER_AUTH_SECRET");
     required("BETTER_AUTH_URL");
   }
@@ -642,7 +765,12 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
       runtimeDatabaseConnection?.source ??
       (values.DATABASE_URL ? "postgres" : values.NETLIFY_DB_URL ? "netlify" : null),
     authEnabled,
+    grokAuthEnabled,
+    previewPasswordSignInEnabled,
+    verifiedNetlifyPullRequestDeploy,
     aiGatewayEnabled,
+    previewCreditGrantEnabled,
+    previewCreditGrantAmount: previewGrantAmount,
     stripeBillingEnabled,
     wardenEnabled,
     productionBuildsEnabled,

@@ -1,5 +1,10 @@
 import { getRequest } from "@tanstack/react-start/server";
 import { dbSource } from "../db";
+import {
+  assertPreviewPasswordRequestOrigin,
+  PreviewPasswordRequestOriginError,
+  type PreviewPasswordRequestPolicy,
+} from "./preview-origin.server";
 import { auth, authConfigured } from "./server";
 
 /**
@@ -44,6 +49,56 @@ export class UnauthorizedError extends Error {
 
 export type VerifiedUser = { id: string; email: string | null };
 
+type SessionEnvelope = {
+  user?: { id: string; email?: string | null } | null;
+} | null;
+
+export type SessionReader = (headers: Headers) => Promise<SessionEnvelope>;
+
+export type SessionRequestOptions = Readonly<{
+  bearerToken?: string;
+  readSession?: SessionReader;
+  previewPolicy?: PreviewPasswordRequestPolicy;
+}>;
+
+const readBetterAuthSession: SessionReader = async (headers) => auth.api.getSession({ headers });
+
+/**
+ * Request-explicit session resolver used by both server functions and tests.
+ * The preview origin check intentionally runs before bearer-token handling and
+ * before Better Auth can consult a cookie/session.
+ */
+export async function getSessionUserFromRequest(
+  request: Request,
+  options: SessionRequestOptions = {},
+): Promise<VerifiedUser | null> {
+  try {
+    assertPreviewPasswordRequestOrigin(request, options.previewPolicy);
+  } catch (error) {
+    if (error instanceof PreviewPasswordRequestOriginError) return null;
+    throw error;
+  }
+
+  let headers = request.headers;
+  if (options.bearerToken) {
+    headers = new Headers(request.headers);
+    headers.set("Authorization", `Bearer ${options.bearerToken}`);
+  }
+  const session = await (options.readSession ?? readBetterAuthSession)(headers);
+  if (!session?.user) return null;
+  return { id: session.user.id, email: session.user.email ?? null };
+}
+
+/** Request-explicit counterpart used to prove the requireUserId fail-closed path. */
+export async function requireUserIdFromRequest(
+  request: Request,
+  options: SessionRequestOptions = {},
+): Promise<string> {
+  const user = await getSessionUserFromRequest(request, options);
+  if (!user) throw new UnauthorizedError();
+  return user.id;
+}
+
 /**
  * Resolve the signed-in user from the current request, or `null` when auth isn't
  * configured / nobody is signed in. Safe to call from server functions and SSR
@@ -58,14 +113,7 @@ export async function getSessionUser(bearerToken?: string): Promise<VerifiedUser
   if (!authConfigured) return null;
   const request = getRequest();
   if (!request) return null;
-  let headers = request.headers;
-  if (bearerToken) {
-    headers = new Headers(request.headers);
-    headers.set("Authorization", `Bearer ${bearerToken}`);
-  }
-  const session = await auth.api.getSession({ headers });
-  if (!session?.user) return null;
-  return { id: session.user.id, email: session.user.email ?? null };
+  return getSessionUserFromRequest(request, { bearerToken });
 }
 
 /**
@@ -89,7 +137,7 @@ export async function requireUserId(bearerToken?: string): Promise<string> {
     }
     return DEV_USER_ID;
   }
-  const user = await getSessionUser(bearerToken);
-  if (!user) throw new UnauthorizedError();
-  return user.id;
+  const request = getRequest();
+  if (!request) throw new UnauthorizedError();
+  return requireUserIdFromRequest(request, { bearerToken });
 }

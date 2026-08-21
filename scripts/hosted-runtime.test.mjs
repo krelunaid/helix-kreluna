@@ -77,9 +77,17 @@ test("hosted runtime detection is shared and excludes a local production build",
   assert.equal(runtime.isHostedRuntimeEnvironment({ LAMBDA_TASK_ROOT: "/var/task" }), true);
   assert.equal(runtime.isHostedRuntimeEnvironment({ NETLIFY_DEPLOY_ID: "deploy" }), true);
   assert.equal(runtime.isHostedRuntimeEnvironment({ DEPLOY_ID: "deploy", SITE_ID: "site" }), true);
+  assert.equal(
+    runtime.isHostedRuntimeEnvironment({ SITE_ID: "site", SITE_NAME: "helix-kreluna" }),
+    true,
+  );
   assert.equal(runtime.isHostedRuntimeEnvironment({ CONTEXT: "deploy-preview" }), true);
   assert.equal(runtime.isNetlifyRuntimeEnvironment({ AWS_LAMBDA_FUNCTION_NAME: "manual" }), false);
   assert.equal(runtime.isNetlifyRuntimeEnvironment({ NETLIFY_DEPLOY_ID: "deploy" }), true);
+  assert.equal(
+    runtime.isNetlifyRuntimeEnvironment({ SITE_ID: "site", SITE_NAME: "helix-kreluna" }),
+    true,
+  );
 });
 
 test("a direct database import fails closed in a manual hosted runtime", () => {
@@ -140,11 +148,9 @@ test("non-Netlify DATABASE_URL works and SDK/process divergence fails closed", (
 
 test("app SQL and Better Auth consume the same authoritative resolver", async () => {
   const [databaseSource, dbSource, authSource] = await Promise.all(
-    [
-      "src/lib/database-connection.server.ts",
-      "src/lib/db.ts",
-      "src/lib/auth/server.ts",
-    ].map((path) => readFile(join(ROOT, path), "utf8")),
+    ["src/lib/database-connection.server.ts", "src/lib/db.ts", "src/lib/auth/server.ts"].map(
+      (path) => readFile(join(ROOT, path), "utf8"),
+    ),
   );
   assert.match(databaseSource, /getConnectionString as getNetlifyDatabaseConnectionString/u);
   assert.match(databaseSource, /getRuntimeDatabaseConnection/u);

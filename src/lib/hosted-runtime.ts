@@ -4,6 +4,7 @@ export type HostedRuntimeEnvironment = Readonly<{
   NETLIFY_DEPLOY_ID?: string;
   DEPLOY_ID?: string;
   SITE_ID?: string;
+  SITE_NAME?: string;
   AWS_LAMBDA_FUNCTION_NAME?: string;
   LAMBDA_TASK_ROOT?: string;
   CONTEXT?: string;
@@ -27,6 +28,7 @@ export function isHostedRuntimeEnvironment(
     environment.NETLIFY?.trim() === "true" ||
     present(environment.NETLIFY_DEPLOY_ID) ||
     (present(environment.DEPLOY_ID) && present(environment.SITE_ID)) ||
+    (present(environment.SITE_ID) && present(environment.SITE_NAME)) ||
     present(environment.AWS_LAMBDA_FUNCTION_NAME) ||
     present(environment.LAMBDA_TASK_ROOT) ||
     context === "production" ||
@@ -44,6 +46,7 @@ export function isNetlifyRuntimeEnvironment(
     environment.NETLIFY?.trim() === "true" ||
     present(environment.NETLIFY_DEPLOY_ID) ||
     (present(environment.DEPLOY_ID) && present(environment.SITE_ID)) ||
+    (present(environment.SITE_ID) && present(environment.SITE_NAME)) ||
     context === "production" ||
     context === "deploy-preview" ||
     context === "branch-deploy"
