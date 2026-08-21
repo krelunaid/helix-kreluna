@@ -6,6 +6,9 @@ import {
 
 const MAX_TWIN_HTML_BYTES = 2 * 1024 * 1024;
 
+export const TWIN_HARNESS_CSP =
+  "default-src 'none'; frame-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'";
+
 function escapeAttribute(value) {
   return value
     .replaceAll("&", "&amp;")
@@ -47,7 +50,7 @@ export async function startTwinHarness(html) {
     }
     response.writeHead(200, {
       "cache-control": "private, no-store",
-      "content-security-policy": "default-src 'none'; frame-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+      "content-security-policy": TWIN_HARNESS_CSP,
       "content-type": "text/html; charset=utf-8",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",

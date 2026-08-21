@@ -6,6 +6,40 @@ Ramo di lavoro: `fix/helix-audit-20260820`
 
 Deploy Preview verificato: `bc5d7263623d3a58f7388e28afc90937406301d4`
 
+## Nota di stato successiva — 2026-08-21
+
+Questa nota registra lo stato successivo senza modificare il perimetro o le
+conclusioni dell'audit storico riportato sotto.
+
+- Il sito nel contesto **Netlify Production** è online su
+  https://helix.kreluna.it dalla base `7266658`. Terra tramite Netlify AI Gateway
+  e l'accesso Google sono attivi in quel deploy; Stripe resta disattivato.
+- “Netlify Production” indica il deploy pubblico del sito. Il livello
+  applicativo Helix denominato **Production** resta una capacità separata e
+  fail-closed secondo le guardie descritte nell'audit.
+- Il nuovo diff è ancora **locale e non deployato**. Porta il catalogo a **15
+  showcase**, esattamente **9 app/software e 6 siti**, mostra 6 progetti in
+  homepage e organizza tutti i 15 nella Vetrina con filtri e categorie.
+- La route privata `/ops` è implementata senza link nella navigazione pubblica
+  e con autorizzazione server-side basata su ID utente immutabile ed email
+  verificata. La relativa coppia amministratore è configurata come segreto nel
+  solo contesto Netlify Production; la route resta non disponibile online finché
+  questo diff non viene deployato.
+- La prova statica locale copre **90 artefatti** (15 showcase × 6 lingue). Il
+  collaudo browser locale completo ha esercitato 16 controlli per ciascuna delle
+  15 demo, con zero errori runtime/console e zero richieste esterne.
+- Il fix Nova locale porta il contratto a `3.1.0`, il tetto output da 1.200 a
+  2.400 token e impone una risposta sotto 1.800 token. Costo massimo, assenza di
+  retry e rifiuto delle risposte troncate restano invariati; nessuna nuova
+  chiamata Terra reale viene attribuita al fix.
+- Sul contenuto corrente la suite completa è verde **471/471**; TypeScript,
+  lint, build client+SSR e smoke Netlify sono verdi.
+
+Il resto del documento conserva integralmente le evidenze del Deploy Preview
+`bc5d7263623d3a58f7388e28afc90937406301d4`, inclusi i conteggi e le prove sulle
+sei flagship allora presenti. Non costituisce prova del nuovo diff locale né
+del suo deploy.
+
 ## Verdetto
 
 **Il Deploy Preview privato dell'esatto commit `bc5d7263623d3a58f7388e28afc90937406301d4` è `ready`, usa il database preview isolato con migrazioni `0001`–`0026` ed è stato verificato con login reale. Una sola generazione Prototype/Auto da 8 crediti è arrivata senza retry al Human Gate: progetto `8c92dafe-cfc7-41d5-874e-903fd6bde2b4`, job `8277afe0-b5de-4798-9a79-0646797f45fb`, stato `awaiting_human_approval`, stage `human_gate`, checkpoint `finalized` e artefatto SHA-256 `0a5aa8aabcaf32406a2e613e04d7f401bea630092cc43e6597892f2102782d6c`. Tutte le 8 chiamate AI registrate sono `succeeded`, con provider `openai` e modello richiesto/riportato `gpt-5.6-terra`; la UI generata “Test Terra”, il testo “Terra è attivo” e il pulsante “OK” sono stati verificati come FATTO/Confermato. Il saldo finale è 42, con un solo addebito di 8 crediti per questo progetto. Nessuna approvazione o pubblicazione è stata eseguita; Production e Stripe restano disattivati.**

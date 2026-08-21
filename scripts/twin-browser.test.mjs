@@ -6,7 +6,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createServer } from "vite";
-import { createTwinHarnessDocument } from "./twin-harness.mjs";
+import {
+  createTwinHarnessDocument,
+  TWIN_HARNESS_CSP,
+} from "./twin-harness.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -25,6 +28,8 @@ test("the Twin harness applies the production sandbox and CSP before artifact co
       document.indexOf("data-twin-attack"),
   );
   assert.match(document, /connect-src 'none'/);
+  assert.match(TWIN_HARNESS_CSP, /script-src 'unsafe-inline'/);
+  assert.match(TWIN_HARNESS_CSP, /connect-src 'none'/);
 });
 
 test("the server compatibility entrypoint reports not_run instead of simulating clicks", async (t) => {
@@ -177,6 +182,11 @@ test("the browser runner contains real actions, screenshots and network denial",
   assert.match(runner, /readPerformanceMetrics/);
   assert.match(runner, /route\.abort\("blockedbyclient"\)/);
   assert.match(runner, /VIEWPORTS/);
+  assert.match(runner, /\.slice\(0, 500\)/);
+  assert.match(
+    runner,
+    /controlsExercised \+= 1;[\s\S]*?frame = await loadHarnessFrame\(true\)/,
+  );
   assert.doesNotMatch(twinSource, /matchAll|buttonLabels|deadClicks/);
   assert.match(orchestrator, /job\.quality = \{[\s\S]*?\btwin\b/);
   assert.match(orchestrator, /runBrowserQuality\(/);

@@ -598,7 +598,7 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
       assert.equal("temperature" in request, false);
     } else {
       assert.equal(request.reasoning_effort, "none");
-      assert.equal(request.max_completion_tokens, providerCalls === 3 ? 800 : 1_200);
+      assert.equal(request.max_completion_tokens, providerCalls === 3 ? 800 : 2_400);
       assert.equal(request.temperature, 0.2);
     }
     if (providerCalls === 3) return new Response("unavailable", { status: 503 });

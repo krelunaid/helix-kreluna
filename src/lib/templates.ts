@@ -15,6 +15,33 @@ function matchTemplate(prompt: string) {
 	if (/vanta\b|market risk terminal|trading workstation/.test(p)) return "vanta";
 	if (/arc city|urban systems twin|smart.city twin/.test(p)) return "arc-city";
 	if (/morph\b|material configurator|automotive configurator/.test(p)) return "morph";
+	if (
+		/studio ledger|commercialist|gestional.*(?:studio|commercialist|contabil)|(?:accounting|accountant|bookkeeping).*(?:practice|firm|office|management|app|software)|(?:practice|firm).*(?:management|accounting)/.test(p)
+	) return "studio-ledger";
+	if (
+		/pulse booking|agenda appuntamenti|gestione.*appuntament|booking planner|(?:appointment|booking).*(?:planner|calendar|management|app|software)|(?:planner|calendar|management).*(?:appointment|booking)|(?:agenda|calendario).*(?:appuntament|prenotaz)|(?:appuntament|prenotaz).*(?:agenda|calendario|gestione|app|software)/.test(p)
+	) return "pulse-booking";
+	if (
+		/foundry erp|\berp\b|gestional.*(?:ordini|magazzino|crm|inventario)|(?:inventory|orders?|warehouse|stock).*(?:management|system|software)/.test(p)
+	) return "foundry-erp";
+	if (
+		/atelier nova|(?:architect(?:ure|ural)?|interior design|architett).*(?:website|site|portfolio|studio|sito)|(?:website|site|portfolio|studio|sito).*(?:architect(?:ure|ural)?|interior design|architett)/.test(p)
+	) return "atelier-nova";
+	if (
+		/casa verde|hospitality retreat|(?:hospitality|retreat|agriturismo|ospitalit).*(?:website|site|sito)|(?:website|site|sito).*(?:hospitality|retreat|agriturismo|ospitalit)/.test(p)
+	) return "casa-verde";
+	if (
+		/lumen clinic|private clinic website|(?:clinic|healthcare|medical|clinica|poliambulatorio).*(?:website|site|sito)|(?:website|site|sito).*(?:clinic|healthcare|medical|clinica|poliambulatorio)/.test(p)
+	) return "lumen-clinic";
+	if (
+		/northstar legal|legal advisory website|(?:legal|law firm|studio legale|consulenza professionale).*(?:website|site|sito)|(?:website|site|sito).*(?:legal|law firm|studio legale|consulenza professionale)/.test(p)
+	) return "northstar-legal";
+	if (
+		/velora objects|velora commerce|e.?commerce premium|premium product site|(?:e.?commerce|online store|online shop|commercio elettronico|negozio online).*(?:website|site|sito|premium|product)|(?:website|site|sito|premium product).*(?:e.?commerce|online store|online shop|commercio elettronico|negozio online)/.test(p)
+	) return "velora-commerce";
+	if (
+		/onda festival|festival culturale|cultural festival website|(?:festival|cultural event|evento culturale).*(?:website|site|sito|programme|program|programma)|(?:website|site|sito|programme|program|programma).*(?:festival|cultural event|evento culturale)/.test(p)
+	) return "festival-onda";
 	if (/sonar|tornado|radar|meteo|storm/.test(p)) return "sonar";
 	if (/remix|mixlab|musica|dj mix/.test(p)) return "mixlab";
 	if (/actstage|teatro|live show|backstage/.test(p)) return "actstage";
@@ -26,7 +53,7 @@ function matchTemplate(prompt: string) {
 	if (/moda|fashion|lookbook|maison|couture|abiti|vestit|boutique/.test(p)) return "maison";
 	if (/vino|wine|cantina|degust|cellar|enoteca/.test(p)) return "cantina";
 	if (/gioco|game|memory|puzzle|carta|carte|juego|jeu|spiel|jogo|mémoire|memoria/.test(p)) return "memory";
-	if (/todo|lista|list|task|abitudin|scadenze|tareas|tâches|aufgaben|hábitos|habits/.test(p)) return "todo";
+	if (/todo|\blista\b|\blist\b|\btask\b|abitudin|scadenze|tareas|tâches|aufgaben|hábitos|habits/.test(p)) return "todo";
 	if (/dashboard|kpi|analytics|report\b/.test(p)) return "dashboard";
 	if (/caff|ristor|bar|menu|food|trattoria|bistrot|café|cafe|cafeteria/.test(p)) return "cafe";
 	if (/portfolio|fotog|studio creativ|agenzia|architecture|arquitect|forma/.test(p)) return "portfolio";
@@ -697,6 +724,15 @@ export function htmlForPrompt(prompt: string, locale: Locale = "en") {
 		case "vanta": return buildFlagshipHtml("vanta", locale);
 		case "arc-city": return buildFlagshipHtml("arc-city", locale);
 		case "morph": return buildFlagshipHtml("morph", locale);
+		case "studio-ledger": return buildFlagshipHtml("studio-ledger", locale);
+		case "pulse-booking": return buildFlagshipHtml("pulse-booking", locale);
+		case "foundry-erp": return buildFlagshipHtml("foundry-erp", locale);
+		case "atelier-nova": return buildFlagshipHtml("atelier-nova", locale);
+		case "casa-verde": return buildFlagshipHtml("casa-verde", locale);
+		case "lumen-clinic": return buildFlagshipHtml("lumen-clinic", locale);
+		case "northstar-legal": return buildFlagshipHtml("northstar-legal", locale);
+		case "velora-commerce": return buildFlagshipHtml("velora-commerce", locale);
+		case "festival-onda": return buildFlagshipHtml("festival-onda", locale);
 		case "cafe": return buildCafeHtml(locale);
 		case "maison": return buildMaisonHtml(locale);
 		case "portfolio": return buildPortfolioHtml(locale);

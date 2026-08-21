@@ -19,8 +19,8 @@ function requestHash({ system, user, userId }) {
       model: "gpt-5.6-terra",
       system,
       user,
-      maxOutputTokens: 1_200,
-      providerMaxOutputTokens: 1_200,
+      maxOutputTokens: 2_400,
+      providerMaxOutputTokens: 2_400,
       temperature: 0.2,
       effort: "low",
       safetyIdentifier: userId ? sha256(`helix-openai-safety:${userId}`) : null,
@@ -92,7 +92,7 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
     provider: "openai",
     requestedModel: "gpt-5.6-terra",
     contractId: "nova",
-    contractVersion: "3.0.0",
+    contractVersion: "3.1.0",
     requestSha256: requestHash({ system, user, userId: "cache-owner-a" }),
   };
   await cache.writeAiResponseCache({

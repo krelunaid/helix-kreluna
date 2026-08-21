@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as GoLiveRouteImport } from './routes/go-live'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as OpsRouteImport } from './routes/ops'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as TryRouteImport } from './routes/try'
@@ -43,6 +44,11 @@ const GoLiveRoute = GoLiveRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OpsRoute = OpsRouteImport.update({
+  id: '/ops',
+  path: '/ops',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PricingRoute = PricingRouteImport.update({
@@ -106,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/go-live': typeof GoLiveRoute
   '/login': typeof LoginRoute
+  '/ops': typeof OpsRoute
   '/pricing': typeof PricingRoute
   '/studio': typeof StudioRouteWithChildren
   '/try': typeof TryRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/go-live': typeof GoLiveRoute
   '/login': typeof LoginRoute
+  '/ops': typeof OpsRoute
   '/pricing': typeof PricingRoute
   '/try': typeof TryRoute
   '/vetrina': typeof VetrinaRoute
@@ -140,6 +148,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/go-live': typeof GoLiveRoute
   '/login': typeof LoginRoute
+  '/ops': typeof OpsRoute
   '/pricing': typeof PricingRoute
   '/studio': typeof StudioRouteWithChildren
   '/try': typeof TryRoute
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/go-live'
     | '/login'
+    | '/ops'
     | '/pricing'
     | '/studio'
     | '/try'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/go-live'
     | '/login'
+    | '/ops'
     | '/pricing'
     | '/try'
     | '/vetrina'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/go-live'
     | '/login'
+    | '/ops'
     | '/pricing'
     | '/studio'
     | '/try'
@@ -210,6 +222,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   GoLiveRoute: typeof GoLiveRoute
   LoginRoute: typeof LoginRoute
+  OpsRoute: typeof OpsRoute
   PricingRoute: typeof PricingRoute
   StudioRoute: typeof StudioRouteWithChildren
   TryRoute: typeof TryRoute
@@ -248,6 +261,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ops': {
+      id: '/ops'
+      path: '/ops'
+      fullPath: '/ops'
+      preLoaderRoute: typeof OpsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pricing': {
@@ -360,6 +380,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   GoLiveRoute: GoLiveRoute,
   LoginRoute: LoginRoute,
+  OpsRoute: OpsRoute,
   PricingRoute: PricingRoute,
   StudioRoute: StudioRouteWithChildren,
   TryRoute: TryRoute,

@@ -141,6 +141,14 @@
   box-shadow: 0 0 0 1px rgb(16 24 40 / 0.1);
 }
 
+/* Project previews stay dark even when they are nested inside a light band. */
+.project-card {
+  color: var(--color-fg);
+}
+.band-light .project-card .project-card-meta {
+  color: var(--color-muted);
+}
+
 .hairline {
   box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
 }
