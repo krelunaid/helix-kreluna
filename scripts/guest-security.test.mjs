@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
+import ts from "typescript";
 import {
   buildGeneratedContentCsp,
   GENERATED_APP_SANDBOX,
@@ -23,6 +24,40 @@ import {
 } from "../src/lib/server/deploy-ownership.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+function extractSourceUrlCandidates(source) {
+  const sourceFile = ts.createSourceFile(
+    "source.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const candidates = [];
+
+  function visit(node) {
+    if (ts.isStringLiteralLike(node) || ts.isTemplateLiteralToken(node)) {
+      for (const match of node.text.matchAll(/https?:\/\/[^\s"'`<>]+/g)) {
+        candidates.push(match[0]);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return candidates;
+}
+
+function hasExactHttpsHostname(candidates, hostname) {
+  return candidates.some((candidate) => {
+    try {
+      const parsed = new URL(candidate);
+      return parsed.protocol === "https:" && parsed.hostname === hostname;
+    } catch {
+      return false;
+    }
+  });
+}
 
 test("guest publish validation enforces the UTF-8 byte limit", () => {
   assert.equal(utf8ByteLength("€"), 3);
@@ -82,8 +117,9 @@ test("generated CSP is offline by default and accepts only explicit reviewed ori
 
 test("legacy showcase hosts are not globally trusted by generated previews", () => {
   const showcase = readFileSync(join(ROOT, "src/lib/showcase.ts"), "utf8");
-  assert.equal(showcase.includes("https://images.unsplash.com"), true);
-  assert.equal(showcase.includes("https://fonts.googleapis.com"), true);
+  const sourceUrls = extractSourceUrlCandidates(showcase);
+  assert.equal(hasExactHttpsHostname(sourceUrls, "images.unsplash.com"), true);
+  assert.equal(hasExactHttpsHostname(sourceUrls, "fonts.googleapis.com"), true);
   const csp = buildGeneratedContentCsp();
   for (const origin of [
     "https://images.unsplash.com",
@@ -92,6 +128,18 @@ test("legacy showcase hosts are not globally trusted by generated previews", () 
   ]) {
     assert.equal(csp.includes(origin), false);
   }
+});
+
+test("showcase host checks reject attacker-controlled URL lookalikes", () => {
+  const sourceUrls = extractSourceUrlCandidates(`
+    const suffix = "https://images.unsplash.com.evil.example/photo";
+    const prefix = "https://evil-images.unsplash.com/photo";
+    const embedded = "https://evil.example/https://fonts.googleapis.com/css2";
+    const insecure = "http://fonts.googleapis.com/css2";
+  `);
+
+  assert.equal(hasExactHttpsHostname(sourceUrls, "images.unsplash.com"), false);
+  assert.equal(hasExactHttpsHostname(sourceUrls, "fonts.googleapis.com"), false);
 });
 
 test("CSP is parsed before generated executable markup and protection is idempotent", () => {

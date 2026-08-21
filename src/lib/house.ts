@@ -285,6 +285,38 @@ function visibleHtmlText(source: string): string {
   return text.join("").replace(/\s+/gu, " ").trim();
 }
 
+function markupImageUrlCandidates(source: string): string[] {
+  const candidates: string[] = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    const opening = source.indexOf("<", cursor);
+    if (opening === -1) break;
+    if (source.startsWith("<!--", opening)) {
+      const commentEnd = source.indexOf("-->", opening + 4);
+      cursor = commentEnd === -1 ? source.length : commentEnd + 3;
+      continue;
+    }
+    const tag = readHtmlTag(source, opening);
+    cursor = tag?.end ?? opening + 1;
+    if (!tag || tag.closing || tag.name !== "img") continue;
+    for (const match of source.slice(opening, tag.end).matchAll(/https?:\/\/[^\s"'`<>]+/giu)) {
+      candidates.push(match[0]);
+    }
+  }
+  return candidates;
+}
+
+function hasExactUnsplashImage(source: string): boolean {
+  return markupImageUrlCandidates(source).some((candidate) => {
+    try {
+      const url = new URL(candidate);
+      return url.protocol === "https:" && url.hostname === "images.unsplash.com" && url.port === "" && url.username === "" && url.password === "";
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function localExperts(html: string, prompt: string): LocalFinding[] {
   const out: LocalFinding[] = [];
   const h = html.toLowerCase();
@@ -295,7 +327,7 @@ export function localExperts(html: string, prompt: string): LocalFinding[] {
   if (/eval\(|innerhtml\s*=/.test(h)) {
     out.push({ agent: "aegis", must: true, note: "Dangerous HTML injection / eval." });
   }
-  if (!h.includes("https://images.unsplash.com/") && ["sito", "site", "caff", "cafe", "studio", "landing"].some((term) => normalizedPrompt.includes(term))) {
+  if (!hasExactUnsplashImage(html) && ["sito", "site", "caff", "cafe", "studio", "landing"].some((term) => normalizedPrompt.includes(term))) {
     out.push({ agent: "lumen", must: false, note: "No photography. Brand sites need real photos." });
   }
   if (!/<label/i.test(html) && /<input/i.test(html)) {

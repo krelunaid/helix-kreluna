@@ -211,6 +211,36 @@ test("Aegis produces measured, redacted and release-blocking evidence", async (t
     assert.equal(hasPatchBlocker(fakeClosing), true);
     assert.equal(hasPatchBlocker(validClosing), false);
   });
+
+  await t.test("Unsplash photography requires an exact parsed HTTPS image host", () => {
+    const hasMissingPhotographyFinding = (url) =>
+      house
+        .localExperts(`<html lang="en"><title>Landing</title><img src="${url}" alt="Hero"><button>Go</button></html>`, "Build a landing site")
+        .some((finding) => finding.agent === "lumen");
+
+    assert.equal(
+      hasMissingPhotographyFinding(
+        "https://evil.invalid/https://images.unsplash.com/photo-example",
+      ),
+      true,
+    );
+    assert.equal(
+      hasMissingPhotographyFinding("https://images.unsplash.com.evil.invalid/photo-example"),
+      true,
+    );
+    assert.equal(
+      hasMissingPhotographyFinding("https://user@images.unsplash.com/photo-example"),
+      true,
+    );
+    assert.equal(
+      hasMissingPhotographyFinding("https://images.unsplash.com:8443/photo-example"),
+      true,
+    );
+    assert.equal(
+      hasMissingPhotographyFinding("https://images.unsplash.com/photo-example"),
+      false,
+    );
+  });
 });
 
 test("generation and repair prompts preserve the offline security boundary", async () => {
