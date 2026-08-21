@@ -12,6 +12,7 @@ import { AiProviderRegistry } from "@/lib/server/ai/provider";
 import {
   createOpenAiGatewayChatCompletionProvider,
   MIN_REASONING_PROVIDER_OUTPUT_TOKENS,
+  resolveOpenAiGatewayConfiguration,
 } from "@/lib/server/ai/providers/openai";
 import {
   AiProviderError,
@@ -59,11 +60,10 @@ export type AgentCompletionInput = Readonly<{
 }>;
 
 function configuredProviders(): AiProviderRegistry {
-  const gatewayKey = process.env.NETLIFY_AI_GATEWAY_KEY?.trim();
-  const baseUrl = process.env.NETLIFY_AI_GATEWAY_BASE_URL?.trim();
+  const configuration = resolveOpenAiGatewayConfiguration();
   return new AiProviderRegistry(
-    gatewayKey && baseUrl
-      ? [createOpenAiGatewayChatCompletionProvider({ gatewayKey, baseUrl })]
+    configuration
+      ? [createOpenAiGatewayChatCompletionProvider(configuration)]
       : [],
   );
 }

@@ -57,17 +57,43 @@ test("manual hosted runtimes fail closed without NETLIFY=true", async (t) => {
   assert.doesNotThrow(() =>
     environment.validateServerEnvironment({
       ...hosted,
+      NETLIFY_AI_GATEWAY_KEY: ["partial", "runtime", "pair"].join("-"),
+    }),
+  );
+
+  assert.doesNotThrow(() =>
+    environment.validateServerEnvironment({
+      ...hosted,
       HELIX_AI_GATEWAY_ENABLED: "true",
     }),
+  );
+  const hostedWithCompatibilityFallback = environment.validateServerEnvironment({
+    ...hosted,
+    HELIX_AI_GATEWAY_ENABLED: "true",
+    NETLIFY_AI_GATEWAY_KEY: ["partial", "runtime", "pair"].join("-"),
+    OPENAI_API_KEY: ["offline", "platform", "gateway", "key"].join("-"),
+    OPENAI_BASE_URL: "https://platform-gateway.example.test/v1",
+  });
+  assert.equal(hostedWithCompatibilityFallback.aiGatewayEnabled, true);
+  assert.throws(
+    () =>
+      environment.validateServerEnvironment({
+        ...hosted,
+        HELIX_AI_GATEWAY_ENABLED: "true",
+        OPENAI_API_KEY: ["direct", "provider", "key"].join("-"),
+        OPENAI_BASE_URL: "https://api.openai.com/v1",
+      }),
+    /OPENAI_BASE_URL/u,
   );
   assert.throws(
     () =>
       environment.validateServerEnvironment({
         ...hosted,
         HELIX_AI_GATEWAY_ENABLED: "true",
-        NETLIFY_AI_GATEWAY_KEY: ["partial", "runtime", "pair"].join("-"),
+        OPENAI_API_KEY: ["insecure", "gateway", "key"].join("-"),
+        OPENAI_BASE_URL: "http://gateway.example.test",
       }),
-    /NETLIFY_AI_GATEWAY_BASE_URL/u,
+    /OPENAI_BASE_URL/u,
   );
   const hostedWithAi = environment.validateServerEnvironment({
     ...hosted,

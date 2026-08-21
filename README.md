@@ -112,10 +112,14 @@ falliscono chiuse. La preview tester non espone signup o endpoint di grant.
 
 Le chiamate AI sono disabilitate per default con
 `HELIX_AI_GATEWAY_ENABLED=false`. Per abilitarle il runtime server deve ricevere
-insieme `NETLIFY_AI_GATEWAY_KEY` e `NETLIFY_AI_GATEWAY_BASE_URL`, iniettati a
-runtime per Netlify AI Gateway; non sono variabili browser e non sostituiscono
-le credenziali del broker OAuth. Se lo switch o la coppia mancano, la
-generazione fallisce chiusa senza traffico provider.
+una coppia Netlify AI Gateway completa: Helix preferisce
+`NETLIFY_AI_GATEWAY_KEY` + `NETLIFY_AI_GATEWAY_BASE_URL` quando entrambe sono
+presenti, altrimenti usa insieme `OPENAI_API_KEY` + `OPENAI_BASE_URL`, gli alias
+OpenAI-compatible iniettati dalla piattaforma. Le coppie incomplete non vengono
+mai combinate e l'endpoint diretto `api.openai.com` è rifiutato. Queste non sono
+variabili browser e non sostituiscono le credenziali del broker OAuth. Se lo
+switch o una coppia completa mancano, la generazione fallisce chiusa prima
+della prenotazione, senza traffico provider.
 
 `VITE_PUBLIC_HOSTNAME` è l’unica convenzione pubblica per l’host e non contiene
 schema o percorso (esempio: `helix.kreluna.it`). Le credenziali OAuth upstream

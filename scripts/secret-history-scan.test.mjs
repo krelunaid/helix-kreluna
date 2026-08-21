@@ -114,10 +114,11 @@ test("scanner finds deleted reachable blobs without printing the secret", (t) =>
 test("scanner detects AI Gateway credential names without printing their values", (t) => {
   const repo = fixture(t);
   const netlifyGatewaySecret = randomBytes(32).toString("base64url");
+  const openAiCompatibilitySecret = randomBytes(32).toString("base64url");
   const genericGatewaySecret = randomBytes(32).toString("base64url");
   writeFileSync(
     join(repo, "gateway.env"),
-    `NETLIFY_AI_GATEWAY_KEY=${netlifyGatewaySecret}\n`,
+    `NETLIFY_AI_GATEWAY_KEY=${netlifyGatewaySecret}\nOPENAI_API_KEY=${openAiCompatibilitySecret}\n`,
     "utf8",
   );
   writeFileSync(
@@ -130,16 +131,16 @@ test("scanner detects AI Gateway credential names without printing their values"
   const combined = output(result);
   assert.equal(result.status, 1, combined);
   assert.equal(combined.includes(netlifyGatewaySecret), false);
+  assert.equal(combined.includes(openAiCompatibilitySecret), false);
   assert.equal(combined.includes(genericGatewaySecret), false);
   const findings = findingRecords(result, "SECRET_WORKTREE_FINDING");
-  assert.ok(
-    findings.some(
-      (finding) =>
-        finding.file === "gateway.env" &&
-        finding.rule === "dotenv-credential" &&
-        /^sha256:[a-f0-9]{64}$/.test(finding.fingerprint),
-    ),
+  const dotenvGatewayFindings = findings.filter(
+    (finding) =>
+      finding.file === "gateway.env" &&
+      finding.rule === "dotenv-credential" &&
+      /^sha256:[a-f0-9]{64}$/.test(finding.fingerprint),
   );
+  assert.equal(dotenvGatewayFindings.length, 2);
   assert.ok(
     findings.some(
       (finding) =>

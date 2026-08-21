@@ -32,10 +32,14 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
   const previousEnabled = process.env.HELIX_AI_GATEWAY_ENABLED;
   const previousKey = process.env.NETLIFY_AI_GATEWAY_KEY;
   const previousBaseUrl = process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+  const previousOpenAiKey = process.env.OPENAI_API_KEY;
+  const previousOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
   const previousFetch = globalThis.fetch;
   delete process.env.HELIX_AI_GATEWAY_ENABLED;
   delete process.env.NETLIFY_AI_GATEWAY_KEY;
   delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_BASE_URL;
   t.after(() => {
     globalThis.fetch = previousFetch;
     if (previousEnabled === undefined) delete process.env.HELIX_AI_GATEWAY_ENABLED;
@@ -44,6 +48,10 @@ test("authenticated AI response caching is isolated, evidenced and TTL-bound", a
     else process.env.NETLIFY_AI_GATEWAY_KEY = previousKey;
     if (previousBaseUrl === undefined) delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
     else process.env.NETLIFY_AI_GATEWAY_BASE_URL = previousBaseUrl;
+    if (previousOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previousOpenAiKey;
+    if (previousOpenAiBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
+    else process.env.OPENAI_BASE_URL = previousOpenAiBaseUrl;
   });
 
   const vite = await createServer({

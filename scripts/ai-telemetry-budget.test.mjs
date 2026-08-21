@@ -232,6 +232,14 @@ test("AI provider usage and budget accounting stay evidence-bound", async (t) =>
         }),
       /NETLIFY_AI_GATEWAY_CONFIGURATION_INVALID/,
     );
+    assert.throws(
+      () =>
+        openai.createOpenAiGatewayChatCompletionProvider({
+          gatewayKey: "test-only-key",
+          baseUrl: "https://api.openai.com",
+        }),
+      /NETLIFY_AI_GATEWAY_CONFIGURATION_INVALID/,
+    );
     await assert.rejects(
       adapter.complete({
         model: "gpt-5.6-terra",
@@ -251,6 +259,44 @@ test("AI provider usage and budget accounting stay evidence-bound", async (t) =>
     assert.equal(registry.get("openai"), adapter);
     assert.throws(() => registry.get("unconfigured"), /AI_PROVIDER_NOT_CONFIGURED/);
     assert.throws(() => registry.register(adapter), /AI_PROVIDER_DUPLICATE/);
+
+    const compatibilityFallback = openai.resolveOpenAiGatewayConfiguration({
+      NETLIFY_AI_GATEWAY_KEY: "partial-native-placeholder",
+      OPENAI_API_KEY: "compatibility-placeholder-key",
+      OPENAI_BASE_URL: "https://compatibility-gateway.test/v1",
+    });
+    assert.deepEqual(compatibilityFallback, {
+      gatewayKey: "compatibility-placeholder-key",
+      baseUrl: "https://compatibility-gateway.test/v1",
+      source: "openai_compatibility",
+    });
+
+    const nativePreferred = openai.resolveOpenAiGatewayConfiguration({
+      NETLIFY_AI_GATEWAY_KEY: "native-placeholder-key",
+      NETLIFY_AI_GATEWAY_BASE_URL: "https://native-gateway.test",
+      OPENAI_API_KEY: "compatibility-placeholder-key",
+      OPENAI_BASE_URL: "https://compatibility-gateway.test/v1",
+    });
+    assert.deepEqual(nativePreferred, {
+      gatewayKey: "native-placeholder-key",
+      baseUrl: "https://native-gateway.test",
+      source: "netlify",
+    });
+    assert.equal(
+      openai.resolveOpenAiGatewayConfiguration({
+        NETLIFY_AI_GATEWAY_KEY: "partial-native-placeholder",
+        OPENAI_BASE_URL: "https://partial-compatibility.test",
+      }),
+      null,
+    );
+    assert.throws(
+      () =>
+        openai.resolveOpenAiGatewayConfiguration({
+          OPENAI_API_KEY: "direct-provider-placeholder",
+          OPENAI_BASE_URL: "https://api.openai.com/v1",
+        }),
+      /NETLIFY_AI_GATEWAY_CONFIGURATION_INVALID/u,
+    );
   });
 
   await t.test("incomplete, filtered and refused responses fail closed", () => {
@@ -531,10 +577,14 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
   const previousEnabled = process.env.HELIX_AI_GATEWAY_ENABLED;
   const previousKey = process.env.NETLIFY_AI_GATEWAY_KEY;
   const previousBaseUrl = process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+  const previousOpenAiKey = process.env.OPENAI_API_KEY;
+  const previousOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
   const previousFetch = globalThis.fetch;
   process.env.HELIX_AI_GATEWAY_ENABLED = "true";
   process.env.NETLIFY_AI_GATEWAY_KEY = ["gateway", "test", "key"].join("-");
   process.env.NETLIFY_AI_GATEWAY_BASE_URL = "https://gateway.test";
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_BASE_URL;
   let providerCalls = 0;
   globalThis.fetch = async (url, init) => {
     providerCalls += 1;
@@ -581,6 +631,10 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
     else process.env.NETLIFY_AI_GATEWAY_KEY = previousKey;
     if (previousBaseUrl === undefined) delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
     else process.env.NETLIFY_AI_GATEWAY_BASE_URL = previousBaseUrl;
+    if (previousOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previousOpenAiKey;
+    if (previousOpenAiBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
+    else process.env.OPENAI_BASE_URL = previousOpenAiBaseUrl;
   });
 
   const vite = await createServer({
@@ -621,6 +675,10 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
   job.runtime = { workerId, abortSignal: new AbortController().signal };
 
   delete process.env.HELIX_AI_GATEWAY_ENABLED;
+  process.env.NETLIFY_AI_GATEWAY_KEY = "partial-native-placeholder";
+  delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+  process.env.OPENAI_API_KEY = "platform-compatibility-placeholder";
+  process.env.OPENAI_BASE_URL = "https://platform-gateway.test/v1";
   await assert.rejects(
     gateway.requestAgentCompletion({
       job,
@@ -637,6 +695,9 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
   );
   process.env.HELIX_AI_GATEWAY_ENABLED = "true";
   delete process.env.NETLIFY_AI_GATEWAY_KEY;
+  delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_BASE_URL;
   await assert.rejects(
     gateway.requestAgentCompletion({
       job,
@@ -654,6 +715,7 @@ test("the gateway enforces and persists the real Helix call path", async (t) => 
       error.retryable === false,
   );
   process.env.NETLIFY_AI_GATEWAY_KEY = ["gateway", "test", "key"].join("-");
+  process.env.NETLIFY_AI_GATEWAY_BASE_URL = "https://gateway.test";
   await assert.rejects(
     gateway.requestAgentCompletion({
       job,

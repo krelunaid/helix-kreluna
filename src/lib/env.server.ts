@@ -3,6 +3,7 @@ import { getRuntimeDatabaseConnection } from "@/lib/database-connection.server";
 import { isHostedRuntimeEnvironment } from "@/lib/hosted-runtime";
 import { normalizePublicHostname, publicOriginFromHostname } from "@/lib/env.shared";
 import { verifyNetlifyPullRequestDeploy } from "@/lib/preview-deploy";
+import { resolveOpenAiGatewayConfiguration } from "@/lib/server/ai/providers/openai";
 import { PREVIEW_TEST_CREDIT_GRANT } from "@/lib/server/preview-credit-grant";
 import { WardenPolicySchema } from "@/lib/server/operations/warden";
 
@@ -21,6 +22,8 @@ const rawEnvironmentSchema = z.object({
   HELIX_PREVIEW_EXPECTED_COMMIT_REF: optionalText,
   NETLIFY_AI_GATEWAY_KEY: optionalText,
   NETLIFY_AI_GATEWAY_BASE_URL: optionalText,
+  OPENAI_API_KEY: optionalText,
+  OPENAI_BASE_URL: optionalText,
   DATABASE_URL: optionalText,
   NETLIFY_DB_URL: optionalText,
   BETTER_AUTH_SECRET: optionalText,
@@ -205,29 +208,19 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   if (values.NETLIFY_DB_URL && !isPostgresUrl(values.NETLIFY_DB_URL)) {
     invalid.push("NETLIFY_DB_URL");
   }
-  const aiGatewayNames = ["NETLIFY_AI_GATEWAY_KEY", "NETLIFY_AI_GATEWAY_BASE_URL"] as const;
-  const configuredAiGatewayNames = aiGatewayNames.filter((name) => Boolean(values[name]));
-  if (
-    configuredAiGatewayNames.length > 0 &&
-    configuredAiGatewayNames.length !== aiGatewayNames.length
-  ) {
-    for (const name of aiGatewayNames) required(name);
-  }
-  if (values.NETLIFY_AI_GATEWAY_BASE_URL) {
+  // Gateway credentials are injected into server compute, not necessarily the
+  // build. Keep disabled startup non-mutating/tolerant and validate only the
+  // complete pair that the call boundary would select. A partial native pair
+  // may coexist with a complete OpenAI-compatible Netlify pair.
+  if (aiGatewayEnabled) {
+    const selectedBaseName =
+      values.NETLIFY_AI_GATEWAY_KEY && values.NETLIFY_AI_GATEWAY_BASE_URL
+        ? "NETLIFY_AI_GATEWAY_BASE_URL"
+        : "OPENAI_BASE_URL";
     try {
-      const gatewayUrl = new URL(values.NETLIFY_AI_GATEWAY_BASE_URL);
-      const loopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(gatewayUrl.hostname);
-      if (
-        (gatewayUrl.protocol !== "https:" && !(loopback && gatewayUrl.protocol === "http:")) ||
-        gatewayUrl.username ||
-        gatewayUrl.password ||
-        gatewayUrl.search ||
-        gatewayUrl.hash
-      ) {
-        invalid.push("NETLIFY_AI_GATEWAY_BASE_URL");
-      }
+      resolveOpenAiGatewayConfiguration(values);
     } catch {
-      invalid.push("NETLIFY_AI_GATEWAY_BASE_URL");
+      invalid.push(selectedBaseName);
     }
   }
   const isolatedNetlifyBranch =

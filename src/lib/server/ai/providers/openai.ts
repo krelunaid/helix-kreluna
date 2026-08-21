@@ -11,6 +11,19 @@ import {
 export const HELIX_OPENAI_MODEL = "gpt-5.6-terra" as const;
 export const MIN_REASONING_PROVIDER_OUTPUT_TOKENS = 25_000;
 
+export type OpenAiGatewayEnvironment = Readonly<{
+  NETLIFY_AI_GATEWAY_KEY?: string;
+  NETLIFY_AI_GATEWAY_BASE_URL?: string;
+  OPENAI_API_KEY?: string;
+  OPENAI_BASE_URL?: string;
+}>;
+
+export type OpenAiGatewayConfiguration = Readonly<{
+  gatewayKey: string;
+  baseUrl: string;
+  source: "netlify" | "openai_compatibility";
+}>;
+
 type JsonRecord = Record<string, unknown>;
 
 function record(value: unknown): JsonRecord | null {
@@ -25,6 +38,36 @@ function nonNegativeSafeInteger(value: unknown): number | null {
 
 function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Netlify exposes both its native Gateway names and OpenAI-compatible names.
+ * A complete native pair wins deterministically; otherwise a complete
+ * compatibility pair is accepted. Incomplete pairs are never combined.
+ */
+export function resolveOpenAiGatewayConfiguration(
+  environment: OpenAiGatewayEnvironment = process.env,
+): OpenAiGatewayConfiguration | null {
+  const netlifyKey = nonEmptyString(environment.NETLIFY_AI_GATEWAY_KEY);
+  const netlifyBaseUrl = nonEmptyString(environment.NETLIFY_AI_GATEWAY_BASE_URL);
+  const openAiKey = nonEmptyString(environment.OPENAI_API_KEY);
+  const openAiBaseUrl = nonEmptyString(environment.OPENAI_BASE_URL);
+  const configuration =
+    netlifyKey && netlifyBaseUrl
+      ? { gatewayKey: netlifyKey, baseUrl: netlifyBaseUrl, source: "netlify" as const }
+      : openAiKey && openAiBaseUrl
+        ? {
+            gatewayKey: openAiKey,
+            baseUrl: openAiBaseUrl,
+            source: "openai_compatibility" as const,
+          }
+        : null;
+  if (!configuration) return null;
+
+  // Validate the selected pair at the same boundary that constructs the final
+  // Chat Completions URL. The key is deliberately never included in errors.
+  gatewayEndpoint(configuration.baseUrl);
+  return Object.freeze(configuration);
 }
 
 /** Parse only OpenAI's documented Chat Completions token fields. */
@@ -149,9 +192,12 @@ function gatewayEndpoint(baseUrl: string): string {
       cause: error,
     });
   }
-  const loopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(endpoint.hostname);
+  const hostname = endpoint.hostname.toLowerCase().replace(/\.+$/u, "");
+  const loopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(hostname);
+  const directOpenAiHost = hostname === "openai.com" || hostname.endsWith(".openai.com");
   if (
     (endpoint.protocol !== "https:" && !(loopback && endpoint.protocol === "http:")) ||
+    directOpenAiHost ||
     endpoint.username ||
     endpoint.password ||
     endpoint.search ||

@@ -17,11 +17,15 @@ delete process.env.NETLIFY_AI_GATEWAY_BASE_URL;
 process.env.BETTER_AUTH_URL = "http://localhost:8080";
 if (auth401Mode) {
   process.env.VITE_AUTH_ENABLED = "true";
+  process.env.VITE_GROK_AUTH_ENABLED = "true";
+  process.env.VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED = "false";
   process.env.BETTER_AUTH_SECRET = "s".repeat(48);
   process.env.GROK_AUTH_CLIENT_ID = "phase2-smoke-client";
   process.env.GROK_AUTH_CLIENT_SECRET = "c".repeat(48);
 } else {
   process.env.VITE_AUTH_ENABLED = "false";
+  process.env.VITE_GROK_AUTH_ENABLED = "false";
+  process.env.VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED = "false";
   delete process.env.GROK_AUTH_CLIENT_ID;
   delete process.env.GROK_AUTH_CLIENT_SECRET;
 }
@@ -130,11 +134,16 @@ if (auth401Mode) {
   assert.equal(unauthorized.response.headers.get("cache-control"), "no-store");
   console.log(JSON.stringify({ unauthorizedStatus: unauthorized.response.status }));
 } else {
-  const paidPlan = await callPost("choosePlan", "standard");
+  const paidPlan = await callPost("choosePlan", {
+    planId: "standard",
+    requestId: crypto.randomUUID(),
+  });
   assert.equal(paidPlan.value?.error?.message, "PAYMENTS_NOT_AVAILABLE");
   assert.equal(paidPlan.response.status, 503);
 
-  const topUp = await callPost("buyExtraCredits", undefined, false);
+  const topUp = await callPost("buyExtraCredits", {
+    requestId: crypto.randomUUID(),
+  });
   assert.equal(topUp.value?.error?.message, "PAYMENTS_NOT_AVAILABLE");
   assert.equal(topUp.response.status, 503);
 
@@ -215,6 +224,12 @@ if (auth401Mode) {
     projectId: publishProjectId,
     userId: "dev-user",
     createdAt: Date.now(),
+    requestFingerprint,
+    checkpoint: {
+      pipelineVersion: "helix-v3",
+      requestFingerprint,
+      stage: "human_gate",
+    },
   });
   await pg.query(
     `insert into profiles (user_id, plan, credits_balance)
