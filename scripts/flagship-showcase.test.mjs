@@ -13,6 +13,15 @@ const EXPECTED = [
   "vanta",
   "arc-city",
   "morph",
+  "studio-ledger",
+  "pulse-booking",
+  "foundry-erp",
+  "atelier-nova",
+  "casa-verde",
+  "lumen-clinic",
+  "northstar-legal",
+  "velora-commerce",
+  "festival-onda",
 ];
 
 function extractSingleInlineScript(html) {
@@ -51,7 +60,7 @@ test("inline script extraction handles case-insensitive HTML end tags", () => {
   );
 });
 
-test("the showcase contains six honest and distinct flagship products", async (t) => {
+test("the showcase contains fifteen honest and distinct flagship products", async (t) => {
   const vite = await createServer({
     root: ROOT,
     configFile: false,
@@ -69,18 +78,27 @@ test("the showcase contains six honest and distinct flagship products", async (t
     vite.ssrLoadModule("/src/lib/server/quality/aegis.ts"),
   ]);
 
-  await t.test("the primary registry is exactly six and the legacy set is archived", () => {
+  await t.test("the primary registry is exactly fifteen and the legacy set is archived", () => {
     assert.deepEqual([...catalog.FLAGSHIP_IDS], EXPECTED);
-    assert.equal(new Set(catalog.FLAGSHIP_IDS).size, 6);
-    assert.deepEqual([...catalog.HOME_FLAGSHIP_IDS], [
-      "morph",
-      "vanta",
-      "orbit-command",
-    ]);
+    assert.equal(new Set(catalog.FLAGSHIP_IDS).size, 15);
+    assert.deepEqual(
+      [...catalog.HOME_FLAGSHIP_IDS],
+      [
+        "studio-ledger",
+        "pulse-booking",
+        "morph",
+        "atelier-nova",
+        "lumen-clinic",
+        "velora-commerce",
+      ],
+    );
 
     const primary = templates.featuredFor("en");
     const archived = templates.archivedFor("en");
-    assert.deepEqual(primary.map((entry) => entry.id), EXPECTED);
+    assert.deepEqual(
+      primary.map((entry) => entry.id),
+      EXPECTED,
+    );
     assert.equal(archived.length, 15);
     assert.equal(
       archived.some((entry) => entry.id === "sonar"),
@@ -94,6 +112,7 @@ test("the showcase contains six honest and distinct flagship products", async (t
 
   await t.test("metadata never invents agents, time or Kreluna Score", () => {
     const signatures = new Set();
+    const surfaces = { app: 0, site: 0 };
     for (const entry of catalog.flagshipFor("en")) {
       assert.equal(Object.hasOwn(entry, "cover"), false);
       assert.equal(entry.agents, undefined);
@@ -103,17 +122,36 @@ test("the showcase contains six honest and distinct flagship products", async (t
       assert.ok(entry.capability.length > 30);
       assert.ok(entry.proof.length > 20);
       assert.equal(entry.interactionTarget, 8);
+      assert.ok(entry.categoryLabel.length > 3);
+      assert.ok(entry.surface === "app" || entry.surface === "site");
+      surfaces[entry.surface] += 1;
       const signature = JSON.stringify(entry.visual);
       assert.equal(signatures.has(signature), false, `${entry.id} repeats a visual system`);
       signatures.add(signature);
     }
-    assert.equal(signatures.size, 6);
+    assert.equal(signatures.size, 15);
+    assert.deepEqual(surfaces, { app: 9, site: 6 });
   });
 
-  await t.test("all 36 localized artifacts are offline, actionable and Aegis-clean", async () => {
-    const english = new Map(
-      EXPECTED.map((id) => [id, catalog.buildFlagshipHtml(id, "en")]),
-    );
+  await t.test("the nine new projects have genuine metadata translations", () => {
+    const translatedFields = ["title", "kind", "prompt", "capability", "proof"];
+    const english = new Map(catalog.flagshipFor("en").map((entry) => [entry.id, entry]));
+    for (const locale of ["es", "fr", "de", "pt"]) {
+      const localized = new Map(catalog.flagshipFor(locale).map((entry) => [entry.id, entry]));
+      for (const id of EXPECTED.slice(6)) {
+        for (const field of translatedFields) {
+          assert.notEqual(
+            localized.get(id)?.[field],
+            english.get(id)?.[field],
+            `${id}/${locale} kept the English ${field}`,
+          );
+        }
+      }
+    }
+  });
+
+  await t.test("all 90 localized artifacts are offline, actionable and Aegis-clean", async () => {
+    const english = new Map(EXPECTED.map((id) => [id, catalog.buildFlagshipHtml(id, "en")]));
     for (const locale of i18n.LOCALES) {
       for (const id of EXPECTED) {
         const html = catalog.buildFlagshipHtml(id, locale);
@@ -134,9 +172,9 @@ test("the showcase contains six honest and distinct flagship products", async (t
           `${id}/${locale} contains invalid JavaScript`,
         );
 
-        const actions = [
-          ...html.matchAll(/\bdata-action="([a-z0-9-]+)"/g),
-        ].map((match) => match[1]);
+        const actions = [...html.matchAll(/\bdata-action="([a-z0-9-]+)"/g)].map(
+          (match) => match[1],
+        );
         assert.ok(actions.length >= 8, `${id}/${locale} exposes fewer than eight controls`);
         assert.ok(
           new Set(actions).size >= 5,
@@ -159,6 +197,31 @@ test("the showcase contains six honest and distinct flagship products", async (t
     }
   });
 
+  await t.test("the mobile business-suite navigation stays named, tappable and width-safe", () => {
+    for (const locale of i18n.LOCALES) {
+      const ledger = catalog.buildFlagshipHtml("studio-ledger", locale);
+      const booking = catalog.buildFlagshipHtml("pulse-booking", locale);
+      const foundry = catalog.buildFlagshipHtml("foundry-erp", locale);
+
+      assert.equal(
+        [...ledger.matchAll(/class="nav-button"[^>]*aria-label="[^"]+"/g)].length,
+        5,
+        `studio-ledger/${locale} has an unnamed navigation target`,
+      );
+      assert.match(ledger, /\.nav-button\{width:44px;min-height:44px\}/);
+
+      assert.equal(
+        [...booking.matchAll(/class="rail-button"[^>]*aria-label="[^"]+"/g)].length,
+        4,
+        `pulse-booking/${locale} has an unnamed navigation target`,
+      );
+      assert.match(booking, /\.rail-button\{width:44px;min-height:44px;aspect-ratio:1\}/);
+
+      assert.match(foundry, /\.mast\{grid-template-columns:58px minmax\(0,1fr\)\}/);
+      assert.match(foundry, /\.global-search\{min-width:0;width:auto;margin-left:0\}/);
+    }
+  });
+
   await t.test("every flagship is addressable by both catalog and prompt routing", () => {
     for (const id of EXPECTED) {
       assert.match(templates.featuredHtml(id, "it"), new RegExp(`data-flagship="${id}"`));
@@ -170,20 +233,74 @@ test("the showcase contains six honest and distinct flagship products", async (t
       vanta: "Build Vanta market risk terminal",
       "arc-city": "Build Arc City urban systems twin",
       morph: "Build Morph automotive material configurator",
+      "studio-ledger": "Build Studio Ledger for a commercialista practice",
+      "pulse-booking": "Build Pulse Booking appointment planner",
+      "foundry-erp": "Build Foundry ERP for inventory and orders",
+      "atelier-nova": "Build Atelier Nova architecture portfolio",
+      "casa-verde": "Build Casa Verde hospitality retreat website",
+      "lumen-clinic": "Build Lumen Clinic private clinic website",
+      "northstar-legal": "Build Northstar Legal advisory website",
+      "velora-commerce": "Build Velora Objects premium commerce website",
+      "festival-onda": "Build Onda Festival cultural programme website",
     };
     for (const [id, prompt] of Object.entries(prompts)) {
       assert.match(templates.htmlForPrompt(prompt, "fr"), new RegExp(`data-flagship="${id}"`));
+    }
+
+    const naturalPrompts = [
+      ["studio-ledger", "Build an accounting practice management app", "en"],
+      ["studio-ledger", "Crea un gestionale per uno studio commercialista", "it"],
+      ["pulse-booking", "Build a booking app for client appointments", "en"],
+      ["pulse-booking", "Crea un'app per la gestione degli appuntamenti", "it"],
+      ["foundry-erp", "Build an ERP for inventory and orders", "en"],
+      ["foundry-erp", "Crea un ERP per magazzino e ordini", "it"],
+      ["atelier-nova", "Build an architecture studio website", "en"],
+      ["atelier-nova", "Crea un sito web per uno studio di architettura", "it"],
+      ["casa-verde", "Build a hospitality website for a countryside retreat", "en"],
+      ["casa-verde", "Crea un sito per un agriturismo con ospitalità diffusa", "it"],
+      ["lumen-clinic", "Build a private clinic website", "en"],
+      ["lumen-clinic", "Crea un sito per una clinica privata", "it"],
+      ["northstar-legal", "Build a law firm website", "en"],
+      ["northstar-legal", "Crea un sito per uno studio legale", "it"],
+      ["velora-commerce", "Build a premium e-commerce website", "en"],
+      ["velora-commerce", "Crea un sito e-commerce per prodotti premium", "it"],
+      ["festival-onda", "Build a cultural festival website", "en"],
+      ["festival-onda", "Crea un sito per un festival culturale", "it"],
+    ];
+    for (const [id, prompt, locale] of naturalPrompts) {
+      assert.match(
+        templates.htmlForPrompt(prompt, locale),
+        new RegExp(`data-flagship="${id}"`),
+        `${locale} prompt did not route to ${id}`,
+      );
+    }
+
+    const legacyPrompts = [
+      ["Build a photography portfolio", "Studio Forma"],
+      ["Build Aurelia luxury resort", "Aurelia"],
+      ["Build a task list app", "Lists"],
+      ["Build a restaurant menu", "Caffè Luna"],
+      ["Build Maison fashion lookbook", "Maison Vale"],
+      ["Build a wine cellar website", "Cantina Oro"],
+      ["Build invoice management software", "Ledger"],
+    ];
+    for (const [prompt, title] of legacyPrompts) {
+      assert.ok(
+        templates.htmlForPrompt(prompt, "en").includes(`<title>${title}</title>`),
+        `legacy prompt no longer routes to ${title}`,
+      );
     }
   });
 });
 
 test("Home, Vetrina and public routing use the real localized app preview", async () => {
-  const [home, vetrina, publicRoute, deploy, card, browserQa] = await Promise.all([
+  const [home, vetrina, publicRoute, deploy, card, styles, browserQa] = await Promise.all([
     readFile(new URL("../src/routes/index.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/routes/vetrina.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/routes/a.$slug.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/server/deploy.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/components/project-card.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles.css", import.meta.url), "utf8"),
     readFile(new URL("./flagship-browser.mjs", import.meta.url), "utf8"),
   ]);
 
@@ -195,6 +312,8 @@ test("Home, Vetrina and public routing use the real localized app preview", asyn
   assert.match(vetrina, /item\.prompt/);
   assert.match(vetrina, /item\.capability/);
   assert.match(vetrina, /item\.proof/);
+  assert.match(vetrina, /item\.surface/);
+  assert.match(vetrina, /categoryItems\[0\]\?\.categoryLabel/);
   assert.match(vetrina, /archivedFor\(locale\)/);
   assert.doesNotMatch(vetrina, /cover=\{item\.cover\}/);
   assert.match(vetrina, /search=\{\{ lang: locale \}\}/);
@@ -208,6 +327,13 @@ test("Home, Vetrina and public routing use the real localized app preview", asyn
 
   assert.match(card, /title=\{title\}/);
   assert.match(card, /loading="lazy"/);
+  assert.match(card, /project-card/);
+  assert.match(card, /project-card-meta/);
+  assert.match(styles, /\.project-card\s*\{\s*color: var\(--color-fg\)/);
+  assert.match(
+    styles,
+    /\.band-light \.project-card \.project-card-meta\s*\{\s*color: var\(--color-muted\)/,
+  );
 
   assert.match(browserQa, /--require-completed/);
   assert.match(browserQa, /report\.summary\.controlsExercised >= 8/);

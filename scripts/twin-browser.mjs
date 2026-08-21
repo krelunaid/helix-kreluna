@@ -43,7 +43,7 @@ function safeMessage(error) {
     .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "[REDACTED_EMAIL]")
     .replace(/https?:\/\/[^\s?#]+\?[^\s#]*/gi, (url) => `${url.split("?", 1)[0]}?[REDACTED_QUERY]`)
     .replace(/\b(password|token|secret|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]")
-    .slice(0, 1_000);
+    .slice(0, 500);
 }
 
 async function inputArtifact(filename) {
@@ -188,6 +188,7 @@ async function exerciseViewport({
   let controlsExercised = 0;
   let formsDiscovered = 0;
   let formsExercised = 0;
+  let resettingHarness = false;
 
   await context.route("**/*", async (route) => {
     const requestUrl = route.request().url();
@@ -221,21 +222,38 @@ async function exerciseViewport({
     void dialog.dismiss().catch(() => undefined);
   });
   page.on("framenavigated", (frame) => {
-    if (frame !== page.mainFrame()) navigations += 1;
+    if (frame !== page.mainFrame() && !resettingHarness) navigations += 1;
   });
 
-  await page.goto(harness.url, { waitUntil: "load", timeout: 15_000 });
-  const frameHandle = await page.waitForSelector("#helix-generated-app", {
-    state: "attached",
-    timeout: 5_000,
-  });
-  const frame = await frameHandle.contentFrame();
-  if (!frame) throw new Error("TWIN_IFRAME_NOT_AVAILABLE");
-  await frame.waitForSelector("body", { state: "attached", timeout: 5_000 });
+  async function loadHarnessFrame(reset = false) {
+    resettingHarness = reset;
+    try {
+      if (reset) {
+        await page.reload({ waitUntil: "load", timeout: 15_000 });
+      } else {
+        await page.goto(harness.url, { waitUntil: "load", timeout: 15_000 });
+      }
+      const frameHandle = await page.waitForSelector("#helix-generated-app", {
+        state: "attached",
+        timeout: 5_000,
+      });
+      const loadedFrame = await frameHandle.contentFrame();
+      if (!loadedFrame) throw new Error("TWIN_IFRAME_NOT_AVAILABLE");
+      await loadedFrame.waitForSelector("body", {
+        state: "attached",
+        timeout: 5_000,
+      });
+      return loadedFrame;
+    } finally {
+      resettingHarness = false;
+    }
+  }
 
-  const controls = frame.locator(
-    'button,a[href],input[type="button"],input[type="submit"],[role="button"]',
-  );
+  let frame = await loadHarnessFrame();
+
+  const controlSelector =
+    'button,a[href],input[type="button"],input[type="submit"],[role="button"]';
+  const controls = frame.locator(controlSelector);
   const controlCount = await controls.count();
   for (let index = 0; index < controlCount; index += 1) {
     if (await controls.nth(index).isVisible().catch(() => false)) {
@@ -247,7 +265,7 @@ async function exerciseViewport({
     index < controlCount && controlsExercised < MAX_CONTROLS_PER_VIEWPORT;
     index += 1
   ) {
-    const control = controls.nth(index);
+    const control = frame.locator(controlSelector).nth(index);
     if (!(await control.isVisible().catch(() => false))) continue;
     const label = await controlLabel(control, `control ${index + 1}`);
     const baseline = await snapshot(frame);
@@ -289,6 +307,10 @@ async function exerciseViewport({
       });
     }
     controlsExercised += 1;
+    // Each action starts from the original artifact state. A menu or modal
+    // opened by one click must not intercept the unrelated controls that the
+    // runner exercises next.
+    frame = await loadHarnessFrame(true);
   }
 
   const forms = frame.locator("form");

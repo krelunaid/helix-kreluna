@@ -7,9 +7,11 @@ export {
   homeFlagshipsFor,
   isFlagshipId,
   type FlagshipEntry,
+  type FlagshipCategory,
   type FlagshipEvidence,
   type FlagshipId,
   type FlagshipMeasuredBuild,
   type FlagshipMeasuredScore,
+  type FlagshipSurface,
   type FlagshipVisualSignature,
 } from "@/lib/flagships/catalog";

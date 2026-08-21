@@ -44,7 +44,7 @@ for (const name of [
 ]) {
   delete missingEnv[name];
 }
-const failedStartup = spawnSync(
+const missingDatabaseStartup = spawnSync(
   process.execPath,
   [
     "--input-type=module",
@@ -53,11 +53,31 @@ const failedStartup = spawnSync(
   ],
   { encoding: "utf8", env: missingEnv },
 );
-assert.notEqual(failedStartup.status, 0, "A misconfigured hosted runtime must fail");
-assert.match(failedStartup.stderr, /DATABASE_URL/);
-assert.match(failedStartup.stderr, /BETTER_AUTH_SECRET/);
+assert.notEqual(missingDatabaseStartup.status, 0, "A hosted runtime without a database must fail");
+assert.match(missingDatabaseStartup.stderr, /DATABASE_URL/);
+
+// Module evaluation order is not a configuration-reporting contract: a route
+// may import the database before env.server can aggregate every missing name.
+// Isolate the auth invariant with a syntactically valid, never-contacted fixture
+// URL so the bundle must progress past database resolution and fail on auth.
+const missingAuthEnv = {
+  ...missingEnv,
+  DATABASE_URL: ["postgresql:", "//smoke:fixture@database.invalid/helix"].join(""),
+};
+const missingAuthStartup = spawnSync(
+  process.execPath,
+  [
+    "--input-type=module",
+    "--eval",
+    `await import(${JSON.stringify(entryUrl)})`,
+  ],
+  { encoding: "utf8", env: missingAuthEnv },
+);
+assert.notEqual(missingAuthStartup.status, 0, "A hosted runtime without auth must fail");
+assert.match(missingAuthStartup.stderr, /BETTER_AUTH_SECRET/);
+assert.doesNotMatch(missingAuthStartup.stderr, /DATABASE_URL/);
 assert.doesNotMatch(
-  failedStartup.stderr,
+  missingAuthStartup.stderr,
   /GROK_AUTH_CLIENT_(?:ID|SECRET)/,
   "The optional Grok OAuth broker must stay disabled unless explicitly enabled",
 );

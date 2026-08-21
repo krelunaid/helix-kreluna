@@ -24,7 +24,7 @@ import { useI18n } from "@/lib/i18n";
 import { toast } from "sonner";
 import { track } from "@/lib/analytics";
 import { featuredHtml } from "@/lib/templates";
-import { homeFlagshipsFor } from "@/lib/flagships";
+import { flagshipShowcaseLabels, homeFlagshipsFor } from "@/lib/flagships";
 import type { BuildLevel } from "@/lib/build-level";
 
 type HomeSearch = { prompt?: string };
@@ -80,6 +80,7 @@ function Home() {
   const [mine, setMine] = useState<Project[]>([]);
   const [filter, setFilter] = useState<"all" | "apps" | "live">("all");
   const featured = homeFlagshipsFor(locale);
+  const showcaseLabels = flagshipShowcaseLabels(locale);
 
   useEffect(() => {
     track("home_view");
@@ -323,8 +324,19 @@ function Home() {
 
         <section id="esempi" className="band-light">
           <div className="mx-auto max-w-6xl px-5 py-20">
-            <h2 className="text-4xl tracking-tight">{t("mkt.demo.title")}</h2>
-            <p className="mt-3 max-w-2xl text-muted">{t("mkt.demo.lead")}</p>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-4xl tracking-tight">{t("mkt.demo.title")}</h2>
+                <p className="mt-3 max-w-2xl text-muted">{t("mkt.demo.lead")}</p>
+              </div>
+              <Link
+                to="/vetrina"
+                search={{ app: undefined }}
+                className="shrink-0 text-sm font-medium text-accent hover:underline"
+              >
+                {t("nav.examples")} · {showcaseLabels.projectsCount}
+              </Link>
+            </div>
             <div className="mt-10 grid gap-6 md:grid-cols-3">
               {featured.map((item) => (
                 <article key={item.id} className="overflow-hidden rounded-2xl bg-white">

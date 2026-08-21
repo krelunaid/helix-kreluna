@@ -25,7 +25,7 @@ export function ProjectCard({
   return (
     <article
       className={cn(
-        "overflow-hidden rounded-xl bg-surface text-left hairline transition-shadow duration-200 hover:window-shadow",
+        "project-card overflow-hidden rounded-xl bg-surface text-left text-fg hairline transition-shadow duration-200 hover:window-shadow",
         className,
       )}
     >
@@ -47,7 +47,11 @@ export function ProjectCard({
       </div>
       <div className="p-4">
         <h3 className="font-display text-2xl italic leading-tight">{title}</h3>
-        {meta ? <p className="mt-2 line-clamp-2 text-sm leading-snug text-muted">{meta}</p> : null}
+        {meta ? (
+          <p className="project-card-meta mt-2 line-clamp-2 text-sm leading-snug text-muted">
+            {meta}
+          </p>
+        ) : null}
       </div>
     </article>
   );

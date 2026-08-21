@@ -6,6 +6,7 @@ import { verifyNetlifyPullRequestDeploy } from "@/lib/preview-deploy";
 import { resolveOpenAiGatewayConfiguration } from "@/lib/server/ai/providers/openai";
 import { PREVIEW_TEST_CREDIT_GRANT } from "@/lib/server/preview-credit-grant";
 import { WardenPolicySchema } from "@/lib/server/operations/warden";
+import { resolveAdminBinding } from "@/lib/server/admin/access";
 
 const optionalText = z.preprocess(
   (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined),
@@ -30,6 +31,8 @@ const rawEnvironmentSchema = z.object({
   BETTER_AUTH_URL: optionalText,
   GUEST_RATE_LIMIT_SALT: optionalText,
   HELIX_QUEUE_DISPATCH_SECRET: optionalText,
+  HELIX_ADMIN_USER_ID: optionalText,
+  HELIX_ADMIN_EMAIL: optionalText,
   STRIPE_BILLING_ENABLED: z.enum(["true", "false"]).optional(),
   STRIPE_MODE: z.enum(["test", "live"]).optional(),
   STRIPE_SECRET_KEY: optionalText,
@@ -197,6 +200,13 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   const productionBuildCredits = values.VITE_PRODUCTION_CREDITS
     ? Number(values.VITE_PRODUCTION_CREDITS)
     : null;
+  let adminBinding: ReturnType<typeof resolveAdminBinding> = null;
+  try {
+    adminBinding = resolveAdminBinding(values);
+  } catch {
+    invalid.push("HELIX_ADMIN_USER_ID", "HELIX_ADMIN_EMAIL");
+  }
+  if (adminBinding && !authEnabled) invalid.push("VITE_AUTH_ENABLED");
 
   if (values.VITE_PUBLIC_ORIGIN) invalid.push("VITE_PUBLIC_ORIGIN (deprecated)");
   for (const name of ["VITE_GOOGLE_CLIENT_ID", "VITE_GOOGLE_CLIENT_SECRET"] as const) {
@@ -807,6 +817,7 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
     wardenEnabled,
     productionBuildsEnabled,
     productionBuildCredits,
+    adminConsoleEnabled: Boolean(adminBinding),
     hostname,
     publicOrigin,
     isNetlify,

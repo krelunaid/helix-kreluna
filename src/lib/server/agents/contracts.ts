@@ -231,7 +231,7 @@ export const AGENT_CONTRACTS = {
   nova: defineContract({
     id: "nova",
     kind: "ai_agent",
-    version: "3.0.0",
+    version: "3.1.0",
     role: "Turn the brief into a structured PRD, MVP, scope, and acceptance criteria.",
     inputSchema: NovaInputSchema,
     outputSchema: ProductPlanSchema,
@@ -239,7 +239,7 @@ export const AGENT_CONTRACTS = {
     timeoutMs: 40_000,
     maxRetries: 0,
     model: "gpt-5.6-terra",
-    maxTokens: 1_200,
+    maxTokens: 2_400,
     maxCostUsd: 0.25,
     maxCostUsdTicks: "2500000000",
     artifact: "product_plan",

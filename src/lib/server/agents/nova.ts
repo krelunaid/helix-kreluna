@@ -25,7 +25,7 @@ export async function agentPlan(
         user: prompt,
         maxTokens: contract.maxTokens,
         timeoutMs: contract.timeoutMs,
-        temperature: 0.4,
+        temperature: 0.2,
         effort: "low",
         model: contract.model ?? undefined,
         job,

@@ -8,15 +8,44 @@ Software house AI: dall’idea a un prodotto (sito, app, software, programma des
 
 Questo è il codice completo dell’app, non un backup parziale.
 
-Stato verificato al 2026-08-21: il commit Terra
-`dd15f6842e872b56a176bf4869138ab7af909965` è pubblicato con CI e CodeQL verdi,
-ma non è deployato. Il successivo hardening preview/tester è ancora locale; non
-ha eseguito chiamate Terra, transazioni Stripe, migrazioni remote o deploy.
+## Stato attuale — 2026-08-21
+
+Il sito nel contesto **Netlify Production** è online su
+https://helix.kreluna.it dalla base `7266658`. In quel deploy Terra tramite
+Netlify AI Gateway e l'accesso Google sono attivi; Stripe resta disattivato. Il
+livello applicativo Helix chiamato **Production** rimane distinto dal sito live
+e conserva le proprie guardie fail-closed.
+
+Il diff di lavoro successivo è ancora **solo locale e non deployato**. Aggiunge:
+
+- un catalogo di **15 showcase** localizzati, divisi in **9 app/software** e
+  **6 siti**;
+- **6 progetti in homepage** e tutti i 15 nella Vetrina, filtrabili e raggruppati
+  per categoria;
+- la console privata `/ops`, non collegata dalla navigazione pubblica, con
+  autorizzazione server-side. La coppia amministratore ID/email è già
+  configurata come segreto nel solo contesto Netlify Production, ma il codice
+  della route non è ancora attivo online finché questo diff non viene deployato;
+- 90 artefatti statici verificati (15 showcase × 6 lingue) e un collaudo browser
+  completo delle 15 demo: 16 controlli esercitati per progetto, nessun errore
+  runtime/console e nessuna richiesta esterna;
+- il contratto Nova `3.1.0`, con tetto output 2.400 token e risposta richiesta
+  sotto 1.800 token, mantenendo invariati costo massimo, assenza di retry e
+  rifiuto fail-closed delle risposte troncate.
+
+Sul contenuto corrente la suite completa è verde **471/471**; TypeScript, lint,
+build client+SSR e smoke Netlify sono verdi. Questi dati sono prove locali e non
+attestano un nuovo deploy né una nuova chiamata reale Terra. Il precedente
+snapshot Terra `dd15f6842e872b56a176bf4869138ab7af909965`, con CI e CodeQL verdi
+ma non ancora deployato al momento della relativa verifica, resta documentato
+nello storico di audit.
 
 ## Cosa include
 
-- Interfaccia: home, login, dashboard, studio, vetrina, prezzi, go-live
-- Sei flagship localizzate: Orbit Command, Neura, Synapse, Vanta, Arc City e Morph; le demo precedenti restano archiviate
+- Interfaccia: home, login, dashboard, studio, vetrina categorizzata, prezzi,
+  go-live e console operativa privata `/ops`
+- Quindici showcase localizzati: 9 app/software e 6 siti; la homepage ne mette
+  in evidenza 6 e la Vetrina espone l'intero catalogo
 - House: Helix + specialisti
 - Auth Better Auth; nelle preview di test l'account è pre-provisionato, senza signup pubblico, mentre il broker OAuth Google/X resta opzionale
 - Preview HTML isolata, Kreluna Score euristico e Automated Council Score
