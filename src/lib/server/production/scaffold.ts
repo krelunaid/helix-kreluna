@@ -393,9 +393,7 @@ function mainSource(
   const operationValues = browserOperations
     .map(
       (operation, index) =>
-        `{ client: createOperationClient${index}((url, init) => fetch(url, init)), contract: operation${index}, label: ${JSON.stringify(
-          operation.operationId.replaceAll("_", " "),
-        )} }`,
+        `{ client: createOperationClient${index}((url, init) => fetch(url, init)), contract: operation${index}, label: operation${index}.operationId.replaceAll("_", " ") }`,
     )
     .join(",\n  ");
   const runtimeStatus =

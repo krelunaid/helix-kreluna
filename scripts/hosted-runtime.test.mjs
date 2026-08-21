@@ -29,7 +29,7 @@ function childEnvironment(overrides = {}) {
 function importDatabase(environment, options = {}) {
   const cacheDir = mkdtempSync(join(tmpdir(), "helix-hosted-runtime-vite-"));
   const netlifyBootstrap = options.netlifyDatabaseUrl
-    ? `globalThis.Netlify = { env: { get: (name) => name === "NETLIFY_DB_URL" ? ${JSON.stringify(options.netlifyDatabaseUrl)} : undefined } };`
+    ? `globalThis.Netlify = { env: { get: (name) => name === "NETLIFY_DB_URL" ? process.env.HELIX_TEST_NETLIFY_DATABASE_URL : undefined } };`
     : "";
   const source = `
     ${netlifyBootstrap}
@@ -57,7 +57,13 @@ function importDatabase(environment, options = {}) {
   try {
     return spawnSync(process.execPath, ["--input-type=module", "--eval", source], {
       cwd: ROOT,
-      env: { ...environment, HELIX_TEST_VITE_CACHE_DIR: cacheDir },
+      env: {
+        ...environment,
+        HELIX_TEST_VITE_CACHE_DIR: cacheDir,
+        ...(options.netlifyDatabaseUrl
+          ? { HELIX_TEST_NETLIFY_DATABASE_URL: options.netlifyDatabaseUrl }
+          : {}),
+      },
       encoding: "utf8",
       // The local PGLite bootstrap can contend with the full parallel test
       // suite on CI; this remains a bounded child-process guard, not a runtime SLA.

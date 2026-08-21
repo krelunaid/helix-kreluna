@@ -82,8 +82,8 @@ test("generated CSP is offline by default and accepts only explicit reviewed ori
 
 test("legacy showcase hosts are not globally trusted by generated previews", () => {
   const showcase = readFileSync(join(ROOT, "src/lib/showcase.ts"), "utf8");
-  assert.match(showcase, /https:\/\/images\.unsplash\.com/);
-  assert.match(showcase, /https:\/\/fonts\.googleapis\.com/);
+  assert.equal(showcase.includes("https://images.unsplash.com"), true);
+  assert.equal(showcase.includes("https://fonts.googleapis.com"), true);
   const csp = buildGeneratedContentCsp();
   for (const origin of [
     "https://images.unsplash.com",

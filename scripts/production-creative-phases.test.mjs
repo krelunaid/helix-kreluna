@@ -366,6 +366,60 @@ test("Production runs and resumes Lumen, Forge UI and Forge Logic as hash-bound 
   assert.match(alternatePrepared.files["apps/web/src/main.js"], /Toggle marsh notes/u);
   assert.doesNotMatch(alternatePrepared.files["apps/web/src/main.js"], /Show wetland notes/u);
 
+  const parserPlan = {
+    ...approvedPlan(),
+    screens: [],
+    scope: { ...approvedPlan().scope, p0: [] },
+  };
+  assert.deepEqual(
+    orchestrator.deriveProductionForgeUiIntent(
+      "<script><!-- raw script opener</script><h1>Visible after script</h1>",
+      parserPlan,
+    ),
+    ["Visible after script"],
+    "an HTML comment opener inside raw script text must not swallow its closing tag",
+  );
+  assert.deepEqual(
+    orchestrator.deriveProductionForgeUiIntent(
+      "<svg/><h1>Visible after self-closing SVG</h1>",
+      parserPlan,
+    ),
+    ["Visible after self-closing SVG"],
+    "a self-closing non-visible element must not consume the rest of the document",
+  );
+  assert.deepEqual(
+    orchestrator.deriveProductionForgeUiIntent(
+      "<script/><h1>Script body decoy</h1></script><h1>Visible after script</h1>",
+      parserPlan,
+    ),
+    ["Visible after script"],
+    "HTML must ignore a self-closing slash on script and keep its body out of UI intent",
+  );
+  assert.deepEqual(
+    orchestrator.deriveProductionForgeUiIntent(
+      "<style/><h1>Style body decoy</h1></style><h1>Visible after style</h1>",
+      parserPlan,
+    ),
+    ["Visible after style"],
+    "HTML must ignore a self-closing slash on style and keep its body out of UI intent",
+  );
+  assert.deepEqual(
+    orchestrator.deriveProductionForgeUiIntent(
+      "<h1/>Visible self-closing heading</h1>",
+      parserPlan,
+    ),
+    ["Visible self-closing heading"],
+    "HTML must ignore a self-closing slash on semantic heading elements",
+  );
+  assert.deepEqual(
+    orchestrator.deriveProductionForgeUiIntent(
+      "<script>const decoy = true;</script=bogus><h1>Script body decoy</h1></script><h1>Visible after valid close</h1>",
+      parserPlan,
+    ),
+    ["Visible after valid close"],
+    "an invalid closing-tag delimiter must not let script body text cross into UI intent",
+  );
+
   const lumenStep = job.steps.find((step) => step.id === "lumen");
   const forgeStep = job.steps.find((step) => step.id === "forge");
   const integrationStep = job.steps.find((step) => step.id === "apex");

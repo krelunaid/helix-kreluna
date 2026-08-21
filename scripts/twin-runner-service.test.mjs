@@ -168,6 +168,51 @@ test("separate handler instances reject replay and never repeat browser work", a
   assert.equal(executions, 1);
 });
 
+test("route selection happens only after authentication and consumes the durable nonce", async () => {
+  const replayStore = testMemoryReplayStore();
+  let executions = 0;
+  const handler = createTwinRunnerRequestHandler({
+    secret: SECRET,
+    replayStore,
+    now: () => NOW,
+    async executeBrowserRun() {
+      executions += 1;
+      return { fixture: "must-not-run" };
+    },
+  });
+  const nonce = randomUUID();
+  const wrongRouteRequest = fixtureBody(nonce);
+  wrongRouteRequest.url = "/not-the-run-route";
+  const wrongRoute = responseRecorder();
+  await handler(wrongRouteRequest, wrongRoute);
+  assert.equal(wrongRoute.status, 404);
+  assert.deepEqual(JSON.parse(wrongRoute.body), { errorCode: "RUNNER_ROUTE_NOT_FOUND" });
+
+  const replay = responseRecorder();
+  await handler(fixtureBody(nonce), replay);
+  assert.equal(replay.status, 409);
+  assert.deepEqual(JSON.parse(replay.body), { errorCode: "RUNNER_REPLAY_DETECTED" });
+  assert.equal(executions, 0);
+});
+
+test("authenticated execution failures expose only a fixed public error code", async () => {
+  const internalDiagnostic = "private-browser-stack-diagnostic";
+  const handler = createTwinRunnerRequestHandler({
+    secret: SECRET,
+    replayStore: testMemoryReplayStore(),
+    now: () => NOW,
+    async executeBrowserRun() {
+      throw new Error(internalDiagnostic);
+    },
+  });
+  const response = responseRecorder();
+  await handler(fixtureBody(randomUUID()), response);
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(response.body), { errorCode: "RUNNER_EXECUTION_FAILED" });
+  assert.equal(response.body.includes(internalDiagnostic), false);
+});
+
 test("concurrent requests produce exactly one claim and replay-store errors fail closed", async () => {
   const replayStore = testMemoryReplayStore();
   let executions = 0;

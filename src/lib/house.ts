@@ -210,16 +210,92 @@ export function orchestrate(
 
 export type LocalFinding = { agent: HouseId; must: boolean; note: string };
 
+type HtmlTag = { closing: boolean; end: number; name: string; selfClosing: boolean };
+
+function isHtmlTagNameCharacter(value: string): boolean {
+  const code = value.charCodeAt(0);
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || value === ":" || value === "-";
+}
+
+function readHtmlTag(source: string, start: number): HtmlTag | null {
+  if (source[start] !== "<") return null;
+  let cursor = start + 1;
+  const closing = source[cursor] === "/";
+  if (closing) cursor += 1;
+  const nameStart = cursor;
+  while (cursor < source.length && isHtmlTagNameCharacter(source[cursor] ?? "")) cursor += 1;
+  if (cursor === nameStart) return null;
+  const delimiter = source[cursor];
+  if (delimiter !== undefined && !/\s/u.test(delimiter) && delimiter !== "/" && delimiter !== ">") return null;
+  const name = source.slice(nameStart, cursor).toLocaleLowerCase("en-US");
+  let quote: '"' | "'" | null = null;
+  for (; cursor < source.length; cursor += 1) {
+    const character = source[cursor];
+    if (quote) {
+      if (character === quote) quote = null;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === ">") {
+      let suffix = cursor - 1;
+      while (suffix > nameStart && /\s/u.test(source[suffix] ?? "")) suffix -= 1;
+      return { closing, end: cursor + 1, name, selfClosing: !closing && source[suffix] === "/" };
+    }
+  }
+  return null;
+}
+
+function findClosingHtmlTag(source: string, name: string, start: number): HtmlTag | null {
+  const lowerSource = source.toLocaleLowerCase("en-US");
+  let cursor = start;
+  while (cursor < source.length) {
+    const candidate = lowerSource.indexOf(`</${name}`, cursor);
+    if (candidate === -1) return null;
+    const tag = readHtmlTag(source, candidate);
+    if (tag?.closing && tag.name === name) return tag;
+    cursor = candidate + name.length + 2;
+  }
+  return null;
+}
+
+function visibleHtmlText(source: string): string {
+  const text: string[] = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    if (source.startsWith("<!--", cursor)) {
+      const commentEnd = source.indexOf("-->", cursor + 4);
+      cursor = commentEnd === -1 ? source.length : commentEnd + 3;
+      text.push(" ");
+    } else if (source[cursor] !== "<") {
+      text.push(source[cursor] ?? "");
+      cursor += 1;
+    } else {
+      const tag = readHtmlTag(source, cursor);
+      if (!tag) {
+        text.push("<");
+        cursor += 1;
+        continue;
+      }
+      cursor = tag.end;
+      text.push(" ");
+      if (!tag.closing && (tag.name === "script" || tag.name === "style")) {
+        cursor = findClosingHtmlTag(source, tag.name, cursor)?.end ?? source.length;
+      }
+    }
+  }
+  return text.join("").replace(/\s+/gu, " ").trim();
+}
+
 export function localExperts(html: string, prompt: string): LocalFinding[] {
   const out: LocalFinding[] = [];
   const h = html.toLowerCase();
+  const normalizedPrompt = prompt.toLowerCase();
   if (/localStorage|sessionStorage|document\.cookie/.test(html)) {
     out.push({ agent: "aegis", must: true, note: "Storage APIs break in the sandbox. Use memory." });
   }
   if (/eval\(|innerhtml\s*=/.test(h)) {
     out.push({ agent: "aegis", must: true, note: "Dangerous HTML injection / eval." });
   }
-  if (!/https:\/\/images\.unsplash\.com/.test(html) && /sito|site|caff|cafe|studio|landing/.test(prompt.toLowerCase())) {
+  if (!h.includes("https://images.unsplash.com/") && ["sito", "site", "caff", "cafe", "studio", "landing"].some((term) => normalizedPrompt.includes(term))) {
     out.push({ agent: "lumen", must: false, note: "No photography. Brand sites need real photos." });
   }
   if (!/<label/i.test(html) && /<input/i.test(html)) {
@@ -234,18 +310,13 @@ export function localExperts(html: string, prompt: string): LocalFinding[] {
   if (!/<title>/i.test(html) || /<title>\s*<\/title>/i.test(html)) {
     out.push({ agent: "beacon", must: true, note: "Empty or missing title." });
   }
-  if (!/privacy|gdpr|dati/i.test(html) && /account|login|email|prenot/.test(prompt.toLowerCase())) {
+  if (!/privacy|gdpr|dati/i.test(html) && /account|login|email|prenot/.test(normalizedPrompt)) {
     out.push({ agent: "veil", must: false, note: "Collects data without a privacy note." });
   }
   if (!/<button|<a /i.test(html)) {
     out.push({ agent: "moth", must: true, note: "No clickable actions." });
   }
-  const visible = html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const visible = visibleHtmlText(html);
   const photos = (html.match(/<img\b/gi) ?? []).length;
   if (visible.length < 520 || ((/nav|tabbar|bottom-nav|tab-bar/i.test(html) || (html.match(/<button/gi) ?? []).length >= 4) && photos < 2 && visible.length < 900)) {
     out.push({
@@ -260,7 +331,7 @@ export function localExperts(html: string, prompt: string): LocalFinding[] {
   if (!/addEventListener|onclick/i.test(html)) {
     out.push({ agent: "storm", must: false, note: "Little interactivity under load of real use." });
   }
-  if (!/localStorage/.test(html) && /prenot|booking|lista|note/.test(prompt.toLowerCase())) {
+  if (!/localStorage/.test(html) && /prenot|booking|lista|note/.test(normalizedPrompt)) {
     out.push({ agent: "augur", must: false, note: "Data dies on refresh. Plan persistence after launch." });
   }
   return out;

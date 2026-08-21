@@ -15,6 +15,42 @@ const EXPECTED = [
   "morph",
 ];
 
+function extractSingleInlineScript(html) {
+  const normalized = html.toLowerCase();
+  const openingStart = normalized.indexOf("<script");
+  assert.notEqual(openingStart, -1, "missing interaction script");
+  const openingBoundary = normalized[openingStart + "<script".length];
+  assert.ok(
+    openingBoundary === ">" || /\s/u.test(openingBoundary),
+    "invalid interaction script opening tag",
+  );
+  const openingEnd = normalized.indexOf(">", openingStart + "<script".length);
+  assert.notEqual(openingEnd, -1, "unterminated interaction script opening tag");
+
+  const closingStart = normalized.indexOf("</script", openingEnd + 1);
+  assert.notEqual(closingStart, -1, "missing interaction script closing tag");
+  const closingEnd = normalized.indexOf(">", closingStart + "</script".length);
+  assert.notEqual(closingEnd, -1, "unterminated interaction script closing tag");
+  assert.equal(
+    normalized.slice(closingStart + "</script".length, closingEnd).trim(),
+    "",
+    "invalid interaction script closing tag",
+  );
+  assert.equal(
+    normalized.indexOf("<script", closingEnd + 1),
+    -1,
+    "multiple interaction scripts are not allowed",
+  );
+  return html.slice(openingEnd + 1, closingStart);
+}
+
+test("inline script extraction handles case-insensitive HTML end tags", () => {
+  assert.equal(
+    extractSingleInlineScript("<SCRIPT>globalThis.ready = true;</SCRIPT >"),
+    "globalThis.ready = true;",
+  );
+});
+
 test("the showcase contains six honest and distinct flagship products", async (t) => {
   const vite = await createServer({
     root: ROOT,
@@ -92,8 +128,7 @@ test("the showcase contains six honest and distinct flagship products", async (t
           html,
           /\b(?:fetch|WebSocket|XMLHttpRequest|EventSource|localStorage|sessionStorage|indexedDB|document\.cookie|innerHTML|outerHTML|eval|document\.write)\b/,
         );
-        const inlineScript = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
-        assert.ok(inlineScript, `${id}/${locale} is missing its interaction script`);
+        const inlineScript = extractSingleInlineScript(html);
         assert.doesNotThrow(
           () => Function(inlineScript),
           `${id}/${locale} contains invalid JavaScript`,

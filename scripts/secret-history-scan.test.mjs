@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -245,6 +245,22 @@ test("worktree-only mode skips history but scans tracked and untracked files wit
   assert.ok(
     findingRecords(active, "SECRET_WORKTREE_FINDING").some(
       (finding) => finding.file === "untracked.env" && finding.rule === "provider-api-key",
+    ),
+  );
+});
+
+test("worktree scanning reads a symbolic-link entry without following its target", (t) => {
+  const repo = fixture(t);
+  const linkSecret = makeProviderSecret("symbolic-link");
+  symlinkSync(linkSecret, join(repo, "untracked-secret-link"));
+
+  const result = runScanner(repo, {}, ["--worktree-only"]);
+  const combined = output(result);
+  assert.equal(result.status, 1, combined);
+  assert.equal(combined.includes(linkSecret), false);
+  assert.ok(
+    findingRecords(result, "SECRET_WORKTREE_FINDING").some(
+      (finding) => finding.file === "untracked-secret-link" && finding.rule === "provider-api-key",
     ),
   );
 });

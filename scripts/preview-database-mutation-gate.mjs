@@ -7,6 +7,46 @@ export const HELIX_NETLIFY_SITE_NAME = "helix-kreluna";
 export const PREVIEW_DATABASE_MUTATION_DISABLED = "PREVIEW_DATABASE_MUTATION_DISABLED";
 export const PREVIEW_DATABASE_MUTATION_FORBIDDEN = "PREVIEW_DATABASE_MUTATION_FORBIDDEN";
 export const PREVIEW_DATABASE_ATTESTATION_INVALID = "PREVIEW_DATABASE_ATTESTATION_INVALID";
+export const PREVIEW_DATABASE_FORBIDDEN_PG_ENVIRONMENT = Object.freeze([
+  "PGAPPNAME",
+  "PGCHANNELBINDING",
+  "PGCLIENTENCODING",
+  "PGCLIENT_ENCODING",
+  "PGCONNECT_TIMEOUT",
+  "PGDATABASE",
+  "PGGSSENCMODE",
+  "PGGSSLIB",
+  "PGHOST",
+  "PGHOSTADDR",
+  "PGKRBSRVNAME",
+  "PGLOADBALANCEHOSTS",
+  "PGOPTIONS",
+  "PGPASSFILE",
+  "PGPASSWORD",
+  "PGPORT",
+  "PGREPLICATION",
+  "PGREQUIREPEER",
+  "PGREQUIRESSL",
+  "PGSERVICE",
+  "PGSERVICEFILE",
+  "PGSSLCERT",
+  "PGSSLCOMPRESSION",
+  "PGSSLCRL",
+  "PGSSLCRLDIR",
+  "PGSSLKEY",
+  "PGSSLMODE",
+  "PGSSLNEGOTIATION",
+  "PGSSLROOTCERT",
+  "PGSSLSNI",
+  "PGSYSCONFDIR",
+  "PGTARGETSESSIONATTRS",
+  "PGUSER",
+]);
+const DATABASE_TARGET_FINGERPRINT_VERSION = "helix-preview-database-target-v1";
+const REQUIRED_DATABASE_QUERY = Object.freeze([
+  ["channel_binding", "require"],
+  ["sslmode", "require"],
+]);
 
 export class PreviewDatabaseMutationGateError extends Error {
   constructor(code) {
@@ -20,12 +60,47 @@ function value(environment, name) {
   return environment[name]?.trim() ?? "";
 }
 
-function validPostgresUrl(candidate) {
-  if (!candidate || candidate !== candidate.trim()) return false;
+function canonicalPostgresTarget(candidate) {
+  if (!candidate || candidate !== candidate.trim()) return null;
   try {
-    return ["postgres:", "postgresql:"].includes(new URL(candidate).protocol);
+    const parsed = new URL(candidate);
+    if (
+      !["postgres:", "postgresql:"].includes(parsed.protocol) ||
+      !parsed.username ||
+      !parsed.password ||
+      !parsed.hostname ||
+      !parsed.pathname ||
+      parsed.pathname === "/" ||
+      parsed.hash
+    ) {
+      return null;
+    }
+    const queryEntries = [...parsed.searchParams.entries()];
+    if (
+      queryEntries.length !== REQUIRED_DATABASE_QUERY.length ||
+      REQUIRED_DATABASE_QUERY.some(
+        ([name, expected]) =>
+          parsed.searchParams.getAll(name).length !== 1 ||
+          parsed.searchParams.get(name) !== expected,
+      )
+    ) {
+      return null;
+    }
+    // `pg-connection-string` lets arbitrary query keys override URL authority
+    // and TLS behavior. A preview therefore accepts only Netlify's observed,
+    // non-secret secure pair above. Password stays rotatable in URL userinfo;
+    // every accepted connection-affecting field is fingerprinted below.
+    return [
+      DATABASE_TARGET_FINGERPRINT_VERSION,
+      parsed.protocol,
+      parsed.username,
+      parsed.hostname,
+      parsed.port,
+      parsed.pathname,
+      ...REQUIRED_DATABASE_QUERY.flatMap(([name, expected]) => [name, expected]),
+    ].join("\0");
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -67,13 +142,24 @@ function pinnedPreviewIdentity(environment) {
 }
 
 function resolvedDatabaseUrl(environment, readNetlifyConnectionString) {
+  if (
+    Object.entries(environment).some(
+      ([name, configured]) =>
+        /^PG[A-Z0-9_]*$/u.test(name) &&
+        configured !== undefined &&
+        configured !== null &&
+        String(configured).length > 0,
+    )
+  ) {
+    throw new PreviewDatabaseMutationGateError(PREVIEW_DATABASE_ATTESTATION_INVALID);
+  }
   let databaseUrl;
   try {
     databaseUrl = readNetlifyConnectionString();
   } catch {
     throw new PreviewDatabaseMutationGateError(PREVIEW_DATABASE_ATTESTATION_INVALID);
   }
-  if (!validPostgresUrl(databaseUrl)) {
+  if (!canonicalPostgresTarget(databaseUrl)) {
     throw new PreviewDatabaseMutationGateError(PREVIEW_DATABASE_ATTESTATION_INVALID);
   }
   for (const name of ["DATABASE_URL", "NETLIFY_DB_URL"]) {
@@ -86,12 +172,18 @@ function resolvedDatabaseUrl(environment, readNetlifyConnectionString) {
 }
 
 function databaseUrlDigest(databaseUrl) {
-  return createHash("sha256").update(databaseUrl, "utf8").digest();
+  const target = canonicalPostgresTarget(databaseUrl);
+  if (!target) {
+    throw new PreviewDatabaseMutationGateError(PREVIEW_DATABASE_ATTESTATION_INVALID);
+  }
+  return createHash("sha256").update(target, "utf8").digest();
 }
 
 /**
  * Read-only attestation report for the first pinned PR build. It returns only a
- * SHA-256 digest; the SDK URL and credentials never leave this module.
+ * SHA-256 digest of the canonical database target. The rotatable userinfo
+ * password is excluded; the exact accepted TLS/channel-binding query is included.
+ * The SDK URL and credentials never leave this module.
  */
 export function reportPreviewDatabaseAttestation(
   environment = process.env,
@@ -107,8 +199,8 @@ export function reportPreviewDatabaseAttestation(
 }
 
 /**
- * Attest the exact operator-pinned Netlify PR and SDK-resolved database URL.
- * The URL is hashed in memory and never returned or included in diagnostics.
+ * Attest the exact operator-pinned Netlify PR and SDK-resolved database target.
+ * The rotatable password is removed before hashing and never returned or logged.
  */
 export function attestPreviewDatabaseMutation(
   environment = process.env,

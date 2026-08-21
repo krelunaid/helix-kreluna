@@ -1,18 +1,30 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+
+import {
+  PREVIEW_DATABASE_FORBIDDEN_PG_ENVIRONMENT,
+  reportPreviewDatabaseAttestation,
+} from "./preview-database-mutation-gate.mjs";
 
 const root = new URL("../", import.meta.url);
 const packageJson = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
 const netlifyConfig = await readFile(new URL("netlify.toml", root), "utf8");
 const migratePath = fileURLToPath(new URL("scripts/migrate.mjs", root));
+const PG_ENVIRONMENT_REGRESSIONS = [
+  ...PREVIEW_DATABASE_FORBIDDEN_PG_ENVIRONMENT,
+  "PGFUTURE_CONNECTION_OVERRIDE",
+];
 
 function databaseFixtureUrl(identity, host = "127.0.0.1", port) {
   const authority = port ? `${host}:${port}` : host;
   return ["postgresql", "://", identity, "@", authority, "/helix"].join("");
+}
+
+function netlifyDatabaseFixtureUrl(identity, host = "127.0.0.1", port) {
+  return `${databaseFixtureUrl(identity, host, port)}?channel_binding=require&sslmode=require`;
 }
 
 function migrator(args = [], overrides = {}, options = {}) {
@@ -34,6 +46,7 @@ function migrator(args = [], overrides = {}, options = {}) {
     "HELIX_PREVIEW_DB_MUTATIONS_ENABLED",
     "HELIX_PREVIEW_DATABASE_URL_SHA256",
     "STRIPE_BILLING_ENABLED",
+    ...PREVIEW_DATABASE_FORBIDDEN_PG_ENVIRONMENT,
   ]) {
     delete env[name];
   }
@@ -60,7 +73,7 @@ function migrator(args = [], overrides = {}, options = {}) {
 }
 
 function attestedPreview(databaseUrl, overrides = {}) {
-  return {
+  const pinned = {
     NETLIFY: "true",
     CONTEXT: "deploy-preview",
     PULL_REQUEST: "true",
@@ -72,11 +85,16 @@ function attestedPreview(databaseUrl, overrides = {}) {
     DEPLOY_PRIME_URL: "https://deploy-preview-314--helix-kreluna.netlify.app",
     HELIX_PREVIEW_EXPECTED_REVIEW_ID: "314",
     HELIX_PREVIEW_EXPECTED_COMMIT_REF: "a".repeat(40),
-    HELIX_PREVIEW_DB_MUTATIONS_ENABLED: "true",
-    HELIX_PREVIEW_DATABASE_URL_SHA256: createHash("sha256")
-      .update(databaseUrl, "utf8")
-      .digest("hex"),
     STRIPE_BILLING_ENABLED: "false",
+  };
+  const databaseAttestationSha256 = reportPreviewDatabaseAttestation(
+    { ...pinned, HELIX_PREVIEW_DB_MUTATIONS_ENABLED: "false" },
+    () => databaseUrl,
+  ).databaseAttestationSha256;
+  return {
+    ...pinned,
+    HELIX_PREVIEW_DB_MUTATIONS_ENABLED: "true",
+    HELIX_PREVIEW_DATABASE_URL_SHA256: databaseAttestationSha256,
     ...overrides,
   };
 }
@@ -232,7 +250,7 @@ test("the branch migrator is non-mutating without exact PR database attestation"
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /PREVIEW_DATABASE_MUTATION_DISABLED/);
 
-  const globalUrl = databaseFixtureUrl("global", "127.0.0.1", 1);
+  const globalUrl = netlifyDatabaseFixtureUrl("global:a", "127.0.0.1", 1);
   const divergent = migrator(
     ["--netlify-branch"],
     {
@@ -246,13 +264,13 @@ test("the branch migrator is non-mutating without exact PR database attestation"
 
   const malformed = migrator(
     ["--netlify-branch"],
-    attestedPreview(databaseFixtureUrl("expected", "127.0.0.1", 1)),
+    attestedPreview(netlifyDatabaseFixtureUrl("expected:a", "127.0.0.1", 1)),
     { netlifyDatabaseUrl: ["not", "a", "postgres", "url"].join("-") },
   );
   assert.equal(malformed.status, 1);
   assert.match(malformed.stderr, /PREVIEW_DATABASE_ATTESTATION_INVALID/);
 
-  const attested = databaseFixtureUrl("attested", "127.0.0.1", 1);
+  const attested = netlifyDatabaseFixtureUrl("attested:a", "127.0.0.1", 1);
   const sdkSelected = migrator(["--netlify-branch"], attestedPreview(attested), {
     netlifyDatabaseUrl: attested,
   });
@@ -262,6 +280,62 @@ test("the branch migrator is non-mutating without exact PR database attestation"
     sdkSelected.stderr,
     new RegExp(attested.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"),
   );
+});
+
+test("branch build attestation excludes credentials but remains bound to its database target", () => {
+  const target = netlifyDatabaseFixtureUrl("preview-user:a", "database.example.test");
+  const sameTargetWithCredentials = `${databaseFixtureUrl(
+    "preview-user:b",
+    "database.example.test",
+  )}?sslmode=require&channel_binding=require`;
+  const differentTarget = netlifyDatabaseFixtureUrl(
+    "preview-user:a",
+    "other-database.example.test",
+  );
+
+  assert.equal(
+    attestedPreview(target).HELIX_PREVIEW_DATABASE_URL_SHA256,
+    attestedPreview(sameTargetWithCredentials).HELIX_PREVIEW_DATABASE_URL_SHA256,
+  );
+  assert.notEqual(
+    attestedPreview(target).HELIX_PREVIEW_DATABASE_URL_SHA256,
+    attestedPreview(differentTarget).HELIX_PREVIEW_DATABASE_URL_SHA256,
+  );
+  for (const forbiddenQuery of [
+    "host=production.example.test",
+    "user=admin",
+    "port=6543",
+    "dbname=production",
+    "database=production",
+    "hostaddr=192.0.2.10",
+    "service=production",
+    "options=--search_path%3Dprivate",
+    "sslmode=disable&channel_binding=require",
+  ]) {
+    const candidate = `${databaseFixtureUrl(
+      "preview-user:b",
+      "database.example.test",
+    )}?${forbiddenQuery}`;
+    assert.throws(
+      () => attestedPreview(candidate),
+      /PREVIEW_DATABASE_ATTESTATION_INVALID/u,
+      forbiddenQuery,
+    );
+  }
+});
+
+test("branch migration rejects PostgreSQL environment overrides before opening a pool", () => {
+  const attested = netlifyDatabaseFixtureUrl("attested:a", "127.0.0.1", 1);
+  for (const name of PG_ENVIRONMENT_REGRESSIONS) {
+    const result = migrator(
+      ["--netlify-branch"],
+      { ...attestedPreview(attested), [name]: "fixture" },
+      { netlifyDatabaseUrl: attested },
+    );
+    assert.equal(result.status, 1, `${name}: ${result.stderr}`);
+    assert.match(result.stderr, /PREVIEW_DATABASE_ATTESTATION_INVALID/u, name);
+    assert.doesNotMatch(result.stderr, /ECONNREFUSED/u, name);
+  }
 });
 
 test("the ordinary local migrator still skips cleanly without DATABASE_URL", () => {

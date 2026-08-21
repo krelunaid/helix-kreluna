@@ -139,13 +139,15 @@ export function createPostgresTwinRunnerReplayStore(client) {
 async function body(request) {
   const declared = Number(request.headers["content-length"] ?? "0");
   if (Number.isFinite(declared) && declared > MAX_REQUEST_BYTES) {
-    throw new Error("RUNNER_REQUEST_TOO_LARGE");
+    throw new RunnerRejection(413, "RUNNER_REQUEST_TOO_LARGE");
   }
   const chunks = [];
   let bytes = 0;
   for await (const chunk of request) {
     bytes += chunk.byteLength;
-    if (bytes > MAX_REQUEST_BYTES) throw new Error("RUNNER_REQUEST_TOO_LARGE");
+    if (bytes > MAX_REQUEST_BYTES) {
+      throw new RunnerRejection(413, "RUNNER_REQUEST_TOO_LARGE");
+    }
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
@@ -181,6 +183,12 @@ async function authenticate(request, requestBody, dependencies) {
     throw new RunnerRejection(409, "RUNNER_REPLAY_DETECTED", nonce);
   }
   return nonce;
+}
+
+function assertRunRoute(request) {
+  if (request.method !== "POST" || request.url !== "/run") {
+    throw new RunnerRejection(404, "RUNNER_ROUTE_NOT_FOUND");
+  }
 }
 
 function validateInput(candidate) {
@@ -324,39 +332,39 @@ export function createTwinRunnerRequestHandler(dependencies) {
   return async (request, response) => {
     let nonce = "unauthenticated";
     try {
-      if (request.method !== "POST" || request.url !== "/run") {
-        response.writeHead(404, { "cache-control": "no-store" }).end();
-        return;
-      }
       const requestBody = await body(request);
       nonce = await authenticate(request, requestBody, {
         secret,
         replayStore: dependencies.replayStore,
         now,
       });
+      assertRunRoute(request);
       let candidate;
       try {
         candidate = JSON.parse(requestBody);
       } catch {
-        throw new Error("RUNNER_INPUT_INVALID");
+        throw new RunnerRejection(400, "RUNNER_INPUT_INVALID");
       }
-      const input = validateInput(candidate);
+      let input;
+      try {
+        input = validateInput(candidate);
+      } catch {
+        throw new RunnerRejection(400, "RUNNER_INPUT_INVALID");
+      }
       signedJson(response, 200, nonce, await execute(input), secret);
     } catch (error) {
       const rejection = error instanceof RunnerRejection ? error : undefined;
       if (rejection?.authenticatedNonce) nonce = rejection.authenticatedNonce;
-      const code = String(
-        rejection?.code ?? (error instanceof Error ? error.message : error),
-      ).slice(0, 120);
       if (nonce === "unauthenticated") {
-        response
-          .writeHead(
-            rejection?.status ?? (code === "RUNNER_REQUEST_TOO_LARGE" ? 413 : 401),
-            { "cache-control": "no-store" },
-          )
-          .end();
+        response.writeHead(rejection?.status ?? 401, { "cache-control": "no-store" }).end();
       } else {
-        signedJson(response, rejection?.status ?? 500, nonce, { errorCode: code }, secret);
+        signedJson(
+          response,
+          rejection?.status ?? 500,
+          nonce,
+          { errorCode: rejection?.code ?? "RUNNER_EXECUTION_FAILED" },
+          secret,
+        );
       }
     }
   };

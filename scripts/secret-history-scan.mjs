@@ -2,7 +2,14 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
+  openSync,
+  readFileSync,
+  readlinkSync,
+} from "node:fs";
 import { isAbsolute, resolve, sep } from "node:path";
 
 const INLINE_ALLOWLIST_ENV = "HELIX_SECRET_HISTORY_ALLOWLIST";
@@ -199,10 +206,13 @@ function loadAllowlist(repo) {
   if (!configuredPath) return allowlist;
 
   const allowlistPath = isAbsolute(configuredPath) ? configuredPath : resolve(repo, configuredPath);
-  if (!existsSync(allowlistPath)) {
-    throw new ScanFailure("The configured historical allowlist file does not exist.");
+  let source;
+  try {
+    source = readFileSync(allowlistPath, "utf8");
+  } catch {
+    throw new ScanFailure("The configured historical allowlist file could not be read.");
   }
-  for (const fingerprint of parseAllowlistFile(readFileSync(allowlistPath, "utf8"))) {
+  for (const fingerprint of parseAllowlistFile(source)) {
     allowlist.add(fingerprint);
   }
   return allowlist;
@@ -331,6 +341,32 @@ function pathInsideRepository(repo, file) {
   return absolute === repo || absolute.startsWith(`${repo}${sep}`) ? absolute : null;
 }
 
+function readWorkingTreeEntry(absolute) {
+  let descriptor;
+  try {
+    descriptor = openSync(absolute, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    if (error?.code === "ELOOP") {
+      try {
+        return Buffer.from(readlinkSync(absolute), "utf8");
+      } catch {
+        throw new ScanFailure("A working-tree symbolic link could not be inspected.");
+      }
+    }
+    throw new ScanFailure("A working-tree file could not be opened safely.");
+  }
+
+  try {
+    if (!fstatSync(descriptor).isFile()) return null;
+    return readFileSync(descriptor);
+  } catch {
+    throw new ScanFailure("A working-tree file could not be inspected.");
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 function workingTreeFindings(repo) {
   const bare = gitText(repo, ["rev-parse", "--is-bare-repository"]).trim() === "true";
   if (bare) return [];
@@ -342,20 +378,9 @@ function workingTreeFindings(repo) {
 
   for (const file of listed) {
     const absolute = pathInsideRepository(repo, file);
-    if (!absolute || !existsSync(absolute)) continue;
-    let content;
-    try {
-      const stat = lstatSync(absolute);
-      if (stat.isSymbolicLink()) {
-        content = Buffer.from(readlinkSync(absolute), "utf8");
-      } else if (stat.isFile()) {
-        content = readFileSync(absolute);
-      } else {
-        continue;
-      }
-    } catch {
-      throw new ScanFailure("A working-tree file could not be inspected.");
-    }
+    if (!absolute) continue;
+    const content = readWorkingTreeEntry(absolute);
+    if (content === null) continue;
     for (const finding of detectSecrets(content)) {
       findings.push({ commit: "WORKTREE", file, ...finding });
     }

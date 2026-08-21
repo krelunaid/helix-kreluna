@@ -259,15 +259,155 @@ async function hashMatches(value: unknown, expected: unknown): Promise<boolean> 
   );
 }
 
+type ParsedHtmlTag = { closing: boolean; end: number; name: string; selfClosing: boolean; start: number };
+type HtmlElementRange = { bodyEnd: number; bodyStart: number; end: number; start: number };
+
+const NON_VISIBLE_HTML_ELEMENTS = new Set(["script", "style", "svg"]);
+
+function isHtmlNameCharacter(value: string): boolean {
+  const code = value.charCodeAt(0);
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || value === ":" || value === "-";
+}
+
+function readParsedHtmlTag(source: string, start: number): ParsedHtmlTag | null {
+  if (source[start] !== "<") return null;
+  let cursor = start + 1;
+  const closing = source[cursor] === "/";
+  if (closing) cursor += 1;
+  const nameStart = cursor;
+  while (cursor < source.length && isHtmlNameCharacter(source[cursor] ?? "")) cursor += 1;
+  if (cursor === nameStart) return null;
+  const delimiter = source[cursor];
+  if (delimiter !== undefined && !/\s/u.test(delimiter) && delimiter !== "/" && delimiter !== ">") return null;
+  const name = source.slice(nameStart, cursor).toLocaleLowerCase("en-US");
+  let quote: '"' | "'" | null = null;
+  for (; cursor < source.length; cursor += 1) {
+    const character = source[cursor];
+    if (quote) {
+      if (character === quote) quote = null;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === ">") {
+      let suffix = cursor - 1;
+      while (suffix > nameStart && /\s/u.test(source[suffix] ?? "")) suffix -= 1;
+      return { closing, end: cursor + 1, name, selfClosing: !closing && source[suffix] === "/", start };
+    }
+  }
+  return null;
+}
+
+function matchingHtmlClose(source: string, lowerSource: string, opening: ParsedHtmlTag): ParsedHtmlTag | null {
+  const rawTextElement = opening.name === "script" || opening.name === "style";
+  let cursor = opening.end;
+  let depth = 1;
+  while (cursor < source.length) {
+    const candidate = lowerSource.indexOf("<", cursor);
+    if (candidate === -1) return null;
+    if (!rawTextElement && source.startsWith("<!--", candidate)) {
+      const commentEnd = source.indexOf("-->", candidate + 4);
+      cursor = commentEnd === -1 ? source.length : commentEnd + 3;
+      continue;
+    }
+    const tag = readParsedHtmlTag(source, candidate);
+    cursor = tag?.end ?? candidate + 1;
+    if (!tag || tag.name !== opening.name) continue;
+    if (tag.closing) depth -= 1;
+    else if (!rawTextElement && !tag.selfClosing) depth += 1;
+    if (depth === 0) return tag;
+  }
+  return null;
+}
+
+function htmlElementRanges(source: string, names: ReadonlySet<string>): HtmlElementRange[] {
+  const ranges: HtmlElementRange[] = [];
+  const lowerSource = source.toLocaleLowerCase("en-US");
+  let cursor = 0;
+  while (cursor < source.length) {
+    const candidate = lowerSource.indexOf("<", cursor);
+    if (candidate === -1) break;
+    if (source.startsWith("<!--", candidate)) {
+      const commentEnd = source.indexOf("-->", candidate + 4);
+      cursor = commentEnd === -1 ? source.length : commentEnd + 3;
+      continue;
+    }
+    const opening = readParsedHtmlTag(source, candidate);
+    cursor = opening?.end ?? candidate + 1;
+    if (!opening || opening.closing || !names.has(opening.name)) continue;
+    // HTML ignores the self-closing flag on ordinary and raw-text elements.
+    // SVG is the only foreign element extracted by this narrow parser.
+    if (opening.selfClosing && opening.name === "svg") {
+      ranges.push({
+        bodyEnd: opening.end,
+        bodyStart: opening.end,
+        end: opening.end,
+        start: opening.start,
+      });
+      continue;
+    }
+    const closing = matchingHtmlClose(source, lowerSource, opening);
+    ranges.push({
+      bodyEnd: closing?.start ?? source.length,
+      bodyStart: opening.end,
+      end: closing?.end ?? source.length,
+      start: opening.start,
+    });
+    cursor = closing?.end ?? source.length;
+  }
+  return ranges;
+}
+
+function withoutNonVisibleHtml(source: string): string {
+  const ranges = htmlElementRanges(source, NON_VISIBLE_HTML_ELEMENTS);
+  const visible: string[] = [];
+  let cursor = 0;
+  for (const range of ranges) {
+    visible.push(source.slice(cursor, range.start), " ");
+    cursor = range.end;
+  }
+  visible.push(source.slice(cursor));
+  return visible.join("");
+}
+
+function htmlTextWithoutTags(source: string): string {
+  const visibleSource = withoutNonVisibleHtml(source);
+  const text: string[] = [];
+  let cursor = 0;
+  while (cursor < visibleSource.length) {
+    if (visibleSource.startsWith("<!--", cursor)) {
+      const commentEnd = visibleSource.indexOf("-->", cursor + 4);
+      cursor = commentEnd === -1 ? visibleSource.length : commentEnd + 3;
+      text.push(" ");
+    } else if (visibleSource[cursor] === "<") {
+      const tag = readParsedHtmlTag(visibleSource, cursor);
+      if (!tag) {
+        text.push("<");
+        cursor += 1;
+      } else {
+        text.push(" ");
+        cursor = tag.end;
+      }
+    } else {
+      text.push(visibleSource[cursor] ?? "");
+      cursor += 1;
+    }
+  }
+  return text.join("");
+}
+
 function decodeVisibleHtmlText(value: string): string {
-  return value
-    .replace(/<[^>]*>/gu, " ")
-    .replace(/&nbsp;/giu, " ")
-    .replace(/&amp;/giu, "&")
-    .replace(/&lt;/giu, "<")
-    .replace(/&gt;/giu, ">")
-    .replace(/&quot;/giu, '"')
-    .replace(/&#(?:39|x27);/giu, "'")
+  return htmlTextWithoutTags(value)
+    .replace(/&(?:nbsp|amp|lt|gt|quot|#39|#x27);/giu, (entity) => {
+      const decoded: Record<string, string> = {
+        "&amp;": "&",
+        "&#39;": "'",
+        "&#x27;": "'",
+        "&gt;": ">",
+        "&lt;": "<",
+        "&nbsp;": " ",
+        "&quot;": '"',
+      };
+      return decoded[entity.toLocaleLowerCase("en-US")] ?? entity;
+    })
     .replace(/\s+/gu, " ")
     .trim();
 }
@@ -280,12 +420,11 @@ export function deriveProductionForgeUiIntent(
   structureHtml: string,
   plan: ProductPlan,
 ): string[] {
-  const withoutExecutableContent = structureHtml
-    .replace(/<(?:script|style|svg)\b[^>]*>[\s\S]*?<\/(?:script|style|svg)>/giu, " ");
+  const withoutExecutableContent = withoutNonVisibleHtml(structureHtml);
   const candidates: string[] = [];
-  const semanticElement = /<(title|h[1-3]|button|label|legend|summary|th)\b[^>]*>([\s\S]*?)<\/\1>/giu;
-  for (const match of withoutExecutableContent.matchAll(semanticElement)) {
-    const text = decodeVisibleHtmlText(match[2] ?? "");
+  const semanticElements = new Set(["title", "h1", "h2", "h3", "button", "label", "legend", "summary", "th"]);
+  for (const range of htmlElementRanges(withoutExecutableContent, semanticElements)) {
+    const text = decodeVisibleHtmlText(withoutExecutableContent.slice(range.bodyStart, range.bodyEnd));
     if (text.length >= 2 && text.length <= 240) candidates.push(text);
   }
   candidates.push(
@@ -363,8 +502,8 @@ function controlVisibleLabel(input: {
 export function deriveProductionForgeLogicIntent(
   forgeLogicHtml: string,
 ): ProductionForgeLogicIntent {
-  const scripts = [...forgeLogicHtml.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/giu)]
-    .map((match) => match[1] ?? "")
+  const scripts = htmlElementRanges(forgeLogicHtml, new Set(["script"]))
+    .map((range) => forgeLogicHtml.slice(range.bodyStart, range.bodyEnd))
     .join("\n");
   const detectedEvents = FORGE_LOGIC_EVENTS.filter((event) =>
     new RegExp(

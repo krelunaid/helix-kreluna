@@ -198,6 +198,19 @@ test("Aegis produces measured, redacted and release-blocking evidence", async (t
       assert.equal(flow.standby.includes("aegis"), false);
     }
   });
+
+  await t.test("a fake script closing tag cannot inflate visible product copy", () => {
+    const opening = '<html lang="en"><head><title>Fixture</title></head><body><button>Go</button><script>';
+    const fakeClosing = `${opening}const pending=true;</script=bogus>${"A".repeat(600)}</script></body></html>`;
+    const validClosing = `${opening}const pending=true;</script>${"A".repeat(600)}</body></html>`;
+    const hasPatchBlocker = (source) =>
+      house.localExperts(source, "Build a compact app").some(
+        (finding) => finding.agent === "patch" && finding.must,
+      );
+
+    assert.equal(hasPatchBlocker(fakeClosing), true);
+    assert.equal(hasPatchBlocker(validClosing), false);
+  });
 });
 
 test("generation and repair prompts preserve the offline security boundary", async () => {
