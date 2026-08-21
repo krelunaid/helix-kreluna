@@ -6,6 +6,35 @@ Ramo di lavoro: `fix/helix-audit-20260820`
 
 Deploy Preview verificato: `bc5d7263623d3a58f7388e28afc90937406301d4`
 
+## Nota di lavoro locale successiva — 2026-08-22
+
+Questa nota fotografa le verifiche locali eseguite prima del rilascio della
+nuova home autenticata. Non modifica le conclusioni né le evidenze storiche del
+Deploy Preview riportate nelle sezioni successive.
+
+- Le prove locali qui elencate non sostituiscono CI e deploy hosted: questi
+  ultimi devono essere attribuiti all’esatto commit e deploy che li eseguono.
+- La landing pubblica per gli utenti non autenticati resta invariata. La nuova
+  home privata `/`, visibile soltanto dopo autenticazione verificata, adotta una
+  shell responsive in stile **Helix OS** con sidebar, composer, sei avvii
+  rapidi, metriche reali, stato build, attività e account.
+- `/dashboard` conserva il gate di autenticazione e reindirizza gli utenti
+  verificati alla home canonica `/`, evitando due implementazioni private
+  divergenti.
+- Lo stato della lettura progetti è discriminato tra `loading`, `error` e
+  `ready`. Il comportamento è fail-closed: loading ed errore non vengono
+  trasformati in un falso elenco vuoto, in metriche zero o in contenuto demo.
+- I **15 progetti dimostrativi** vengono mostrati sotto il composer soltanto
+  quando la lettura termina con successo e restituisce esattamente zero
+  progetti reali. Sono raggruppati in **9 app/software e 6 siti**, non sono
+  salvati nell’account e la loro consultazione non consuma crediti. Se esistono
+  progetti reali, la home mostra quelli e non il fallback dimostrativo.
+- Gate locali del diff: TypeScript strict PASS; lint PASS; suite completa PASS
+  **484/484**; build client+SSR PASS; smoke output Netlify PASS; secret scan
+  worktree PASS. La QA browser della home autenticata a `1536 px` e `390 px`
+  non ha rilevato overflow orizzontale; il layout e la navigazione mobile sono
+  rimasti utilizzabili.
+
 ## Nota di stato successiva — 2026-08-21
 
 Questa nota registra lo stato successivo senza modificare il perimetro o le

@@ -8,6 +8,32 @@ Software house AI: dall’idea a un prodotto (sito, app, software, programma des
 
 Questo è il codice completo dell’app, non un backup parziale.
 
+## Aggiornamento home autenticata — 2026-08-22
+
+Questo aggiornamento della sola esperienza autenticata è stato validato
+localmente con le prove elencate sotto. Le prove hosted vanno sempre riferite
+all’esatto commit e deploy che le eseguono; le sezioni datate 2026-08-21
+conservano lo stato e le evidenze storiche di quel momento.
+
+- Dopo un accesso verificato, `/` presenta una home in stile **Helix OS** con
+  navigazione laterale, saluto e composer principale, sei avvii rapidi,
+  panoramica basata sui dati reali, attività recente, stato build e account.
+  La landing pubblica mostrata agli utenti non autenticati resta invariata.
+- `/dashboard` mantiene il controllo di autenticazione e, per un utente
+  verificato, reindirizza alla stessa home canonica `/`; non esistono due
+  dashboard private divergenti.
+- Il caricamento dei progetti distingue esplicitamente `loading`, `error` e
+  `ready`. La UI fallisce chiusa: durante il caricamento o dopo un errore non
+  presenta valori zero come reali e non sostituisce i dati con progetti demo.
+- Soltanto quando la lettura riesce e restituisce esattamente zero progetti
+  reali, sotto il composer appaiono tutti i **15 progetti dimostrativi**, divisi
+  per categoria in **9 app/software e 6 siti**. Le demo non vengono salvate
+  nell’account e non consumano crediti; non compaiono al posto di progetti reali.
+- La QA locale del diff è verde: **484/484 test**, TypeScript strict, lint,
+  build client+SSR, smoke dell’output Netlify e secret scan del worktree. Il
+  controllo browser della home autenticata è stato completato a `1536 px` e a
+  `390 px`, senza overflow orizzontale e con navigazione mobile utilizzabile.
+
 ## Stato attuale — 2026-08-21
 
 Il sito nel contesto **Netlify Production** è online su
