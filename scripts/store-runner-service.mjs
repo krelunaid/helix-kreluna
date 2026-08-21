@@ -11,6 +11,14 @@ import {
   StoreRunnerReportSchema,
   StoreRunnerRequestSchema,
 } from "../src/lib/server/store-runner.ts";
+import {
+  LEGACY_PROTOTYPE_STORE_ARTIFACT_DESCRIPTOR,
+  STORE_PACKAGE_MANIFEST_PATH,
+} from "../src/lib/server/store-artifact-contract.ts";
+import {
+  stableStoreJson,
+  verifyProductionStorePackageFiles,
+} from "../src/lib/server/store-production-package.ts";
 
 const MAX_REQUEST_BYTES = Math.ceil(MAX_STORE_PACKAGE_BYTES / 3) * 4 + 256 * 1024;
 const MAX_CONCURRENT_REQUESTS = 4;
@@ -211,6 +219,7 @@ export function createPostgresStoreRunnerPersistence(client) {
           package_sha256 TEXT NOT NULL CHECK (package_sha256 ~ '^[0-9a-f]{64}$'),
           source_zip BYTEA NOT NULL,
           identity JSONB NOT NULL,
+          artifact_descriptor JSONB NOT NULL,
           credential_evidence JSONB NOT NULL,
           state TEXT NOT NULL,
           runner_job_id TEXT NOT NULL UNIQUE,
@@ -220,6 +229,20 @@ export function createPostgresStoreRunnerPersistence(client) {
           latest_report JSONB,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+      await client.query(`
+        ALTER TABLE ${JOB_TABLE}
+          ADD COLUMN IF NOT EXISTS artifact_descriptor JSONB
+      `);
+      await client.query(
+        `UPDATE ${JOB_TABLE}
+         SET artifact_descriptor = $1::jsonb
+         WHERE artifact_descriptor IS NULL`,
+        [JSON.stringify(LEGACY_PROTOTYPE_STORE_ARTIFACT_DESCRIPTOR)],
+      );
+      await client.query(`
+        ALTER TABLE ${JOB_TABLE}
+          ALTER COLUMN artifact_descriptor SET NOT NULL
       `);
       await client.query(`
         CREATE TABLE IF NOT EXISTS ${EVENT_TABLE} (
@@ -250,12 +273,13 @@ export function createPostgresStoreRunnerPersistence(client) {
       const result = await client.query(
         `INSERT INTO ${JOB_TABLE} (
            release_id, idempotency_key, package_sha256, source_zip, identity,
-           credential_evidence, state, runner_job_id
-         ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, 'dispatch_accepted', $7)
+           artifact_descriptor, credential_evidence, state, runner_job_id
+         ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, 'dispatch_accepted', $8)
          ON CONFLICT (release_id) DO UPDATE SET updated_at = ${JOB_TABLE}.updated_at
          WHERE ${JOB_TABLE}.idempotency_key = EXCLUDED.idempotency_key
            AND ${JOB_TABLE}.package_sha256 = EXCLUDED.package_sha256
            AND ${JOB_TABLE}.identity = EXCLUDED.identity
+           AND ${JOB_TABLE}.artifact_descriptor = EXCLUDED.artifact_descriptor
          RETURNING *, accepted_at::text`,
         [
           input.releaseId,
@@ -263,6 +287,7 @@ export function createPostgresStoreRunnerPersistence(client) {
           input.packageSha256,
           input.sourceZip,
           JSON.stringify(input.identity),
+          JSON.stringify(input.artifactDescriptor),
           JSON.stringify(input.credentialEvidence),
           runnerJobId,
         ],
@@ -363,22 +388,69 @@ export function createPostgresStoreRunnerPersistence(client) {
   };
 }
 
+function containsControlCharacter(value) {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (codePoint <= 0x1f || codePoint === 0x7f) return true;
+  }
+  return false;
+}
+
+const FORBIDDEN_ZIP_SEGMENTS = new Set([
+  ".git",
+  "node_modules",
+  "__proto__",
+  "prototype",
+  "constructor",
+]);
+
 function validateZipEntryName(name) {
+  const normalized = name.normalize("NFC");
+  const segments = name.split("/");
   return (
-    name &&
+    normalized === name &&
+    Buffer.byteLength(name, "utf8") <= 512 &&
     !name.startsWith("/") &&
     !name.includes("\\") &&
-    !name.split("/").some((part) => part === "" || part === "." || part === "..")
+    !name.includes(":") &&
+    !name.includes("%") &&
+    !containsControlCharacter(name) &&
+    !segments.some(
+      (part) =>
+        part === "" ||
+        part === "." ||
+        part === ".." ||
+        part.endsWith(".") ||
+        part.endsWith(" ") ||
+        FORBIDDEN_ZIP_SEGMENTS.has(part.toLocaleLowerCase("en-US")) ||
+        Buffer.byteLength(part, "utf8") > 255,
+    )
   );
+}
+
+function zipCrc32(bytes) {
+  let checksum = ~0;
+  for (const byte of bytes) {
+    checksum ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      checksum = (checksum >>> 1) ^ (0xedb88320 & -(checksum & 1));
+    }
+  }
+  return ~checksum >>> 0;
 }
 
 /** Extract only the uncompressed, bounded ZIP format emitted by src/lib/zip.ts. */
 export async function extractStoreOnlyZip(bytes, root) {
   let offset = 0;
   let files = 0;
+  let totalBytes = 0;
+  const extracted = Object.create(null);
+  const foldedPaths = new Set();
+  const localEntries = [];
+  const resolvedRoot = resolve(root);
   while (offset + 4 <= bytes.byteLength) {
     const signature = bytes.readUInt32LE(offset);
-    if (signature === 0x02014b50 || signature === 0x06054b50) break;
+    if (signature === 0x02014b50) break;
     if (signature !== 0x04034b50 || offset + 30 > bytes.byteLength) {
       throw new Error("STORE_RUNNER_ZIP_INVALID");
     }
@@ -388,23 +460,112 @@ export async function extractStoreOnlyZip(bytes, root) {
     const uncompressedSize = bytes.readUInt32LE(offset + 22);
     const nameLength = bytes.readUInt16LE(offset + 26);
     const extraLength = bytes.readUInt16LE(offset + 28);
-    if (flags !== 0 || method !== 0 || compressedSize !== uncompressedSize) {
+    const expectedCrc32 = bytes.readUInt32LE(offset + 14);
+    if (
+      ![0, 0x0800].includes(flags) ||
+      method !== 0 ||
+      compressedSize !== uncompressedSize ||
+      extraLength !== 0
+    ) {
       throw new Error("STORE_RUNNER_ZIP_PROFILE_INVALID");
     }
     const nameStart = offset + 30;
     const dataStart = nameStart + nameLength + extraLength;
     const dataEnd = dataStart + compressedSize;
     if (dataEnd > bytes.byteLength) throw new Error("STORE_RUNNER_ZIP_INVALID");
-    const name = bytes.subarray(nameStart, nameStart + nameLength).toString("utf8");
+    let name;
+    try {
+      name = new TextDecoder("utf-8", { fatal: true }).decode(
+        bytes.subarray(nameStart, nameStart + nameLength),
+      );
+    } catch {
+      throw new Error("STORE_RUNNER_ZIP_PATH_INVALID");
+    }
     if (!validateZipEntryName(name)) throw new Error("STORE_RUNNER_ZIP_PATH_INVALID");
-    const destination = join(root, name);
+    const folded = name.toLocaleLowerCase("en-US");
+    if (foldedPaths.has(folded)) throw new Error("STORE_RUNNER_ZIP_DUPLICATE_PATH");
+    foldedPaths.add(folded);
+    const destination = resolve(resolvedRoot, name);
+    if (!destination.startsWith(`${resolvedRoot}/`)) {
+      throw new Error("STORE_RUNNER_ZIP_PATH_INVALID");
+    }
+    const content = bytes.subarray(dataStart, dataEnd);
+    if (zipCrc32(content) !== expectedCrc32) throw new Error("STORE_RUNNER_ZIP_CRC_INVALID");
     await mkdir(dirname(destination), { recursive: true });
-    await writeFile(destination, bytes.subarray(dataStart, dataEnd));
+    await writeFile(destination, content);
+    extracted[name] = Buffer.from(content);
+    localEntries.push({
+      name,
+      crc32: expectedCrc32,
+      byteLength: uncompressedSize,
+      localOffset: offset,
+    });
     files += 1;
+    totalBytes += uncompressedSize;
     if (files > 64) throw new Error("STORE_RUNNER_ZIP_TOO_MANY_FILES");
+    if (totalBytes > MAX_STORE_PACKAGE_BYTES) throw new Error("STORE_RUNNER_ZIP_TOO_LARGE");
     offset = dataEnd;
   }
   if (files < 6) throw new Error("STORE_RUNNER_ZIP_INCOMPLETE");
+  const centralOffset = offset;
+  for (const entry of localEntries) {
+    if (offset + 46 > bytes.byteLength || bytes.readUInt32LE(offset) !== 0x02014b50) {
+      throw new Error("STORE_RUNNER_ZIP_CENTRAL_DIRECTORY_INVALID");
+    }
+    const flags = bytes.readUInt16LE(offset + 8);
+    const method = bytes.readUInt16LE(offset + 10);
+    const crc32 = bytes.readUInt32LE(offset + 16);
+    const compressedSize = bytes.readUInt32LE(offset + 20);
+    const uncompressedSize = bytes.readUInt32LE(offset + 24);
+    const nameLength = bytes.readUInt16LE(offset + 28);
+    const extraLength = bytes.readUInt16LE(offset + 30);
+    const commentLength = bytes.readUInt16LE(offset + 32);
+    const disk = bytes.readUInt16LE(offset + 34);
+    const localOffset = bytes.readUInt32LE(offset + 42);
+    const centralEnd = offset + 46 + nameLength + extraLength + commentLength;
+    if (
+      centralEnd > bytes.byteLength ||
+      ![0, 0x0800].includes(flags) ||
+      method !== 0 ||
+      compressedSize !== uncompressedSize ||
+      extraLength !== 0 ||
+      commentLength !== 0 ||
+      disk !== 0
+    ) {
+      throw new Error("STORE_RUNNER_ZIP_CENTRAL_DIRECTORY_INVALID");
+    }
+    let name;
+    try {
+      name = new TextDecoder("utf-8", { fatal: true }).decode(
+        bytes.subarray(offset + 46, offset + 46 + nameLength),
+      );
+    } catch {
+      throw new Error("STORE_RUNNER_ZIP_CENTRAL_DIRECTORY_INVALID");
+    }
+    if (
+      name !== entry.name ||
+      crc32 !== entry.crc32 ||
+      uncompressedSize !== entry.byteLength ||
+      localOffset !== entry.localOffset
+    ) {
+      throw new Error("STORE_RUNNER_ZIP_CENTRAL_DIRECTORY_INVALID");
+    }
+    offset = centralEnd;
+  }
+  if (
+    offset + 22 !== bytes.byteLength ||
+    bytes.readUInt32LE(offset) !== 0x06054b50 ||
+    bytes.readUInt16LE(offset + 4) !== 0 ||
+    bytes.readUInt16LE(offset + 6) !== 0 ||
+    bytes.readUInt16LE(offset + 8) !== localEntries.length ||
+    bytes.readUInt16LE(offset + 10) !== localEntries.length ||
+    bytes.readUInt32LE(offset + 12) !== offset - centralOffset ||
+    bytes.readUInt32LE(offset + 16) !== centralOffset ||
+    bytes.readUInt16LE(offset + 20) !== 0
+  ) {
+    throw new Error("STORE_RUNNER_ZIP_END_INVALID");
+  }
+  return extracted;
 }
 
 function parseJsonObject(value, code) {
@@ -486,8 +647,8 @@ function jobById(candidate, id) {
   return jobs.find((job) => job?.id === id || job?.key === id || job?.name === id) ?? null;
 }
 
-function jobOutput(job, key) {
-  const value = job?.outputs?.[key];
+function documentedJobId(job, key) {
+  const value = job?.[key];
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 200) : null;
 }
 
@@ -499,8 +660,10 @@ function normalizedJobStatus(job) {
     .replaceAll("-", "_");
   if (["NEW", "QUEUED", "PENDING"].includes(status)) return "not_started";
   if (["IN_PROGRESS", "RUNNING"].includes(status)) return "in_progress";
+  if (status === "PENDING_CANCEL") return "pending_cancel";
   if (["SUCCESS", "SUCCEEDED", "COMPLETED"].includes(status)) return "succeeded";
-  if (["ACTION_REQUIRED"].includes(status)) return "action_required";
+  if (status === "ACTION_REQUIRED") return "action_required";
+  if (status === "SKIPPED") return "skipped";
   if (["FAILURE", "FAILED", "CANCELED", "CANCELLED"].includes(status)) return "failed";
   return null;
 }
@@ -519,19 +682,30 @@ export function normalizeEasWorkflowView({ raw, job, action = "status", observed
     job.identity.platform === "ios" ? "distribute_testflight" : "submit_play_internal";
   const buildJob = jobById(candidate, buildJobId);
   const submitJob = jobById(candidate, submitJobId);
-  const buildStatus = normalizedJobStatus(buildJob);
-  const submissionStatus = normalizedJobStatus(submitJob);
-  if (buildStatus === null || submissionStatus === null) {
+  const parsedBuildStatus = normalizedJobStatus(buildJob);
+  const parsedSubmissionStatus = normalizedJobStatus(submitJob);
+  const workflowOverridesJobStatus =
+    workflowStatus === "failure" ||
+    workflowStatus === "canceled" ||
+    workflowStatus === "action_required";
+  if (
+    !workflowOverridesJobStatus &&
+    (parsedBuildStatus === null || parsedSubmissionStatus === null)
+  ) {
     throw new Error("STORE_EAS_JOB_STATUS_UNKNOWN");
   }
-  const buildId = jobOutput(buildJob, "build_id");
-  const submittedIdentifier =
-    job.identity.platform === "ios"
-      ? jobOutput(submitJob, "ios_bundle_identifier")
-      : jobOutput(submitJob, "android_package_id");
-  if (submittedIdentifier && submittedIdentifier !== job.identity.appIdentifier) {
-    throw new Error("STORE_EAS_APP_IDENTIFIER_MISMATCH");
-  }
+  const buildStatus = parsedBuildStatus ?? "unknown";
+  const submissionStatus = parsedSubmissionStatus ?? "unknown";
+  const buildId = documentedJobId(buildJob, "buildId");
+  const providerSubmissionId = documentedJobId(submitJob, "submissionId");
+  const workflowBuildJobId =
+    buildJob && typeof buildJob.id === "string" && buildJob.id.trim()
+      ? buildJob.id.trim().slice(0, 200)
+      : null;
+  const workflowDistributionJobId =
+    submitJob && typeof submitJob.id === "string" && submitJob.id.trim()
+      ? submitJob.id.trim().slice(0, 200)
+      : null;
   let state;
   let error = null;
   if (workflowStatus === "failure" || workflowStatus === "canceled") {
@@ -541,7 +715,11 @@ export function normalizeEasWorkflowView({ raw, job, action = "status", observed
       message: "EAS workflow did not succeed",
       retryable: false,
     };
-  } else if (workflowStatus === "action_required" || submissionStatus === "action_required") {
+  } else if (
+    workflowStatus === "action_required" ||
+    buildStatus === "action_required" ||
+    submissionStatus === "action_required"
+  ) {
     state = "action_required";
     error = {
       code: "EAS_ACTION_REQUIRED",
@@ -549,52 +727,87 @@ export function normalizeEasWorkflowView({ raw, job, action = "status", observed
       retryable: false,
     };
   } else if (
+    buildStatus === "failed" ||
+    buildStatus === "skipped" ||
+    submissionStatus === "failed" ||
+    submissionStatus === "skipped"
+  ) {
+    state = "failed";
+    error = {
+      code: "EAS_JOB_DID_NOT_SUCCEED",
+      message: "An EAS workflow job failed, was canceled, or was skipped",
+      retryable: false,
+    };
+  } else if (
     workflowStatus === "success" &&
     buildStatus === "succeeded" &&
     submissionStatus === "succeeded" &&
-    buildId &&
-    submittedIdentifier === job.identity.appIdentifier &&
-    submitJob &&
-    typeof submitJob.id === "string"
+    (!buildId || !providerSubmissionId || !workflowBuildJobId || !workflowDistributionJobId)
   ) {
+    state = "action_required";
+    error = {
+      code: "STORE_PROVIDER_EVIDENCE_INCOMPLETE",
+      message: "The successful workflow report omitted required provider evidence",
+      retryable: false,
+    };
+  } else if (
+    workflowStatus === "success" &&
+    buildStatus === "succeeded" &&
+    submissionStatus === "succeeded" &&
+    job.identity.platform === "ios"
+  ) {
+    // Expo's documented workflow view supplies a submission ID for this job.
+    // That is the required TestFlight submission proof; no App Store Connect
+    // release ID is fabricated from undeclared workflow outputs.
     state = "distributed";
-  } else if (submissionStatus === "in_progress") {
+  } else if (
+    workflowStatus === "success" &&
+    buildStatus === "succeeded" &&
+    submissionStatus === "succeeded"
+  ) {
+    // EAS submission success is not a Google Play release-specific identifier.
+    // A verified Play boundary must provide that evidence before completion.
+    state = "action_required";
+    error = {
+      code: "STORE_ANDROID_PLAY_RELEASE_EVIDENCE_REQUIRED",
+      message: "Google Play release-specific evidence is required to complete distribution",
+      retryable: false,
+    };
+  } else if (workflowStatus === "success") {
+    state = "action_required";
+    error = {
+      code: "STORE_PROVIDER_EVIDENCE_INCOMPLETE",
+      message: "The successful workflow report is inconsistent with its required jobs",
+      retryable: false,
+    };
+  } else if (submissionStatus === "in_progress" || submissionStatus === "pending_cancel") {
     state = "submission_in_progress";
   } else if (buildStatus === "succeeded") {
     state = "build_succeeded";
-  } else if (buildStatus === "in_progress") {
+  } else if (buildStatus === "in_progress" || buildStatus === "pending_cancel") {
     state = "build_in_progress";
   } else {
     state = "workflow_queued";
   }
   const rawReportSha256 = sha256(raw);
-  const providerSubmissionId =
-    state === "distributed" ? jobOutput(submitJob, "submission_id") : null;
-  const providerReleaseId =
-    state === "distributed"
-      ? job.identity.platform === "ios"
-        ? jobOutput(submitJob, "asc_build_id")
-        : jobOutput(submitJob, "release_id")
-      : null;
   return StoreRunnerReportSchema.parse({
     kind: "helix_store_release_report",
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     action,
     requestNonce: job.requestNonce,
     releaseId: job.releaseId,
     idempotencyKey: job.idempotencyKey,
     packageSha256: job.packageSha256,
     identity: job.identity,
+    artifactDescriptor: job.artifactDescriptor ?? LEGACY_PROTOTYPE_STORE_ARTIFACT_DESCRIPTOR,
     state,
     runnerJobId: job.runnerJobId,
     workflowRunId: job.workflowRunId,
-    workflowBuildJobId:
-      buildJob && typeof buildJob.id === "string" ? buildJob.id.slice(0, 200) : null,
-    workflowDistributionJobId:
-      submitJob && typeof submitJob.id === "string" ? submitJob.id.slice(0, 200) : null,
+    workflowBuildJobId,
+    workflowDistributionJobId,
     providerBuildId: buildId,
     providerSubmissionId,
-    providerReleaseId,
+    providerReleaseId: null,
     credentialEvidence: job.credentialEvidence,
     providerEvidence: {
       provider: "eas_workflows",
@@ -719,6 +932,8 @@ export function createEasWorkflowExecutor(configuration, options = {}) {
           XDG_CONFIG_HOME: join(directory, ".xdg-config"),
           XDG_CACHE_HOME: join(directory, ".xdg-cache"),
           CI: "1",
+          EAS_NO_VCS: "1",
+          EAS_PROJECT_ROOT: directory,
           EXPO_TOKEN: configuration.expoToken,
         };
         const result = await run(
@@ -836,13 +1051,14 @@ function reportFromRow(request, row, options) {
   const observedAt = options.observedAt;
   return StoreRunnerReportSchema.parse({
     kind: "helix_store_release_report",
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     action: request.action,
     requestNonce: request.requestNonce,
     releaseId: request.releaseId,
     idempotencyKey: request.idempotencyKey,
     packageSha256: request.packageSha256,
     identity: request.identity,
+    artifactDescriptor: row.artifact_descriptor,
     state: options.state,
     runnerJobId: row.runner_job_id,
     workflowRunId: options.workflowRunId ?? row.workflow_run_id ?? null,
@@ -864,9 +1080,38 @@ function assertImmutableRequest(row, request) {
   if (
     row.idempotency_key !== request.idempotencyKey ||
     row.package_sha256 !== request.packageSha256 ||
-    JSON.stringify(row.identity) !== JSON.stringify(request.identity)
+    stableStoreJson(row.identity) !== stableStoreJson(request.identity) ||
+    stableStoreJson(row.artifact_descriptor) !== stableStoreJson(request.artifactDescriptor)
   ) {
     throw new RunnerRejection(409, "STORE_RUNNER_IDEMPOTENCY_CONFLICT", request.requestNonce);
+  }
+}
+
+async function verifyAcceptedSourcePackage(sourceZip, request) {
+  const directory = await mkdtemp(join(tmpdir(), "helix-store-accept-"));
+  try {
+    const extracted = await extractStoreOnlyZip(sourceZip, directory);
+    if (request.artifactDescriptor.sourceBuildLevel === "prototype") {
+      if (Object.hasOwn(extracted, STORE_PACKAGE_MANIFEST_PATH)) {
+        throw new Error("STORE_RUNNER_ARTIFACT_DESCRIPTOR_MISMATCH");
+      }
+      return;
+    }
+    const files = {};
+    for (const [path, content] of Object.entries(extracted)) {
+      try {
+        files[path] = new TextDecoder("utf-8", { fatal: true }).decode(content);
+      } catch {
+        throw new Error("STORE_RUNNER_PRODUCTION_PACKAGE_TEXT_INVALID");
+      }
+    }
+    await verifyProductionStorePackageFiles({
+      files,
+      descriptor: request.artifactDescriptor,
+      expectedIdentity: request.identity,
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 }
 
@@ -880,6 +1125,15 @@ async function executeAction(request, dependencies) {
       sha256(sourceZip) !== request.packageSha256
     ) {
       throw new RunnerRejection(422, "STORE_RUNNER_PACKAGE_MISMATCH", request.requestNonce);
+    }
+    try {
+      await verifyAcceptedSourcePackage(sourceZip, request);
+    } catch (error) {
+      const code =
+        error instanceof Error && /^STORE_RUNNER_[A-Z0-9_]+$/u.test(error.message)
+          ? error.message
+          : "STORE_RUNNER_PRODUCTION_PACKAGE_INVALID";
+      throw new RunnerRejection(422, code, request.requestNonce);
     }
     let credentialEvidence;
     try {
@@ -897,6 +1151,7 @@ async function executeAction(request, dependencies) {
       packageSha256: request.packageSha256,
       sourceZip,
       identity: request.identity,
+      artifactDescriptor: request.artifactDescriptor,
       credentialEvidence,
     });
     assertImmutableRequest(row, request);
@@ -1013,6 +1268,7 @@ async function executeAction(request, dependencies) {
       idempotencyKey: request.idempotencyKey,
       packageSha256: request.packageSha256,
       identity: request.identity,
+      artifactDescriptor: existing.artifact_descriptor,
       runnerJobId: existing.runner_job_id,
       workflowRunId: existing.workflow_run_id,
       credentialEvidence: existing.credential_evidence,

@@ -1,3 +1,5 @@
+import { isHostedRuntimeEnvironment } from "@/lib/hosted-runtime";
+
 const BACKGROUND_FUNCTION_PATH = "/.netlify/functions/helix-job-background";
 export const HELIX_QUEUE_HEADER = "x-helix-queue-token";
 
@@ -38,7 +40,7 @@ export async function dispatchBuildJobToOrigin(
 }
 
 export async function dispatchBuildJob(jobId: string): Promise<void> {
-  if (process.env.NETLIFY === "true") {
+  if (isHostedRuntimeEnvironment()) {
     const { getRequestUrl } = await import("@tanstack/react-start/server");
     await dispatchBuildJobToOrigin(jobId, getRequestUrl().origin);
     return;

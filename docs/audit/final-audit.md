@@ -8,32 +8,33 @@ Commit di base: `a194ffce842db62bfa2d32ded52ea199f50f189e`
 
 ## Verdetto
 
-**Implementazione locale completata; completamento end-to-end esterno non ancora dichiarabile.**
+**Implementazione locale stabilizzata; il nuovo artifact non è ancora verificato end-to-end sui provider.**
 
-- Requisiti 1–62: **38 RISOLTO_LOCALMENTE / 24 PARZIALE_ESTERNO / 0 MANCANTE**.
-- Definition of Done: **16 RISOLTO_LOCALMENTE / 4 PARZIALE_ESTERNO / 0 MANCANTE**.
-- P0 aperti: **0**.
-- P1 aperti: **1**, limitato a una credenziale OAuth preview ancora presente nella storia Git raggiungibile.
+- Requisiti 1–62: **38 RISOLTO_LOCALMENTE / 2 PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING / 22 PARZIALE_ESTERNO / 0 MANCANTE**.
+- Definition of Done: **16 RISOLTO_LOCALMENTE / 2 PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING / 2 PARZIALE_ESTERNO / 0 MANCANTE**.
+- P0/P1 locali aperti: **0**.
+- P1 operativo esterno: **1**, limitato a una credenziale OAuth preview ancora presente nella storia Git raggiungibile.
 
-`RISOLTO_LOCALMENTE` significa che il comportamento è implementato e coperto da prove locali pertinenti. Non implica un deploy, un pagamento, una chiamata AI, un browser runner, un database gestito o una submission Store reali. `PARZIALE_ESTERNO` significa che il percorso locale è implementato e fail-closed, ma l'accettazione completa richiede credenziali, infrastruttura o prove esterne non autorizzate/disponibili. `MANCANTE` significa che manca ancora la capacità locale centrale.
+`RISOLTO_LOCALMENTE` significa che il comportamento è implementato e coperto da prove locali pertinenti. Non implica un deploy, un pagamento, una chiamata AI, un browser runner, un database gestito o una submission Store reali. `PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING` significa che esiste una prova reale sul commit `3e0af1e3a6047fc13e34972e62ae243f30b203fa`, ma non sull'artifact finale di questa fase. `PARZIALE_ESTERNO` significa che il percorso locale è implementato e fail-closed, ma l'accettazione completa richiede credenziali, infrastruttura o prove esterne non autorizzate/disponibili. `MANCANTE` significa che manca ancora la capacità locale centrale.
 
 ## Confine delle prove
 
 - Nessun servizio esterno è stato simulato come prova di produzione.
-- Nessuna chiamata xAI fatturata, transazione Stripe, migrazione DB remota, deploy Netlify, provisioning, EAS build, signing o submission Store è stata eseguita.
-- Le modifiche sono raccolte nel commit locale che contiene questo audit; nessun push, merge, force push, deploy o cancellazione è stato eseguito.
+- In questa fase non sono state eseguite chiamate xAI fatturate, transazioni Stripe, migrazioni DB remote, deploy Netlify, provisioning, EAS build, signing o submission Store.
+- Il sito precedente è live su Netlify e il commit `3e0af1e` ha CI e CodeQL verdi. Le modifiche Harbor/Store/hosted-runtime descritte qui non erano ancora committate, pubblicate o verificate da CI al momento di questo snapshot; il link e l'esito dell'esatto SHA finale sono consegnati separatamente dopo il push.
+- Non sono stati eseguiti merge o force push, né cancellati rami o file.
 - Il runner Production, Twin, Warden, Nimbus, Augur e Store falliscono chiusi quando mancano adapter, evidence o credenziali reali.
 - La QA Chrome descritta sotto è una verifica manuale della build locale compilata; non è un report Twin remoto firmato.
 
 ## Gate finali locali
 
-Ambiente: Node `22.23.2`, npm `10.9.8`, installazione pulita con `npm ci --include=dev`.
+Ambiente locale: Node `22.23.2`, npm `10.9.8`. L'installazione esistente è stata verificata; `npm ci` resta il gate della CI GitHub-hosted.
 
 | Gate | Esito |
 | --- | --- |
 | TypeScript strict | PASS |
 | ESLint completo | PASS, 0 errori; 5 warning legacy `react-refresh` in `src/lib/i18n.tsx` |
-| Suite completa | PASS, **374/374** |
+| Suite completa | PASS, **406/406** |
 | Build client/SSR | PASS |
 | Smoke output Netlify | PASS |
 | Secret scan worktree | PASS, 0 finding |
@@ -63,8 +64,8 @@ Risultato: cambi di stato visibili e coerenti, **0 errori e 0 warning console** 
 
 | # | Stato | Evidenza locale o limite residuo |
 | ---: | --- | --- |
-| 1 | PARZIALE_ESTERNO | Adapter TanStack Start/Netlify e smoke SSR/server/API locali presenti; manca un probe su deploy Netlify reale. |
-| 2 | RISOLTO_LOCALMENTE | Inventario env, gruppi all-or-none e startup fail-closed in `.env.example` e `src/lib/env.server.ts`. |
+| 1 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | Netlify e il dominio personalizzato servono frontend e funzioni server reali sul commit `3e0af1e`; build e smoke del nuovo artifact sono verdi, ma questo diff non è stato deployato né probato live. |
+| 2 | RISOLTO_LOCALMENTE | Inventario env, gruppi all-or-none e startup fail-closed. Il detector hosted condiviso copre anche runtime AWS/Netlify manuali: senza `DATABASE_URL` l'import diretto del DB fallisce chiuso, mentre solo il locale conserva PGLite; queue, Stripe e limiti guest non ricadono nei fallback locali. |
 | 3 | PARZIALE_ESTERNO | Worktree senza secret e scanner history-aware; revoca/rotazione provider e bonifica storia non eseguite. |
 | 4 | PARZIALE_ESTERNO | Checkout hosted, webhook raw-body verificato, inbox, ledger, subscription/top-up e Portal mode-aware implementati; nessun flusso Stripe Test Mode reale. |
 | 5 | RISOLTO_LOCALMENTE | Crediti atomici/idempotenti, saldo non negativo, ledger coerente e test concorrenti. |
@@ -113,15 +114,15 @@ Risultato: cambi di stato visibili e coerenti, **0 errori e 0 warning console** 
 | 48 | RISOLTO_LOCALMENTE | Livelli Prototype/Production espliciti e nessun downgrade silenzioso. |
 | 49 | RISOLTO_LOCALMENTE | Workspace include README, PRD, architecture, source, env, migration, test, config, decisions e score. |
 | 50 | PARZIALE_ESTERNO | Runner valida install/typecheck/lint/test/build/security con report firmato; sandbox provider reale non configurata. |
-| 51 | PARZIALE_ESTERNO | Harbor persiste provider/deploy ID/status/URL/hash/rollback e blocca Production non supportata; nessun deploy hosting live. |
-| 52 | RISOLTO_LOCALMENTE | Stato Store deriva solo da evidence provider e non dichiara upload inesistenti. |
+| 51 | PARZIALE_ESTERNO | Harbor prepara il workspace multi-file con provenance, riserva/rimborsa crediti atomicamente, accetta/attiva/riconcilia/riprende in modo idempotente, persiste report HMAC e rollback e recupera riserve scadute con sweeper autenticato. Mancano runner/provider e deploy/rollback reali; il pacchetto è limitato a 4 MiB e `published_sha256` resta nullo senza digest provider firmato. |
+| 52 | RISOLTO_LOCALMENTE | Store usa descriptor e provenance esatti, demota claim storici non supportati e raggiunge `distributed` solo con evidence provider firmata; nessuna UI dichiara upload inesistenti. |
 | 53 | RISOLTO_LOCALMENTE | Android readiness non è hardcoded e richiede configurazione/signing/evidence. |
-| 54 | PARZIALE_ESTERNO | Pipeline EAS firmata, idempotente, concorrente e persistente; nessun upload App Store/Play reale. |
+| 54 | PARZIALE_ESTERNO | Pipeline EAS firmata, persistente e idempotente `store-release:v2`, con riuso immutabile v1, ZIP bounded, shape EAS documentate e package Production `static_site` hash/workspace/manifest-bound dichiarato wrapper non nativo. iOS richiede build/submission ID reali; Android resta `action_required` senza un vero Google Play release ID. Nessun EAS/Apple/Google live è stato eseguito. |
 | 55 | RISOLTO_LOCALMENTE | Telemetria per chiamata/job distingue provider da application cache. |
 | 56 | RISOLTO_LOCALMENTE | Limiti di costo/call/retry/durata con reserve/settle atomici. |
 | 57 | RISOLTO_LOCALMENTE | Response cache persistente tenant/provider/model/contract-bound, validata prima del riuso. |
 | 58 | RISOLTO_LOCALMENTE | Registry provider esplicito e nessun fallback automatico. |
-| 59 | PARZIALE_ESTERNO | CI, CodeQL e Dependabot configurati; run hosted, required checks e history scan in CI non verificati. |
+| 59 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | CI e CodeQL GitHub-hosted sono verdi su `3e0af1e`; la verifica hosted dell'esatto SHA finale e gli eventuali required checks restano pendenti al momento di questo snapshot. |
 | 60 | RISOLTO_LOCALMENTE | Suite locale copre accesso, guest, crediti, billing, queue, gate, provider failure, score, deploy/store e locale. |
 | 61 | PARZIALE_ESTERNO | Warden ha source autenticata, freshness, dedupe, persistenza e policy senza autopublish; monitoring reale assente. |
 | 62 | PARZIALE_ESTERNO | Nimbus decide runtime/DB/storage/CDN/costi da evidence verificata e resta fail-closed; provisioning/provider live assenti. |
@@ -130,7 +131,7 @@ Risultato: cambi di stato visibili e coerenti, **0 errori e 0 warning console** 
 
 | # | Stato | Valutazione |
 | ---: | --- | --- |
-| 1 | PARZIALE_ESTERNO | Output Netlify full-stack validato localmente; nessuna server function invocata su deploy reale. |
+| 1 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | Frontend e funzioni server reali sono stati probati sul deploy Netlify di `3e0af1e`; il nuovo artifact non è stato deployato. |
 | 2 | PARZIALE_ESTERNO | Worktree senza secret; la storia contiene ancora la credenziale OAuth preview. |
 | 3 | RISOLTO_LOCALMENTE | Nessun piano/top-up accredita senza evento di pagamento server-side verificato. |
 | 4 | RISOLTO_LOCALMENTE | Crediti atomici e idempotenti. |
@@ -148,14 +149,14 @@ Risultato: cambi di stato visibili e coerenti, **0 errori e 0 warning console** 
 | 16 | RISOLTO_LOCALMENTE | Card e routing usano le app preview reali. |
 | 17 | RISOLTO_LOCALMENTE | Prototype e Production distinti. |
 | 18 | RISOLTO_LOCALMENTE | Production crea workspace multi-file reale e validabile. |
-| 19 | PARZIALE_ESTERNO | Workflow CI presente, ma nessuna run GitHub-hosted/branch protection sul diff finale. |
-| 20 | RISOLTO_LOCALMENTE | Typecheck, lint, test e build locali verdi. |
+| 19 | PROVA_ESTERNA_SU_SHA_PRECEDENTE_MA_FINAL_SHA_PENDING | CI e CodeQL GitHub-hosted sono verdi su `3e0af1e`; il diff finale attende il proprio run hosted. |
+| 20 | RISOLTO_LOCALMENTE | Typecheck, lint, **406/406** test, build client/SSR e smoke Netlify locali verdi. |
 
-## P1 residuo: secret OAuth nella storia
+## P1 operativo esterno: secret OAuth nella storia
 
 `npm run security:history` rileva la stessa credenziale in `src/lib/auth/preview.ts` nei commit raggiungibili `30ec14f`, `6e4bbe1` e `7627c1c`. Il valore non è riportato qui. Lo scan del worktree corrente riporta zero finding.
 
-Per chiudere il P1 servono azioni fuori dal perimetro autorizzato:
+Il codice e il worktree non hanno P0/P1 locali aperti. Per chiudere il rischio operativo storico servono azioni esterne e coordinate:
 
 1. revoca/rotazione della credenziale presso il provider, con prova;
 2. decisione coordinata sulla riscrittura della storia Git;
@@ -165,13 +166,14 @@ La riscrittura/force push è incompatibile con il divieto esplicito corrente e n
 
 ## Attivazioni e prove esterne ancora necessarie
 
-1. Deploy preview Netlify autorizzato con probe SSR/server function/API/auth/CSP e scheduled/background functions.
+1. Configurare DB gestito, migrazioni `0001`–`0025` ed env core; poi eseguire un deploy Netlify Git-based autorizzato dell'esatto SHA finale con probe SSR/server function/API/auth/CSP e scheduled/background functions. Il sito precedente resta live, ma non rappresenta questo artifact.
 2. Stripe Test Mode/Test Clock con Checkout, webhook provider, invoice, rinnovo, cancellazione, failure e Portal reali.
 3. Esecuzione xAI fatturata con telemetria confrontata al provider e limiti provider-side.
 4. Workspace/Twin runner remoti con isolamento, egress, replay store e report firmati osservati.
 5. PostgreSQL/Neon, auth, storage e integrazioni reali per un workspace Production.
 6. Fonti reali per Warden, Nimbus e Augur; nessun provisioning automatico senza approvazione.
-7. Run GitHub-hosted di CI/CodeQL, Dependabot e required checks/branch protection.
-8. EAS, Apple e Google con signing e submission evidence reali.
+7. Harbor runner, secret/sweeper e provider reali con evidence firmata di deploy e rollback.
+8. Run GitHub-hosted di CI/CodeQL sull'esatto SHA finale, oltre a Dependabot e required checks/branch protection.
+9. EAS, Apple e Google con signing e submission evidence reali, incluso un Google Play release ID specifico e verificato.
 
-Questi punti non sono sostituibili con fixture locali e richiedono nuove credenziali o autorizzazioni esplicite. Fino ad allora Helix resta localmente completo e operativamente fail-closed, ma non viene dichiarato pubblicato o verificato end-to-end sui provider.
+Questi punti non sono sostituibili con fixture locali e richiedono nuove credenziali o autorizzazioni esplicite. Il sito del commit precedente è pubblicato; l'artifact finale descritto qui resta localmente stabilizzato e operativamente fail-closed, ma non viene dichiarato deployato o verificato end-to-end sui provider.

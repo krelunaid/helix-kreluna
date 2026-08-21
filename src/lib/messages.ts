@@ -594,6 +594,15 @@ export const en = {
   "launch.webBody": "Public URL. Browser and phone.",
   "launch.productionWebUnavailable":
     "Production workspaces require a verified multi-file deploy provider. The HTML preview cannot be published as the application.",
+  "launch.harborRunnerUnavailable":
+    "The Harbor Production runner is not configured. No Prototype fallback will be used.",
+  "launch.harborProductionReady":
+    "The multi-file Production workspace is sent, activated, and verified through the authenticated runner.",
+  "launch.harborActive": "Harbor Production is active with verified provider evidence.",
+  "launch.harborPending": "Harbor Production state: {status}. Provider work is still in progress.",
+  "launch.harborFailure": "Harbor Production requires attention. Verified state: {status}.",
+  "launch.harborRefresh": "Reconcile Harbor evidence",
+  "launch.harborResume": "Retry verified Harbor reconciliation",
   "launch.webCta": "Publish on the web",
   "launch.webOk": "Live on the web.",
   "launch.ios": "iOS / TestFlight",
@@ -615,8 +624,12 @@ export const en = {
     "Authenticated Store runner configured. This does not prove EAS or Store credentials; only signed build and distribution evidence can do that.",
   "launch.storeRunnerUnavailable":
     "Store submission unavailable: configure the authenticated Store runner. Source download still works.",
-  "launch.productionNativeUnavailable":
-    "Production workspaces do not yet have a supported native conversion. The HTML inventory preview cannot be submitted as the Production app.",
+  "launch.productionStoreWrapper":
+    "Verified Production static web-to-native wrapper. It is not a native implementation; EAS still performs the measured native build and signing.",
+  "launch.productionStoreUnsupported":
+    "Production runtime {runtimeProfile} is incompatible with the offline static wrapper. Store source export and dispatch stay blocked.",
+  "launch.androidPlayReleaseEvidence":
+    "Android remains action required after EAS submission until a verified Google Play release ID is available.",
   "launch.storeConfirm":
     "I explicitly authorize a real provider dispatch costing {credits} credits after durable runner acceptance.",
   "launch.iosSubmitCta": "Dispatch TestFlight workflow",
@@ -1394,6 +1407,16 @@ const it: Record<MessageKey, string> = {
   "launch.webBody": "URL pubblico. Browser e telefono.",
   "launch.productionWebUnavailable":
     "I workspace Production richiedono un provider di deploy multi-file verificato. L’anteprima HTML non può essere pubblicata come applicazione.",
+  "launch.harborRunnerUnavailable":
+    "Il runner Harbor Production non è configurato. Non verrà usato alcun fallback Prototype.",
+  "launch.harborProductionReady":
+    "Il workspace Production multi-file viene inviato, attivato e verificato tramite il runner autenticato.",
+  "launch.harborActive": "Harbor Production è attivo con prove provider verificate.",
+  "launch.harborPending":
+    "Stato Harbor Production: {status}. Il lavoro del provider è ancora in corso.",
+  "launch.harborFailure": "Harbor Production richiede attenzione. Stato verificato: {status}.",
+  "launch.harborRefresh": "Riconcilia prove Harbor",
+  "launch.harborResume": "Riprova la riconciliazione Harbor verificata",
   "launch.webCta": "Pubblica sul web",
   "launch.webOk": "Online sul web.",
   "launch.ios": "iOS / TestFlight",
@@ -1415,8 +1438,12 @@ const it: Record<MessageKey, string> = {
     "Runner Store autenticato configurato. Questo non prova le credenziali EAS o Store: servono prove firmate di build e distribuzione.",
   "launch.storeRunnerUnavailable":
     "Submission store non disponibile: configura il runner Store autenticato. Il download sorgente resta disponibile.",
-  "launch.productionNativeUnavailable":
-    "I workspace Production non hanno ancora una conversione nativa supportata. L’anteprima HTML di inventario non può essere inviata come app Production.",
+  "launch.productionStoreWrapper":
+    "Wrapper web-to-native statico Production verificato. Non è un’implementazione nativa: build nativa misurata e firma restano a EAS.",
+  "launch.productionStoreUnsupported":
+    "Il runtime Production {runtimeProfile} non è compatibile con il wrapper statico offline. Export sorgente e dispatch Store restano bloccati.",
+  "launch.androidPlayReleaseEvidence":
+    "Android resta in action required dopo la submission EAS finché non è disponibile un ID release Google Play verificato.",
   "launch.storeConfirm":
     "Autorizzo esplicitamente un dispatch reale al provider con costo di {credits} crediti, addebitati dopo l’accettazione durevole del runner.",
   "launch.iosSubmitCta": "Invia workflow TestFlight",
@@ -1601,6 +1628,16 @@ const it: Record<MessageKey, string> = {
 
 const es: Record<MessageKey, string> = {
   ...en,
+  "launch.harborRunnerUnavailable":
+    "El runner de Harbor Production no está configurado. No se usará ningún fallback Prototype.",
+  "launch.harborProductionReady":
+    "El workspace Production multiarchivo se envía, activa y verifica mediante el runner autenticado.",
+  "launch.harborActive": "Harbor Production está activo con pruebas verificadas del proveedor.",
+  "launch.harborPending":
+    "Estado de Harbor Production: {status}. El trabajo del proveedor sigue en curso.",
+  "launch.harborFailure": "Harbor Production requiere atención. Estado verificado: {status}.",
+  "launch.harborRefresh": "Conciliar pruebas de Harbor",
+  "launch.harborResume": "Reintentar la conciliación verificada de Harbor",
   "desk.level": "Nivel de compilación",
   "desk.prototype": "Prototipo",
   "desk.prototypeHint":
@@ -1846,6 +1883,16 @@ const es: Record<MessageKey, string> = {
 
 const fr: Record<MessageKey, string> = {
   ...en,
+  "launch.harborRunnerUnavailable":
+    "Le runner Harbor Production n’est pas configuré. Aucun fallback Prototype ne sera utilisé.",
+  "launch.harborProductionReady":
+    "Le workspace Production multifichier est envoyé, activé et vérifié par le runner authentifié.",
+  "launch.harborActive": "Harbor Production est actif avec des preuves fournisseur vérifiées.",
+  "launch.harborPending":
+    "État Harbor Production : {status}. Le travail du fournisseur est toujours en cours.",
+  "launch.harborFailure": "Harbor Production nécessite une intervention. État vérifié : {status}.",
+  "launch.harborRefresh": "Rapprocher les preuves Harbor",
+  "launch.harborResume": "Relancer le rapprochement Harbor vérifié",
   "desk.level": "Niveau de build",
   "desk.prototype": "Prototype",
   "desk.prototypeHint":
@@ -2085,6 +2132,16 @@ const fr: Record<MessageKey, string> = {
 
 const de: Record<MessageKey, string> = {
   ...en,
+  "launch.harborRunnerUnavailable":
+    "Der Harbor-Production-Runner ist nicht konfiguriert. Es wird kein Prototype-Fallback verwendet.",
+  "launch.harborProductionReady":
+    "Der mehrteilige Production-Workspace wird über den authentifizierten Runner gesendet, aktiviert und verifiziert.",
+  "launch.harborActive": "Harbor Production ist mit verifizierten Provider-Nachweisen aktiv.",
+  "launch.harborPending": "Harbor-Production-Status: {status}. Die Provider-Arbeit läuft noch.",
+  "launch.harborFailure":
+    "Harbor Production erfordert Aufmerksamkeit. Verifizierter Status: {status}.",
+  "launch.harborRefresh": "Harbor-Nachweise abgleichen",
+  "launch.harborResume": "Verifizierten Harbor-Abgleich erneut versuchen",
   "desk.level": "Build-Stufe",
   "desk.prototype": "Prototyp",
   "desk.prototypeHint":
@@ -2325,6 +2382,16 @@ const de: Record<MessageKey, string> = {
 
 const pt: Record<MessageKey, string> = {
   ...en,
+  "launch.harborRunnerUnavailable":
+    "O runner Harbor Production não está configurado. Não será usado nenhum fallback Prototype.",
+  "launch.harborProductionReady":
+    "O workspace Production multificheiro é enviado, ativado e verificado pelo runner autenticado.",
+  "launch.harborActive": "O Harbor Production está ativo com provas verificadas do provider.",
+  "launch.harborPending":
+    "Estado do Harbor Production: {status}. O trabalho do provider ainda está em curso.",
+  "launch.harborFailure": "O Harbor Production requer atenção. Estado verificado: {status}.",
+  "launch.harborRefresh": "Reconciliar provas Harbor",
+  "launch.harborResume": "Repetir a reconciliação Harbor verificada",
   "desk.level": "Nível de build",
   "desk.prototype": "Protótipo",
   "desk.prototypeHint":

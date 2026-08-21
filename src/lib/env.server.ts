@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isHostedRuntimeEnvironment } from "@/lib/hosted-runtime";
 import { normalizePublicHostname, publicOriginFromHostname } from "@/lib/env.shared";
 import { WardenPolicySchema } from "@/lib/server/operations/warden";
 
@@ -58,6 +59,10 @@ const rawEnvironmentSchema = z.object({
   HELIX_WORKSPACE_RUNNER_SECRET: optionalText,
   HELIX_STORE_RUNNER_URL: optionalText,
   HELIX_STORE_RUNNER_SECRET: optionalText,
+  HELIX_HARBOR_RUNNER_URL: optionalText,
+  HELIX_HARBOR_RUNNER_SECRET: optionalText,
+  HELIX_HARBOR_SWEEPER_ENABLED: z.enum(["true", "false"]).optional(),
+  HELIX_HARBOR_SWEEPER_DISPATCH_SECRET: optionalText,
   VITE_PRODUCTION_BUILDS_ENABLED: z.enum(["true", "false"]).optional(),
   VITE_PRODUCTION_CREDITS: optionalText,
   VITE_STUN_URLS: optionalText,
@@ -66,6 +71,16 @@ const rawEnvironmentSchema = z.object({
   X_CREATOR: optionalText,
   X_CREATOR_ID: optionalText,
   NETLIFY: optionalText,
+  NETLIFY_DEPLOY_ID: optionalText,
+  DEPLOY_ID: optionalText,
+  SITE_ID: optionalText,
+  AWS_LAMBDA_FUNCTION_NAME: optionalText,
+  LAMBDA_TASK_ROOT: optionalText,
+  NODE_ENV: z.enum(["development", "production", "test"]).optional(),
+  HELIX_RUNTIME_ENV: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined),
+    z.enum(["local", "production"]).optional(),
+  ),
   CONTEXT: optionalText,
   COMMIT_REF: optionalText,
 });
@@ -119,8 +134,16 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   const required = (name: keyof typeof values, condition = true) => {
     if (condition && !values[name]) invalid.push(name);
   };
-  const isNetlify = values.NETLIFY === "true";
-  const isProduction = isNetlify && values.CONTEXT === "production";
+  const isHostedRuntime = isHostedRuntimeEnvironment(values);
+  // Preserve the public property used by auth origin policy, but broaden its
+  // meaning to every positively identified hosted runtime. NODE_ENV alone is
+  // deliberately insufficient because Vite production builds run locally.
+  const isNetlify = isHostedRuntime;
+  const isProduction =
+    isHostedRuntime &&
+    (values.CONTEXT === "production" ||
+      values.HELIX_RUNTIME_ENV === "production" ||
+      (!values.CONTEXT && values.NODE_ENV === "production"));
   const authEnabled = values.VITE_AUTH_ENABLED === "true";
   const stripeBillingEnabled = values.STRIPE_BILLING_ENABLED === "true";
   const productionBuildsEnabled = values.VITE_PRODUCTION_BUILDS_ENABLED === "true";
@@ -141,10 +164,10 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   if (values.DATABASE_URL && !isPostgresUrl(values.DATABASE_URL)) {
     invalid.push("DATABASE_URL");
   }
-  if (values.BETTER_AUTH_URL && !isOriginOnly(values.BETTER_AUTH_URL, isNetlify)) {
+  if (values.BETTER_AUTH_URL && !isOriginOnly(values.BETTER_AUTH_URL, isHostedRuntime)) {
     invalid.push("BETTER_AUTH_URL");
   }
-  if (values.GROK_AUTH_ISSUER && !isOriginOnly(values.GROK_AUTH_ISSUER, isNetlify)) {
+  if (values.GROK_AUTH_ISSUER && !isOriginOnly(values.GROK_AUTH_ISSUER, isHostedRuntime)) {
     invalid.push("GROK_AUTH_ISSUER");
   }
   if (
@@ -227,6 +250,44 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
   }
   if (Boolean(values.HELIX_STORE_RUNNER_URL) !== Boolean(values.HELIX_STORE_RUNNER_SECRET)) {
     invalid.push("HELIX_STORE_RUNNER_URL", "HELIX_STORE_RUNNER_SECRET");
+  }
+  if (values.HELIX_HARBOR_RUNNER_URL) {
+    try {
+      const runnerUrl = new URL(values.HELIX_HARBOR_RUNNER_URL);
+      const loopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(runnerUrl.hostname);
+      if (
+        (runnerUrl.protocol !== "https:" && !(loopback && runnerUrl.protocol === "http:")) ||
+        runnerUrl.username ||
+        runnerUrl.password ||
+        runnerUrl.search ||
+        runnerUrl.hash
+      ) {
+        invalid.push("HELIX_HARBOR_RUNNER_URL");
+      }
+    } catch {
+      invalid.push("HELIX_HARBOR_RUNNER_URL");
+    }
+  }
+  if (values.HELIX_HARBOR_RUNNER_SECRET && values.HELIX_HARBOR_RUNNER_SECRET.length < 32) {
+    invalid.push("HELIX_HARBOR_RUNNER_SECRET");
+  }
+  if (Boolean(values.HELIX_HARBOR_RUNNER_URL) !== Boolean(values.HELIX_HARBOR_RUNNER_SECRET)) {
+    invalid.push("HELIX_HARBOR_RUNNER_URL", "HELIX_HARBOR_RUNNER_SECRET");
+  }
+  if (
+    values.HELIX_HARBOR_SWEEPER_DISPATCH_SECRET &&
+    values.HELIX_HARBOR_SWEEPER_DISPATCH_SECRET.length < 32
+  ) {
+    invalid.push("HELIX_HARBOR_SWEEPER_DISPATCH_SECRET");
+  }
+  if (values.HELIX_HARBOR_SWEEPER_ENABLED === "true") {
+    required("HELIX_HARBOR_SWEEPER_DISPATCH_SECRET");
+  }
+  if (isHostedRuntime && values.HELIX_HARBOR_RUNNER_URL && values.HELIX_HARBOR_RUNNER_SECRET) {
+    if (values.HELIX_HARBOR_SWEEPER_ENABLED !== "true") {
+      invalid.push("HELIX_HARBOR_SWEEPER_ENABLED");
+    }
+    required("HELIX_HARBOR_SWEEPER_DISPATCH_SECRET");
   }
   if (
     productionBuildCredits !== null &&
@@ -446,10 +507,7 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
       invalid.push("HELIX_AUGUR_EVIDENCE_URL");
     }
   }
-  for (const name of [
-    "HELIX_AUGUR_EVIDENCE_TOKEN",
-    "HELIX_AUGUR_EVIDENCE_HMAC_SECRET",
-  ] as const) {
+  for (const name of ["HELIX_AUGUR_EVIDENCE_TOKEN", "HELIX_AUGUR_EVIDENCE_HMAC_SECRET"] as const) {
     if (values[name] && values[name].length < 32) invalid.push(name);
   }
   for (const name of ["HELIX_AUGUR_EVIDENCE_SOURCE_ID", "HELIX_AUGUR_EVIDENCE_KEY_ID"] as const) {
@@ -464,7 +522,7 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
     }
   }
 
-  if (isNetlify) {
+  if (isHostedRuntime) {
     required("DATABASE_URL");
     required("VITE_PUBLIC_HOSTNAME");
     required("VITE_AUTH_ENABLED");
@@ -498,7 +556,7 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
 
   const publicOrigin = hostname ? publicOriginFromHostname(hostname) : "";
   if (
-    isNetlify &&
+    isHostedRuntime &&
     values.BETTER_AUTH_URL &&
     publicOrigin &&
     values.BETTER_AUTH_URL !== publicOrigin
@@ -518,11 +576,13 @@ export function validateServerEnvironment(input: NodeJS.ProcessEnv = process.env
     hostname,
     publicOrigin,
     isNetlify,
+    isHostedRuntime,
     isProduction,
   });
 }
 
 // Imported by the server entry before DB/auth initialization. Local builds may
-// use PGLite; any Netlify runtime fails closed when persistence/auth/AI config
-// is incomplete instead of silently degrading to process-local mock behavior.
+// use PGLite; any positively identified hosted runtime fails closed when
+// persistence/auth/AI config is incomplete instead of silently degrading to
+// process-local mock behavior.
 export const serverEnv = validateServerEnvironment();

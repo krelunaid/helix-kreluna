@@ -21,6 +21,7 @@ import {
   getApprovedOwnedBuild,
   HumanGateError,
   normalizeGateRequestId,
+  type ApprovedBuildArtifact,
 } from "@/lib/server/review/human-gate";
 import {
   assertPublishedUtf8,
@@ -32,12 +33,40 @@ import { deleteExpiredGuestPublications } from "@/lib/server/persistence/guest-p
 import {
   callStoreRunner,
   isStoreRunnerConfigured,
+  LEGACY_PROTOTYPE_STORE_ARTIFACT_DESCRIPTOR,
+  LegacyStoreRunnerReportSchema,
+  StoreArtifactDescriptorSchema,
   StoreRunnerError,
   StoreIdentitySchema,
   StoreRunnerReportSchema,
+  type StoreArtifactDescriptor,
   type StoreIdentity,
+  type LegacyStoreRunnerReport,
   type StoreRunnerReport,
 } from "@/lib/server/store-runner";
+import {
+  prepareApprovedProductionStorePackage,
+  StoreProductionPackagingError,
+  type ApprovedProductionStoreSource,
+} from "@/lib/server/release/store-production-artifact";
+import { createHarborProductionArtifact } from "@/lib/server/release/harbor-production-artifact";
+import {
+  acceptHarborProductionRelease,
+  advanceHarborProductionRelease,
+  harborProductionReadiness,
+  harborProductionReleaseResult,
+  loadHarborProductionRelease,
+  prepareHarborProductionRelease,
+  resumeHarborProductionRelease,
+  type HarborProductionReadiness,
+} from "@/lib/server/release/harbor-production-release";
+import {
+  assertHarborProductionPublishingConfigured,
+  createAuthenticatedHarborProductionProvider,
+  HarborProductionRunnerError,
+} from "@/lib/server/release/harbor-production-runner";
+
+export type { HarborProductionReadiness } from "@/lib/server/release/harbor-production-release";
 
 let schemaReady: Promise<void> | null = null;
 
@@ -104,21 +133,20 @@ export function assertHarborWebPublishable(
   }
 }
 
-export class StoreProductionArtifactError extends Error {
-  readonly code = "STORE_PRODUCTION_NATIVE_ARTIFACT_UNAVAILABLE";
-  readonly status = 409;
-  readonly retryable = false;
-
-  constructor() {
-    super("STORE_PRODUCTION_NATIVE_ARTIFACT_UNAVAILABLE");
-    this.name = "StoreProductionArtifactError";
+function approvedProductionStoreSource(
+  artifact: ApprovedBuildArtifact,
+): ApprovedProductionStoreSource {
+  if (artifact.buildLevel !== "production" || !artifact.workspace) {
+    throw new StoreProductionPackagingError("STORE_PRODUCTION_WORKSPACE_INVALID");
   }
-}
-
-export function assertStoreArtifactShippable(
-  buildLevel: BuildLevel,
-): asserts buildLevel is "prototype" {
-  if (buildLevel === "production") throw new StoreProductionArtifactError();
+  return {
+    jobId: artifact.jobId,
+    buildLevel: "production",
+    html: artifact.html,
+    artifactSha256: artifact.artifactSha256,
+    files: artifact.files,
+    workspace: artifact.workspace,
+  };
 }
 
 export type StoreReadiness = {
@@ -165,9 +193,14 @@ export function storeReadiness(
   };
 }
 
-export function storeReadinessFromReport(report: StoreRunnerReport): StoreReadiness {
+export function storeReadinessFromReport(
+  report: StoreRunnerReport | LegacyStoreRunnerReport,
+): StoreReadiness {
   const buildReady =
     report.providerBuildId !== null && report.providerEvidence.buildStatus === "succeeded";
+  const androidReleaseEvidenceRequired =
+    report.identity.platform === "android" &&
+    report.error?.code === "STORE_ANDROID_PLAY_RELEASE_EVIDENCE_REQUIRED";
   const submissionReady =
     report.workflowDistributionJobId !== null &&
     report.providerEvidence.submissionStatus === "succeeded" &&
@@ -186,11 +219,13 @@ export function storeReadinessFromReport(report: StoreRunnerReport): StoreReadin
     submissionReady,
     missingCredentials: submissionReady
       ? []
-      : [
-          buildReady
-            ? "EAS store submission credential not yet proven"
-            : "EAS build/signing and store credentials not yet proven",
-        ],
+      : androidReleaseEvidenceRequired
+        ? ["Verified Google Play release ID is still required after EAS submission"]
+        : [
+            buildReady
+              ? "EAS store submission credential not yet proven"
+              : "EAS build/signing and store credentials not yet proven",
+          ],
     reason:
       report.state === "distributed"
         ? "STORE_DISTRIBUTED"
@@ -239,6 +274,8 @@ export type Deploy = {
   error_code: string | null;
   error_message: string | null;
   store_release_id: string | null;
+  harbor_release_id: string | null;
+  harbor_release_state: string | null;
 };
 
 export type PublicApp = {
@@ -384,22 +421,29 @@ function harborStore(target: "ios" | "android", report: StoreRunnerReport): Depl
   const store = target === "ios" ? "TestFlight" : "Google Play internal track";
   const buildStatus = report.providerEvidence.buildStatus;
   const submissionStatus = report.providerEvidence.submissionStatus;
+  const androidReleaseEvidenceRequired =
+    target === "android" && report.error?.code === "STORE_ANDROID_PLAY_RELEASE_EVIDENCE_REQUIRED";
   const buildStepStatus: DeployStep["status"] =
     buildStatus === "succeeded"
       ? "done"
-      : buildStatus === "failed"
+      : buildStatus === "failed" || buildStatus === "skipped" || buildStatus === "unknown"
         ? "error"
-        : buildStatus === "in_progress"
-          ? "running"
-          : "queued";
-  const submissionStepStatus: DeployStep["status"] =
-    submissionStatus === "succeeded"
+        : buildStatus === "action_required"
+          ? "blocked"
+          : buildStatus === "in_progress" || buildStatus === "pending_cancel"
+            ? "running"
+            : "queued";
+  const submissionStepStatus: DeployStep["status"] = androidReleaseEvidenceRequired
+    ? "blocked"
+    : submissionStatus === "succeeded"
       ? "done"
-      : submissionStatus === "failed"
+      : submissionStatus === "failed" ||
+          submissionStatus === "skipped" ||
+          submissionStatus === "unknown"
         ? "error"
         : submissionStatus === "action_required"
           ? "blocked"
-          : submissionStatus === "in_progress"
+          : submissionStatus === "in_progress" || submissionStatus === "pending_cancel"
             ? "running"
             : "queued";
   return [
@@ -443,8 +487,11 @@ function harborStore(target: "ios" | "android", report: StoreRunnerReport): Depl
       id: "upload",
       label: `Harbor · ${store}`,
       status: submissionStepStatus,
-      detail:
-        report.workflowDistributionJobId === null
+      detail: androidReleaseEvidenceRequired
+        ? report.providerSubmissionId
+          ? `EAS submission ID ${report.providerSubmissionId}; verified Google Play release ID is still missing`
+          : "Verified Google Play release ID is still missing"
+        : report.workflowDistributionJobId === null
           ? `No successful ${store} distribution has been reported`
           : `EAS workflow distribution job ${report.workflowDistributionJobId}`,
     },
@@ -468,6 +515,10 @@ type StoreReleaseRow = {
   app_identifier: string;
   eas_project_id: string;
   apple_team_id: string | null;
+  source_build_level: "prototype" | "production";
+  source_workspace_sha256: string | null;
+  package_manifest_sha256: string | null;
+  packaging_profile: "legacy_expo_wrapper_v1" | "orbit_expo_static_wrapper_v1";
   state: StoreRunnerReport["state"] | "prepared";
   runner_job_id: string | null;
   workflow_run_id: string | null;
@@ -475,6 +526,7 @@ type StoreReleaseRow = {
   provider_submission_id: string | null;
   provider_release_id: string | null;
   play_track: string | null;
+  credential_evidence: unknown;
   provider_evidence: unknown;
   retry_count: number;
   last_error_code: string | null;
@@ -484,13 +536,79 @@ type StoreReleaseRow = {
   updated_at: string;
 };
 
-function parseStoredStoreReport(value: unknown): StoreRunnerReport | null {
-  const parsed = StoreRunnerReportSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
+function storeArtifactDescriptorFromRow(row: StoreReleaseRow): StoreArtifactDescriptor {
+  return StoreArtifactDescriptorSchema.parse(
+    row.source_build_level === "production"
+      ? {
+          kind: "helix_store_artifact_descriptor",
+          schemaVersion: "1.0.0",
+          sourceBuildLevel: "production",
+          artifactKind: "web_to_native_wrapper",
+          packagingProfile: row.packaging_profile,
+          nativeImplementation: false,
+          runtimeProfile: "static_site",
+          sourcePreviewSha256: row.source_artifact_sha256,
+          sourceWorkspaceSha256: row.source_workspace_sha256,
+          packageManifestSha256: row.package_manifest_sha256,
+        }
+      : {
+          ...LEGACY_PROTOTYPE_STORE_ARTIFACT_DESCRIPTOR,
+          packagingProfile: row.packaging_profile,
+        },
+  );
 }
 
-function storeReleaseResult(row: StoreReleaseRow, report?: StoreRunnerReport | null) {
-  const evidence = report ?? parseStoredStoreReport(row.provider_evidence);
+function storedStoreReportMatchesRow(
+  report: StoreRunnerReport | LegacyStoreRunnerReport,
+  row: StoreReleaseRow,
+): boolean {
+  const identity = report.identity;
+  if (
+    report.state !== row.state ||
+    report.releaseId !== row.id ||
+    report.idempotencyKey !== row.idempotency_key ||
+    report.packageSha256 !== row.package_sha256 ||
+    report.runnerJobId !== row.runner_job_id ||
+    report.workflowRunId !== row.workflow_run_id ||
+    report.providerBuildId !== row.provider_build_id ||
+    report.providerSubmissionId !== row.provider_submission_id ||
+    report.providerReleaseId !== row.provider_release_id ||
+    identity.platform !== row.platform ||
+    identity.destination !== row.destination ||
+    identity.appIdentifier !== row.app_identifier ||
+    identity.easProjectId !== row.eas_project_id ||
+    identity.appleTeamId !== row.apple_team_id
+  ) {
+    return false;
+  }
+  if (report.schemaVersion === "1.0.0") {
+    return row.source_build_level === "prototype";
+  }
+  return (
+    JSON.stringify(report.artifactDescriptor) === JSON.stringify(storeArtifactDescriptorFromRow(row))
+  );
+}
+
+function parseStoredStoreReport(
+  row: StoreReleaseRow,
+): StoreRunnerReport | LegacyStoreRunnerReport | null {
+  const current = StoreRunnerReportSchema.safeParse(row.provider_evidence);
+  if (current.success && storedStoreReportMatchesRow(current.data, row)) return current.data;
+  const legacy = LegacyStoreRunnerReportSchema.safeParse(row.provider_evidence);
+  if (legacy.success && storedStoreReportMatchesRow(legacy.data, row)) return legacy.data;
+  return null;
+}
+
+function failedClosedStoreReadiness(row: StoreReleaseRow): StoreReadiness {
+  const readiness = storeReadiness(row.platform);
+  return row.state === "failed" || row.state === "action_required"
+    ? { ...readiness, reason: "STORE_ACTION_REQUIRED" }
+    : readiness;
+}
+
+function storeReleaseResult(row: StoreReleaseRow) {
+  const evidence = parseStoredStoreReport(row);
+  const artifactDescriptor = storeArtifactDescriptorFromRow(row);
   return {
     id: row.id,
     deployId: row.deploy_id,
@@ -515,7 +633,15 @@ function storeReleaseResult(row: StoreReleaseRow, report?: StoreRunnerReport | n
     playTrack: row.play_track,
     packageSha256: row.package_sha256,
     sourceArtifactSha256: row.source_artifact_sha256,
-    readiness: evidence ? storeReadinessFromReport(evidence) : storeReadiness(row.platform),
+    sourceBuildLevel: row.source_build_level,
+    sourceWorkspaceSha256: row.source_workspace_sha256,
+    packageManifestSha256: row.package_manifest_sha256,
+    packagingProfile: row.packaging_profile,
+    artifactKind: artifactDescriptor.artifactKind,
+    nativeImplementation: artifactDescriptor.nativeImplementation,
+    runtimeProfile: artifactDescriptor.runtimeProfile,
+    artifactDescriptor,
+    readiness: evidence ? storeReadinessFromReport(evidence) : failedClosedStoreReadiness(row),
     retryCount: row.retry_count,
     error:
       row.last_error_code && row.last_error_message
@@ -552,6 +678,7 @@ async function persistStoreRunnerReport(input: {
   const errorCode = report.error?.code ?? null;
   const errorMessage = report.error?.message ?? null;
   const errorRetryable = report.error?.retryable ?? null;
+  const descriptor = report.artifactDescriptor;
   const nextPollAt = report.retryAfterSeconds
     ? new Date(Date.parse(report.observedAt) + report.retryAfterSeconds * 1_000).toISOString()
     : null;
@@ -562,6 +689,11 @@ async function persistStoreRunnerReport(input: {
          and build_job_id = $4 and source_artifact_sha256 = $5
          and package_sha256 = $6 and runner_job_id = $7
          and (workflow_run_id is null or workflow_run_id = $8)
+         and source_build_level = $23
+         and source_workspace_sha256 is not distinct from $24
+         and package_manifest_sha256 is not distinct from $25
+         and packaging_profile = $26
+         and ($23 = 'prototype' or source_artifact_sha256 = $27)
          and (
            state not in ('distributed', 'failed', 'action_required')
            or state = $9
@@ -667,6 +799,11 @@ async function persistStoreRunnerReport(input: {
       errorRetryable,
       log,
       eventKey,
+      descriptor.sourceBuildLevel,
+      descriptor.sourceWorkspaceSha256,
+      descriptor.packageManifestSha256,
+      descriptor.packagingProfile,
+      descriptor.sourcePreviewSha256,
     ],
   );
   if (!rows[0]) throw new StoreRunnerError("STORE_RELEASE_STATE_CONFLICT");
@@ -686,6 +823,14 @@ async function recordStoreRunnerFailure(input: {
       ? input.error
       : new StoreRunnerError("STORE_RUNNER_REQUEST_FAILED", true);
   const eventKey = `runner-error:${crypto.randomUUID()}`;
+  const terminalLog = JSON.stringify([
+    {
+      id: "runner-verification",
+      label: "Harbor · Store runner verification",
+      status: "blocked",
+      detail: `${runnerError.code}: provider state could not be verified; operator action is required`,
+    },
+  ] satisfies DeployStep[]);
   await input.sql.query(
     `with updated as (
        update store_release_jobs
@@ -704,17 +849,32 @@ async function recordStoreRunnerFailure(input: {
        where id = $1 and project_id = $2 and user_id = $3
          and state = $7
          and state not in ('distributed', 'failed', 'action_required')
-       returning id, state
+       returning id, state, source_build_level, source_artifact_sha256,
+                 source_workspace_sha256, package_manifest_sha256, packaging_profile
      ), deploy_updated as (
-       update deploys set error_code = $5, error_message = $5, updated_at = now()
+       update deploys
+       set status = updated.state,
+           log = case when updated.state = 'action_required' then $8 else deploys.log end,
+           error_code = $5, error_message = $5, updated_at = now()
        from updated where deploys.id = (
          select deploy_id from store_release_jobs where id = updated.id
        )
      )
      insert into store_release_events (
-       release_id, event_key, to_state, source, error_code, error_message, retryable
+       release_id, event_key, to_state, source, evidence,
+       error_code, error_message, retryable
      )
-     select updated.id, $6, updated.state, 'helix', $5, $5, $4
+     select updated.id, $6, updated.state, 'helix',
+            jsonb_build_object(
+              'sourceBuildLevel', updated.source_build_level,
+              'sourcePreviewSha256', case when updated.source_build_level = 'production'
+                then updated.source_artifact_sha256 else null end,
+              'sourceWorkspaceSha256', updated.source_workspace_sha256,
+              'packageManifestSha256', updated.package_manifest_sha256,
+              'packagingProfile', updated.packaging_profile,
+              'nativeImplementation', false
+            ),
+            $5, $5, $4
      from updated`,
     [
       input.releaseId,
@@ -724,6 +884,7 @@ async function recordStoreRunnerFailure(input: {
       runnerError.code,
       eventKey,
       input.expectedState,
+      terminalLog,
     ],
   );
 }
@@ -808,9 +969,11 @@ export const listDeploys = createServerFn({ method: "GET" })
              deploy.artifact_sha256, deploy.published_sha256,
              deploy.output_integrity_version, deploy.rollback_ref,
              deploy.release_key, deploy.completed_at, deploy.error_code,
-             deploy.error_message, store.id as store_release_id
+             deploy.error_message, store.id as store_release_id,
+             harbor.id as harbor_release_id, harbor.state as harbor_release_state
       from deploys as deploy
       left join store_release_jobs as store on store.deploy_id = deploy.id
+      left join harbor_production_releases as harbor on harbor.deploy_id = deploy.id
       where deploy.project_id = ${projectId} and deploy.user_id = ${context.userId}
       order by deploy.created_at desc
     `;
@@ -1049,6 +1212,115 @@ export const publishWeb = createServerFn({ method: "POST" })
     };
   });
 
+export const getHarborProductionReadiness = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async (): Promise<HarborProductionReadiness> => harborProductionReadiness());
+
+export const publishProductionWeb = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { projectId: string; jobId: string; requestId: string }) => ({
+    projectId: input.projectId.trim().slice(0, 128),
+    jobId: input.jobId.trim().slice(0, 128),
+    requestId: normalizeGateRequestId(input.requestId),
+  }))
+  .handler(async ({ context, data }) => {
+    // Configuration is checked before any durable release or debit. Production
+    // never falls back to the Prototype HTML publisher.
+    assertHarborProductionPublishingConfigured();
+    const provider = createAuthenticatedHarborProductionProvider();
+    const approved = await getApprovedOwnedBuild({
+      jobId: data.jobId,
+      projectId: data.projectId,
+      userId: context.userId,
+    });
+    if (approved.buildLevel !== "production" || !approved.workspace) {
+      throw new HarborProductionRunnerError("HARBOR_PRODUCTION_ARTIFACT_REQUIRED");
+    }
+    const artifact = await createHarborProductionArtifact({
+      buildJobId: data.jobId,
+      projectId: data.projectId,
+      humanGateArtifactSha256: approved.artifactSha256,
+      files: approved.files,
+      workspace: approved.workspace,
+    });
+    await ensureSchema();
+    const sql = await getSql();
+    let release = await prepareHarborProductionRelease({
+      sql,
+      releaseId: crypto.randomUUID(),
+      requestId: data.requestId,
+      projectId: data.projectId,
+      buildJobId: data.jobId,
+      userId: context.userId,
+      artifact,
+    });
+    if (release.state === "prepared") {
+      try {
+        release = await acceptHarborProductionRelease({
+          sql,
+          row: release,
+          artifact,
+          provider,
+          creditCost: DEPLOY_COST.web,
+        });
+      } catch (error) {
+        rethrowCreditMutationError(error);
+        throw error;
+      }
+    }
+    // Keep the synchronous function to one bounded runner call. Activation and
+    // reconciliation use the durable release through the refresh endpoint.
+    return harborProductionReleaseResult(release);
+  });
+
+export const refreshProductionWebRelease = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { projectId: string; releaseId: string }) => ({
+    projectId: input.projectId.trim().slice(0, 128),
+    releaseId: input.releaseId.trim().slice(0, 128),
+  }))
+  .handler(async ({ context, data }) => {
+    const provider = createAuthenticatedHarborProductionProvider();
+    await ensureSchema();
+    const sql = await getSql();
+    const release = await loadHarborProductionRelease({
+      sql,
+      releaseId: data.releaseId,
+      projectId: data.projectId,
+      userId: context.userId,
+    });
+    if (!release) throw new HumanGateError("HUMAN_GATE_FORBIDDEN", 403);
+    const updated = await advanceHarborProductionRelease({ sql, row: release, provider });
+    return harborProductionReleaseResult(updated);
+  });
+
+export const resumeProductionWebRelease = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { projectId: string; releaseId: string; requestId: string }) => ({
+    projectId: input.projectId.trim().slice(0, 128),
+    releaseId: input.releaseId.trim().slice(0, 128),
+    requestId: normalizeGateRequestId(input.requestId),
+  }))
+  .handler(async ({ context, data }) => {
+    const provider = createAuthenticatedHarborProductionProvider();
+    await ensureSchema();
+    const sql = await getSql();
+    const release = await loadHarborProductionRelease({
+      sql,
+      releaseId: data.releaseId,
+      projectId: data.projectId,
+      userId: context.userId,
+    });
+    if (!release) throw new HumanGateError("HUMAN_GATE_FORBIDDEN", 403);
+    const updated = await resumeHarborProductionRelease({
+      sql,
+      row: release,
+      provider,
+      requestId: data.requestId,
+    });
+    return harborProductionReleaseResult(updated);
+  });
+
 export const publishGuest = createServerFn({ method: "POST" })
   .validator((input: { jobId: string; guestAccessToken: string; requestId: string }) => ({
     jobId: input.jobId.trim().slice(0, 128),
@@ -1263,6 +1535,7 @@ async function advanceStoreRelease(input: {
       idempotencyKey: input.row.idempotency_key,
       packageSha256: input.row.package_sha256,
       identity: input.identity,
+      artifactDescriptor: storeArtifactDescriptorFromRow(input.row),
       sourcePackage: null,
     });
     return await persistStoreRunnerReport({
@@ -1324,22 +1597,7 @@ export const shipStore = createServerFn({ method: "POST" })
       projectId: data.projectId,
       userId: context.userId,
     });
-    // Production output is a multi-file service/client workspace. Its inline
-    // preview HTML is not a native application and must never be wrapped in a
-    // WebView then submitted as if it were the Production artifact.
-    assertStoreArtifactShippable(artifact.buildLevel);
-    if (!storeReadiness(data.target).runnerConfigured) {
-      throw new StoreRunnerError("STORE_RUNNER_UNCONFIGURED");
-    }
-    await ensureSchema();
-    const sql = await getSql();
-    const projects = await sql<{ id: string; title: string }>`
-      select id, title from projects
-      where id = ${data.projectId} and user_id = ${context.userId}
-    `;
-    if (!projects[0]) throw new HumanGateError("HUMAN_GATE_FORBIDDEN", 403);
-    const project = projects[0];
-    const title = artifact.title || project.title;
+    const title = artifact.title || "App";
     const slug = slugify(title);
     const identity = StoreIdentitySchema.parse({
       platform: data.target,
@@ -1349,32 +1607,75 @@ export const shipStore = createServerFn({ method: "POST" })
       appleTeamId: data.target === "ios" ? data.appleTeam : null,
       destination: data.target === "ios" ? "testflight" : "play_internal",
     });
-    const files = expoFiles({
-      title,
-      slug,
-      html: artifact.html,
-      bundleId: data.bundleId,
-      easProjectId: data.easProjectId,
-      appleTeam: data.target === "ios" ? data.appleTeam : undefined,
-      liveUrl: appUrl(slug),
-      platform: data.target,
-    });
+    const productionPackage =
+      artifact.buildLevel === "production"
+        ? await prepareApprovedProductionStorePackage({
+            source: approvedProductionStoreSource(artifact),
+            identity,
+            title,
+            slug,
+            liveUrl: appUrl(slug),
+          })
+        : null;
+    const files =
+      productionPackage?.files ??
+      expoFiles({
+        title,
+        slug,
+        html: artifact.html,
+        bundleId: data.bundleId,
+        easProjectId: data.easProjectId,
+        appleTeam: data.target === "ios" ? data.appleTeam : undefined,
+        liveUrl: appUrl(slug),
+        platform: data.target,
+      });
+    const artifactDescriptor: StoreArtifactDescriptor =
+      productionPackage?.descriptor ?? LEGACY_PROTOTYPE_STORE_ARTIFACT_DESCRIPTOR;
+    if (!storeReadiness(data.target).runnerConfigured) {
+      throw new StoreRunnerError("STORE_RUNNER_UNCONFIGURED");
+    }
+    await ensureSchema();
+    const sql = await getSql();
+    const projects = await sql<{ id: string }>`
+      select id from projects
+      where id = ${data.projectId} and user_id = ${context.userId}
+    `;
+    if (!projects[0]) throw new HumanGateError("HUMAN_GATE_FORBIDDEN", 403);
+    const project = projects[0];
     const zip = zipFiles(files);
     const packageSha256 = await sha256BytesHex(zip);
-    const packageFilename = `${slug}-${data.target}-source.zip`;
+    const packageKind =
+      artifactDescriptor.sourceBuildLevel === "production" ? "production-wrapper" : "source";
+    const packageFilename = `${slug}-${data.target}-${packageKind}.zip`;
     const releaseIdentitySha256 = await sha256Utf8Hex(
       JSON.stringify({
-        version: identity.version,
+        schemaVersion: "2.0.0",
         jobId: data.jobId,
-        target: data.target,
-        appIdentifier: identity.appIdentifier,
-        easProjectId: identity.easProjectId,
+        sourceArtifactSha256: artifact.artifactSha256,
+        packageSha256,
+        identity,
+        artifactDescriptor,
       }),
     );
+    const legacyReleaseIdentitySha256 =
+      artifactDescriptor.sourceBuildLevel === "prototype"
+        ? await sha256Utf8Hex(
+            JSON.stringify({
+              version: identity.version,
+              jobId: data.jobId,
+              target: data.target,
+              appIdentifier: identity.appIdentifier,
+              easProjectId: identity.easProjectId,
+            }),
+          )
+        : null;
     // The release identity, not a browser-generated retry nonce, is the
     // provider/debit idempotency boundary. A lost HTTP response can therefore
     // be retried without creating another workflow or charging twice.
-    const idempotencyKey = `store-release:v1:${releaseIdentitySha256}`;
+    const idempotencyKey = `store-release:v2:${releaseIdentitySha256}`;
+    const legacyIdempotencyKey = legacyReleaseIdentitySha256
+      ? `store-release:v1:${legacyReleaseIdentitySha256}`
+      : null;
     const candidateReleaseId = crypto.randomUUID();
     const preparedRows = await sql.query<StoreReleaseRow>(
       `with gate as materialized (
@@ -1391,16 +1692,37 @@ export const shipStore = createServerFn({ method: "POST" })
                and event.artifact_sha256 = job.artifact_sha256
            )
          for update of job
+       ), legacy as materialized (
+         select release.*
+         from store_release_jobs as release
+         join gate on gate.id = release.build_job_id
+         where $21::text is not null and release.idempotency_key = $21::text
+           and release.project_id = $2 and release.user_id = $3
+           and release.platform = $6 and release.destination = $7
+           and release.source_artifact_sha256 = $4
+           and release.package_sha256 = $10
+           and release.package_bytes = $11
+           and release.package_filename = $12
+           and release.app_identifier = $13
+           and release.eas_project_id = $14
+           and release.apple_team_id is not distinct from $15
+           and release.source_build_level = 'prototype'
+           and release.source_workspace_sha256 is null
+           and release.package_manifest_sha256 is null
+           and release.packaging_profile = 'legacy_expo_wrapper_v1'
+         for update of release
        ), prepared as (
          insert into store_release_jobs (
            id, project_id, build_job_id, user_id, platform, destination,
            request_id, idempotency_key, source_artifact_sha256, package_sha256,
            package_bytes, package_filename, app_identifier, eas_project_id,
-           apple_team_id, play_track, state
+           apple_team_id, play_track, source_build_level,
+           source_workspace_sha256, package_manifest_sha256, packaging_profile, state
          )
          select $5, $2, gate.id, $3, $6, $7, $8, $9, $4, $10,
-                $11, $12, $13, $14, $15, null, 'prepared'
+                $11, $12, $13, $14, $15, null, $16, $17, $18, $19, 'prepared'
          from gate
+         where not exists (select 1 from legacy)
          on conflict (idempotency_key) do update
            set updated_at = store_release_jobs.updated_at
          where store_release_jobs.project_id = excluded.project_id
@@ -1413,6 +1735,12 @@ export const shipStore = createServerFn({ method: "POST" })
            and store_release_jobs.app_identifier = excluded.app_identifier
            and store_release_jobs.eas_project_id = excluded.eas_project_id
            and store_release_jobs.apple_team_id is not distinct from excluded.apple_team_id
+           and store_release_jobs.source_build_level = excluded.source_build_level
+           and store_release_jobs.source_workspace_sha256
+             is not distinct from excluded.source_workspace_sha256
+           and store_release_jobs.package_manifest_sha256
+             is not distinct from excluded.package_manifest_sha256
+           and store_release_jobs.packaging_profile = excluded.packaging_profile
          returning *
        ), event as (
          insert into store_release_events (
@@ -1421,10 +1749,18 @@ export const shipStore = createServerFn({ method: "POST" })
          select prepared.id, 'prepared:' || prepared.package_sha256,
                 null, 'prepared', 'helix',
                 jsonb_build_object('packageSha256', prepared.package_sha256,
-                                   'packageBytes', prepared.package_bytes)
+                                   'packageBytes', prepared.package_bytes,
+                                   'artifactDescriptor', $20::jsonb,
+                                   'sourceBuildLevel', prepared.source_build_level,
+                                   'sourceWorkspaceSha256', prepared.source_workspace_sha256,
+                                   'packageManifestSha256', prepared.package_manifest_sha256,
+                                   'packagingProfile', prepared.packaging_profile,
+                                   'nativeImplementation', false)
          from prepared
          on conflict (release_id, event_key) do nothing
        )
+       select * from legacy
+       union all
        select * from prepared`,
       [
         data.jobId,
@@ -1442,6 +1778,12 @@ export const shipStore = createServerFn({ method: "POST" })
         identity.appIdentifier,
         identity.easProjectId,
         identity.appleTeamId,
+        artifactDescriptor.sourceBuildLevel,
+        artifactDescriptor.sourceWorkspaceSha256,
+        artifactDescriptor.packageManifestSha256,
+        artifactDescriptor.packagingProfile,
+        JSON.stringify(artifactDescriptor),
+        legacyIdempotencyKey,
       ],
     );
     let release = preparedRows[0];
@@ -1455,9 +1797,10 @@ export const shipStore = createServerFn({ method: "POST" })
     const accepted = await callStoreRunner({
       action: "accept",
       releaseId: release.id,
-      idempotencyKey,
+      idempotencyKey: release.idempotency_key,
       packageSha256,
       identity,
+      artifactDescriptor,
       sourcePackage: {
         filename: packageFilename,
         sha256: packageSha256,
@@ -1479,6 +1822,11 @@ export const shipStore = createServerFn({ method: "POST" })
            where release.id = $1 and release.project_id = $2 and release.user_id = $3
              and release.state = 'prepared' and release.build_job_id = $4
              and release.source_artifact_sha256 = $5 and release.package_sha256 = $6
+             and release.source_build_level = $24
+             and release.source_workspace_sha256 is not distinct from $25
+             and release.package_manifest_sha256 is not distinct from $26
+             and release.packaging_profile = $27
+             and ($24 = 'prototype' or release.source_artifact_sha256 = $28)
              and owned.user_id = $3 and owned.current_build_job_id = job.id
              and job.queue_status in ('approved', 'deployed')
              and job.artifact_sha256 = $5
@@ -1552,7 +1900,7 @@ export const shipStore = createServerFn({ method: "POST" })
           data.target === "ios"
             ? "iOS TestFlight workflow dispatch"
             : "Android Play workflow dispatch",
-          idempotencyKey,
+          release.idempotency_key,
           DEPLOY_COST[data.target],
           deployId,
           slug,
@@ -1566,6 +1914,11 @@ export const shipStore = createServerFn({ method: "POST" })
           accepted.acceptedAt,
           storeReportEventKey(accepted),
           accepted.observedAt,
+          accepted.artifactDescriptor.sourceBuildLevel,
+          accepted.artifactDescriptor.sourceWorkspaceSha256,
+          accepted.artifactDescriptor.packageManifestSha256,
+          accepted.artifactDescriptor.packagingProfile,
+          accepted.artifactDescriptor.sourcePreviewSha256,
         ],
       );
       if (!committed[0]) throw new StoreRunnerError("STORE_RELEASE_ACCEPT_COMMIT_FAILED");
@@ -1628,9 +1981,9 @@ export const downloadNativePack = createServerFn({ method: "POST" })
       projectId: input.projectId.trim().slice(0, 128),
       jobId: input.jobId.trim().slice(0, 128),
       target: input.target,
-      appleTeam: input.appleTeam?.trim() || "",
-      bundleId: input.bundleId?.trim() || "",
-      easProjectId: input.easProjectId?.trim() || "",
+      appleTeam: input.appleTeam?.trim().toUpperCase().slice(0, 10) || "",
+      bundleId: input.bundleId?.trim().slice(0, 160) || "",
+      easProjectId: input.easProjectId?.trim().slice(0, 64) || "",
     }),
   )
   .handler(async ({ context, data }) => {
@@ -1643,32 +1996,68 @@ export const downloadNativePack = createServerFn({ method: "POST" })
     const slug = slugify(title);
     const bundleId = data.bundleId || bundleIdFromTitle(title);
     const liveUrl = appUrl(slug);
-    const files =
-      data.target === "windows"
-        ? windowsFiles({
+    if (data.target === "windows") {
+      const files = windowsFiles({ title, slug, html: artifact.html, liveUrl });
+      const zip = zipFiles(files);
+      const publishedSha256 = await sha256BytesHex(zip);
+      return {
+        filename: `${slug}-${data.target}-source.zip`,
+        base64: toBase64(zip),
+        status: "source_package_prepared" as const,
+        submissionStatus: "not_executed" as const,
+        sourceArtifactSha256: artifact.artifactSha256,
+        publishedSha256,
+      };
+    }
+    const productionPackage =
+      artifact.buildLevel === "production"
+        ? await prepareApprovedProductionStorePackage({
+            source: approvedProductionStoreSource(artifact),
+            identity: StoreIdentitySchema.parse({
+              platform: data.target,
+              appIdentifier: bundleId,
+              easProjectId: data.easProjectId,
+              version: "1.0.0",
+              appleTeamId: data.target === "ios" ? data.appleTeam : null,
+              destination: data.target === "ios" ? "testflight" : "play_internal",
+            }),
             title,
             slug,
-            html: artifact.html,
             liveUrl,
           })
-        : expoFiles({
-            title,
-            slug,
-            html: artifact.html,
-            bundleId,
-            easProjectId: data.easProjectId || undefined,
-            appleTeam: data.appleTeam,
-            liveUrl,
-            platform: data.target,
-          });
+        : null;
+    const files =
+      productionPackage?.files ??
+      expoFiles({
+        title,
+        slug,
+        html: artifact.html,
+        bundleId,
+        easProjectId: data.easProjectId || undefined,
+        appleTeam: data.appleTeam,
+        liveUrl,
+        platform: data.target,
+      });
+    const artifactDescriptor: StoreArtifactDescriptor =
+      productionPackage?.descriptor ?? LEGACY_PROTOTYPE_STORE_ARTIFACT_DESCRIPTOR;
     const zip = zipFiles(files);
     const publishedSha256 = await sha256BytesHex(zip);
+    const packageKind =
+      artifactDescriptor.sourceBuildLevel === "production" ? "production-wrapper" : "source";
     return {
-      filename: `${slug}-${data.target}-source.zip`,
+      filename: `${slug}-${data.target}-${packageKind}.zip`,
       base64: toBase64(zip),
       status: "source_package_prepared" as const,
       submissionStatus: "not_executed" as const,
       sourceArtifactSha256: artifact.artifactSha256,
       publishedSha256,
+      sourceBuildLevel: artifactDescriptor.sourceBuildLevel,
+      sourceWorkspaceSha256: artifactDescriptor.sourceWorkspaceSha256,
+      packageManifestSha256: artifactDescriptor.packageManifestSha256,
+      packagingProfile: artifactDescriptor.packagingProfile,
+      artifactKind: artifactDescriptor.artifactKind,
+      nativeImplementation: artifactDescriptor.nativeImplementation,
+      runtimeProfile: artifactDescriptor.runtimeProfile,
+      artifactDescriptor,
     };
   });

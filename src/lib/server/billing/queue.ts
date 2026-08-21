@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type Stripe from "stripe";
 import { getSql } from "@/lib/db";
+import { isHostedRuntimeEnvironment } from "@/lib/hosted-runtime";
 import { requireStripeBillingConfiguration } from "./config";
 import { StripeBillingError } from "./types";
 
@@ -189,7 +190,7 @@ export async function dispatchStripeEventToOrigin(
 }
 
 export async function dispatchStripeEvent(reference: StripeEventReference): Promise<void> {
-  if (process.env.NETLIFY === "true") {
+  if (isHostedRuntimeEnvironment()) {
     const { getRequestUrl } = await import("@tanstack/react-start/server");
     await dispatchStripeEventToOrigin(reference, getRequestUrl().origin);
     return;

@@ -1,6 +1,10 @@
 import { getRequest, getRequestIP } from "@tanstack/react-start/server";
 import { getSql, type Sql } from "@/lib/db";
 import { hashOpaqueToken } from "@/lib/guest-security";
+import {
+  isHostedRuntimeEnvironment,
+  isNetlifyRuntimeEnvironment,
+} from "@/lib/hosted-runtime";
 
 export type GuestBudgetPolicy = {
   action: "publish" | "ai_generation";
@@ -53,7 +57,7 @@ export class GuestBudgetExceededError extends Error {
 
 function trustedClientAddress(): string {
   const request = getRequest();
-  const isNetlify = process.env.NETLIFY === "true";
+  const isNetlify = isNetlifyRuntimeEnvironment();
   if (isNetlify) {
     const netlifyIp = request.headers.get("x-nf-client-connection-ip")?.trim();
     if (netlifyIp) return netlifyIp;
@@ -68,7 +72,7 @@ async function requestIdentityHash(): Promise<string> {
   const secret =
     process.env.GUEST_RATE_LIMIT_SALT?.trim() ||
     process.env.BETTER_AUTH_SECRET?.trim() ||
-    (process.env.NETLIFY === "true" ? "" : "helix-local-guest-budget");
+    (isHostedRuntimeEnvironment() ? "" : "helix-local-guest-budget");
   if (!secret) {
     throw new Error(
       "Invalid or missing environment variables: GUEST_RATE_LIMIT_SALT or BETTER_AUTH_SECRET",

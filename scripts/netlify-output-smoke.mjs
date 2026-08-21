@@ -18,7 +18,15 @@ assert.ok(
   "previewGenerate is missing from the server-function manifest",
 );
 
-const missingEnv = { ...process.env, NETLIFY: "true", CONTEXT: "production" };
+// Manual deploy runtimes can omit NETLIFY=true. The bundled SSR handler must
+// still recognize the Lambda runtime and reject missing core configuration.
+const missingEnv = {
+  ...process.env,
+  NODE_ENV: "production",
+  AWS_LAMBDA_FUNCTION_NAME: "netlify-manual-deploy-server",
+};
+delete missingEnv.NETLIFY;
+delete missingEnv.CONTEXT;
 for (const name of [
   "DATABASE_URL",
   "XAI_API_KEY",
@@ -40,7 +48,7 @@ const failedStartup = spawnSync(
   ],
   { encoding: "utf8", env: missingEnv },
 );
-assert.notEqual(failedStartup.status, 0, "A misconfigured Netlify runtime must fail");
+assert.notEqual(failedStartup.status, 0, "A misconfigured hosted runtime must fail");
 assert.match(failedStartup.stderr, /DATABASE_URL/);
 assert.match(failedStartup.stderr, /GROK_AUTH_CLIENT_SECRET/);
 

@@ -1,6 +1,5 @@
 // Node's test runner executes this TypeScript module directly and requires the
 // explicit extension; Vite also resolves it. The project emits no TypeScript.
-// @ts-expect-error TS5097: explicit TS extension is intentional for both runtimes.
 import { protectGeneratedHtml } from "./generated-content-policy.ts";
 
 function protectPackagedHtml(html: string) {

@@ -10,12 +10,17 @@ import { getProject, type Profile, type Project } from "@/lib/server/vetra";
 import {
   DEPLOY_COST,
   downloadNativePack,
+  getHarborProductionReadiness,
   getStoreReadiness,
   listDeploys,
+  publishProductionWeb,
   publishWeb,
+  refreshProductionWebRelease,
+  resumeProductionWebRelease,
   refreshStoreSubmission,
   shipStore,
   type Deploy,
+  type HarborProductionReadiness,
   type StoreReadiness,
 } from "@/lib/server/deploy";
 import type { KrelunaScore } from "@/lib/score";
@@ -32,6 +37,18 @@ import { downloadApprovedWorkspace } from "@/lib/server/workspace-export";
 
 export const Route = createFileRoute("/studio/$id/launch")({ component: Launch });
 
+function notifyStoreReleaseState(status: string, message: string) {
+  if (status === "distributed") {
+    toast.success(message);
+  } else if (status === "failed") {
+    toast.error(message);
+  } else if (status === "action_required") {
+    toast.warning(message);
+  } else {
+    toast.info(message);
+  }
+}
+
 function Launch() {
   const { id } = Route.useParams();
   const { user, isPending } = useCurrentUserState();
@@ -44,11 +61,15 @@ function Launch() {
   const [easProjectId, setEasProjectId] = useState("");
   const [storeConfirmed, setStoreConfirmed] = useState({ ios: false, android: false });
   const storeRequestIds = useRef({ ios: crypto.randomUUID(), android: crypto.randomUUID() });
+  const harborResumeRequestIds = useRef<Record<string, string>>({});
   const [storeReadinessState, setStoreReadinessState] = useState<{
     ios: StoreReadiness | null;
     android: StoreReadiness | null;
   }>({ ios: null, android: null });
+  const [harborProductionState, setHarborProductionState] =
+    useState<HarborProductionReadiness | null>(null);
   const [refreshingStore, setRefreshingStore] = useState<string | null>(null);
+  const [refreshingHarbor, setRefreshingHarbor] = useState<string | null>(null);
   const [busy, setBusy] = useState<
     | "web"
     | "ios"
@@ -90,6 +111,9 @@ function Launch() {
     void Promise.all([getStoreReadiness({ data: "ios" }), getStoreReadiness({ data: "android" })])
       .then(([ios, android]) => setStoreReadinessState({ ios, android }))
       .catch((error) => setLoadError(error instanceof Error ? error.message : t("launch.err")));
+    void getHarborProductionReadiness()
+      .then(setHarborProductionState)
+      .catch((error) => setLoadError(error instanceof Error ? error.message : t("launch.err")));
   }, [user?.id, id, t]);
 
   useEffect(() => {
@@ -107,10 +131,31 @@ function Launch() {
   }
   if (!user) return <RedirectToSignIn />;
 
+  function notifyHarborState(state: string) {
+    if (state === "active") {
+      toast.success(t("launch.harborActive"));
+    } else if (["failed", "action_required", "retry_exhausted"].includes(state)) {
+      toast.error(t("launch.harborFailure", { status: state }));
+    } else {
+      toast.message(t("launch.harborPending", { status: state }));
+    }
+  }
+
   async function goWeb() {
-    if (!job || project?.buildLevel === "production") return;
+    if (!job) return;
     setBusy("web");
     try {
+      if (project?.buildLevel === "production") {
+        const production = await publishProductionWeb({
+          data: { projectId: id, jobId: job.id, requestId: crypto.randomUUID() },
+        });
+        setDeploys(await listDeploys({ data: id }));
+        const next = await getProject({ data: id });
+        setProject(next.project);
+        setProfile(next.profile);
+        notifyHarborState(production.state);
+        return;
+      }
       const r = await publishWeb({
         data: { projectId: id, jobId: job.id, requestId: crypto.randomUUID() },
       });
@@ -128,8 +173,42 @@ function Launch() {
     }
   }
 
+  async function refreshHarbor(releaseId: string) {
+    setRefreshingHarbor(releaseId);
+    try {
+      const result = await refreshProductionWebRelease({
+        data: { projectId: id, releaseId },
+      });
+      setDeploys(await listDeploys({ data: id }));
+      notifyHarborState(result.state);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("launch.err"));
+    } finally {
+      setRefreshingHarbor(null);
+    }
+  }
+
+  async function resumeHarbor(releaseId: string) {
+    setRefreshingHarbor(releaseId);
+    const requestId =
+      harborResumeRequestIds.current[releaseId] ??
+      (harborResumeRequestIds.current[releaseId] = crypto.randomUUID());
+    try {
+      const result = await resumeProductionWebRelease({
+        data: { projectId: id, releaseId, requestId },
+      });
+      delete harborResumeRequestIds.current[releaseId];
+      setDeploys(await listDeploys({ data: id }));
+      notifyHarborState(result.state);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("launch.err"));
+    } finally {
+      setRefreshingHarbor(null);
+    }
+  }
+
   async function goStore(target: "ios" | "android") {
-    if (!job || project?.buildLevel === "production") return;
+    if (!job || !productionStoreCompatible) return;
     setBusy(target);
     try {
       const r = await shipStore({
@@ -149,7 +228,7 @@ function Launch() {
       setProfile(next.profile);
       setStoreConfirmed((current) => ({ ...current, [target]: false }));
       storeRequestIds.current[target] = crypto.randomUUID();
-      toast.success(t("launch.storeAccepted", { status: r.status }));
+      notifyStoreReleaseState(r.status, t("launch.storeAccepted", { status: r.status }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("launch.err"));
     } finally {
@@ -201,7 +280,10 @@ function Launch() {
         data: { projectId: id, releaseId },
       });
       setDeploys(await listDeploys({ data: id }));
-      toast.success(t("launch.storeRefreshed", { status: result.status }));
+      notifyStoreReleaseState(
+        result.status,
+        t("launch.storeRefreshed", { status: result.status }),
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("launch.err"));
     } finally {
@@ -237,8 +319,17 @@ function Launch() {
 
   const showWindows = wantsDesktop(project?.prompt ?? "");
   const gateReady = job?.queue?.status === "approved" || job?.queue?.status === "deployed";
-  const productionWebUnavailable = project?.buildLevel === "production";
-  const productionNativeUnavailable = project?.buildLevel === "production";
+  const productionWebUnavailable =
+    project?.buildLevel === "production" && harborProductionState?.runnerConfigured !== true;
+  const productionStoreRuntimeProfile = job?.production?.graph.requirements.runtimeProfile ?? null;
+  const productionStoreCompatible =
+    project?.buildLevel !== "production" || productionStoreRuntimeProfile === "static_site";
+  const productionStoreBlocked =
+    project?.buildLevel === "production" && productionStoreRuntimeProfile !== "static_site";
+  const productionIosIdentityIncomplete =
+    project?.buildLevel === "production" && (!appleTeam || !bundleId || !easProjectId);
+  const productionAndroidIdentityIncomplete =
+    project?.buildLevel === "production" && (!bundleId || !easProjectId);
 
   return (
     <div className="min-h-screen">
@@ -380,23 +471,35 @@ function Launch() {
             <Button
               className="mt-3 w-full"
               variant="secondary"
-              disabled={!!busy || !project?.html || !gateReady}
+              disabled={
+                !!busy ||
+                !project?.html ||
+                !gateReady ||
+                productionStoreBlocked ||
+                productionIosIdentityIncomplete
+              }
               onClick={() => void zip("ios")}
             >
               <Download className="size-4" />
               {busy === "zip-ios" ? t("launch.shipping") : t("launch.iosCta")}
             </Button>
             <p className="mt-3 text-xs text-subtle">
-              {productionNativeUnavailable
-                ? t("launch.productionNativeUnavailable")
+              {productionStoreBlocked
+                ? t("launch.productionStoreUnsupported", {
+                    runtimeProfile: productionStoreRuntimeProfile ?? "unknown",
+                  })
                 : storeReadinessState.ios?.runnerConfigured
                   ? t("launch.storeRunnerReady")
                   : t("launch.storeRunnerUnavailable")}
             </p>
+            {project?.buildLevel === "production" && productionStoreCompatible ? (
+              <p className="mt-2 text-xs text-subtle">{t("launch.productionStoreWrapper")}</p>
+            ) : null}
             <label className="mt-3 flex items-start gap-2 text-xs text-muted">
               <input
                 type="checkbox"
                 checked={storeConfirmed.ios}
+                disabled={productionStoreBlocked}
                 onChange={(event) =>
                   setStoreConfirmed((current) => ({ ...current, ios: event.target.checked }))
                 }
@@ -410,7 +513,7 @@ function Launch() {
                 !!busy ||
                 !project?.html ||
                 !gateReady ||
-                productionNativeUnavailable ||
+                productionStoreBlocked ||
                 !storeReadinessState.ios?.runnerConfigured ||
                 !appleTeam ||
                 !bundleId ||
@@ -447,23 +550,36 @@ function Launch() {
             <Button
               className="mt-3 w-full"
               variant="secondary"
-              disabled={!!busy || !project?.html || !gateReady}
+              disabled={
+                !!busy ||
+                !project?.html ||
+                !gateReady ||
+                productionStoreBlocked ||
+                productionAndroidIdentityIncomplete
+              }
               onClick={() => void zip("android")}
             >
               <Download className="size-4" />
               {busy === "zip-android" ? t("launch.shipping") : t("launch.andCta")}
             </Button>
             <p className="mt-3 text-xs text-subtle">
-              {productionNativeUnavailable
-                ? t("launch.productionNativeUnavailable")
+              {productionStoreBlocked
+                ? t("launch.productionStoreUnsupported", {
+                    runtimeProfile: productionStoreRuntimeProfile ?? "unknown",
+                  })
                 : storeReadinessState.android?.runnerConfigured
                   ? t("launch.storeRunnerReady")
                   : t("launch.storeRunnerUnavailable")}
             </p>
+            {project?.buildLevel === "production" && productionStoreCompatible ? (
+              <p className="mt-2 text-xs text-subtle">{t("launch.productionStoreWrapper")}</p>
+            ) : null}
+            <p className="mt-2 text-xs text-subtle">{t("launch.androidPlayReleaseEvidence")}</p>
             <label className="mt-3 flex items-start gap-2 text-xs text-muted">
               <input
                 type="checkbox"
                 checked={storeConfirmed.android}
+                disabled={productionStoreBlocked}
                 onChange={(event) =>
                   setStoreConfirmed((current) => ({ ...current, android: event.target.checked }))
                 }
@@ -477,7 +593,7 @@ function Launch() {
                 !!busy ||
                 !project?.html ||
                 !gateReady ||
-                productionNativeUnavailable ||
+                productionStoreBlocked ||
                 !storeReadinessState.android?.runnerConfigured ||
                 !bundleId ||
                 !easProjectId ||
@@ -493,8 +609,10 @@ function Launch() {
             <Globe className="size-5 text-accent" />
             <h2 className="mt-3 text-lg">{t("launch.web")}</h2>
             <p className="mt-1 text-sm text-muted">
-              {productionWebUnavailable
-                ? t("launch.productionWebUnavailable")
+              {project?.buildLevel === "production"
+                ? productionWebUnavailable
+                  ? t("launch.harborRunnerUnavailable")
+                  : t("launch.harborProductionReady")
                 : t("launch.webBody")}
             </p>
             <p className="mt-4 text-xs text-subtle">{DEPLOY_COST.web} cr</p>
@@ -586,6 +704,34 @@ function Launch() {
                         {refreshingStore === d.store_release_id
                           ? t("launch.shipping")
                           : t("launch.storeRefresh")}
+                      </Button>
+                    ) : null}
+                    {d.harbor_release_id &&
+                    !["active", "failed", "action_required", "retry_exhausted"].includes(
+                      d.harbor_release_state ?? "",
+                    ) ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={refreshingHarbor === d.harbor_release_id}
+                        onClick={() => void refreshHarbor(d.harbor_release_id as string)}
+                      >
+                        {refreshingHarbor === d.harbor_release_id
+                          ? t("launch.shipping")
+                          : t("launch.harborRefresh")}
+                      </Button>
+                    ) : null}
+                    {d.harbor_release_id &&
+                    ["failed", "action_required"].includes(d.harbor_release_state ?? "") ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={refreshingHarbor === d.harbor_release_id}
+                        onClick={() => void resumeHarbor(d.harbor_release_id as string)}
+                      >
+                        {refreshingHarbor === d.harbor_release_id
+                          ? t("launch.shipping")
+                          : t("launch.harborResume")}
                       </Button>
                     ) : null}
                   </div>

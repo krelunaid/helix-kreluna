@@ -66,11 +66,7 @@ const legacyHostSource = sourceSection(
   "export const hostProject",
   "export const choosePlan",
 );
-const goStoreSource = sourceSection(
-  launchSource,
-  "async function goStore",
-  "async function zip",
-);
+const goStoreSource = sourceSection(launchSource, "async function goStore", "async function zip");
 
 test("the legacy hosting endpoint is retired without debit or publication claims", () => {
   assert.match(vetraSource, /class LegacyHostingRetiredError extends Error/);
@@ -81,11 +77,11 @@ test("the legacy hosting endpoint is retired without debit or publication claims
   assert.doesNotMatch(legacyHostSource, /insert\s+into\s+(?:public_apps|deploys)/i);
 });
 
-test("Harbor rejects Production web artifacts before schema, costs, or publication", () => {
+test("the Prototype publisher rejects Production before its HTML publication path", () => {
   const guardSource = sourceSection(
     deploySource,
     "export class HarborPublishError",
-    "export class StoreProductionArtifactError",
+    "function approvedProductionStoreSource",
   );
   assert.match(guardSource, /readonly code = ["']HARBOR_PRODUCTION_WEB_PUBLISH_UNAVAILABLE["']/);
   assert.match(guardSource, /readonly status = 409/);
@@ -118,21 +114,24 @@ test("Harbor rejects Production web artifacts before schema, costs, or publicati
   assert.ok(guardIndex < costIndex, "the guard must precede credit mutation");
   assert.ok(guardIndex < publishIndex, "the guard must precede publication writes");
   assert.match(launchSource, /productionWebUnavailable/);
-  assert.match(launchSource, /launch\.productionWebUnavailable/);
+  assert.match(launchSource, /publishProductionWeb/);
+  assert.match(launchSource, /harborProductionState\?\.runnerConfigured/);
+  assert.match(launchSource, /launch\.harborRunnerUnavailable/);
+  assert.doesNotMatch(launchSource, /Nessun fallback Prototype verrà usato/);
 });
 
-test("Store submission rejects a Production preview before runner, ZIP, DB, or debit", () => {
-  const guardSource = sourceSection(
+test("Store submission packages only a verified Production static wrapper and fails closed otherwise", () => {
+  const productionSourceBoundary = sourceSection(
     deploySource,
-    "export class StoreProductionArtifactError",
+    "function approvedProductionStoreSource",
     "export type StoreReadiness",
   );
-  assert.match(guardSource, /STORE_PRODUCTION_NATIVE_ARTIFACT_UNAVAILABLE/);
-  assert.match(guardSource, /readonly status = 409/);
-  assert.match(guardSource, /readonly retryable = false/);
+  assert.match(productionSourceBoundary, /artifact\.buildLevel !== ["']production["']/);
+  assert.match(productionSourceBoundary, /!artifact\.workspace/);
+  assert.match(productionSourceBoundary, /STORE_PRODUCTION_WORKSPACE_INVALID/);
 
   const artifactIndex = shipStoreSource.indexOf("const artifact = await getApprovedOwnedBuild");
-  const guardIndex = shipStoreSource.indexOf("assertStoreArtifactShippable(artifact.buildLevel)");
+  const packageIndex = shipStoreSource.indexOf("await prepareApprovedProductionStorePackage");
   const runnerConfigIndex = shipStoreSource.indexOf("storeReadiness(data.target)");
   const schemaIndex = shipStoreSource.indexOf("await ensureSchema()");
   const zipIndex = shipStoreSource.indexOf("const zip = zipFiles(files)");
@@ -140,7 +139,7 @@ test("Store submission rejects a Production preview before runner, ZIP, DB, or d
   const debitIndex = shipStoreSource.indexOf("apply_credit_entry(");
   for (const index of [
     artifactIndex,
-    guardIndex,
+    packageIndex,
     runnerConfigIndex,
     schemaIndex,
     zipIndex,
@@ -149,14 +148,40 @@ test("Store submission rejects a Production preview before runner, ZIP, DB, or d
   ]) {
     assert.notEqual(index, -1);
   }
-  assert.ok(artifactIndex < guardIndex);
-  assert.ok(guardIndex < runnerConfigIndex);
-  assert.ok(guardIndex < schemaIndex);
-  assert.ok(guardIndex < zipIndex);
-  assert.ok(guardIndex < runnerIndex);
-  assert.ok(guardIndex < debitIndex);
-  assert.match(launchSource, /productionNativeUnavailable/);
-  assert.match(launchSource, /launch\.productionNativeUnavailable/);
+  assert.ok(artifactIndex < packageIndex);
+  assert.ok(packageIndex < runnerConfigIndex);
+  assert.ok(packageIndex < schemaIndex);
+  assert.ok(packageIndex < zipIndex);
+  assert.ok(packageIndex < runnerIndex);
+  assert.ok(packageIndex < debitIndex);
+  assert.match(shipStoreSource, /artifact\.buildLevel === ["']production["']/);
+  assert.match(shipStoreSource, /productionPackage\?\.files \?\?\s*expoFiles/);
+  assert.match(shipStoreSource, /LEGACY_PROTOTYPE_STORE_ARTIFACT_DESCRIPTOR/);
+  assert.match(downloadNativePackSource, /await prepareApprovedProductionStorePackage/);
+  assert.match(
+    downloadNativePackSource,
+    /nativeImplementation:\s*artifactDescriptor\.nativeImplementation/,
+  );
+  assert.match(downloadNativePackSource, /artifactKind:\s*artifactDescriptor\.artifactKind/);
+  assert.match(launchSource, /productionStoreRuntimeProfile === ["']static_site["']/);
+  assert.match(launchSource, /launch\.productionStoreWrapper/);
+  assert.match(launchSource, /launch\.productionStoreUnsupported/);
+  assert.match(launchSource, /launch\.androidPlayReleaseEvidence/);
+  for (const [locale, messages] of Object.entries(MESSAGES)) {
+    assert.match(
+      messages["launch.productionStoreWrapper"],
+      /web-to-native|non è un’implementazione nativa/i,
+      `${locale}: Production packaging must be labeled as a wrapper, not a native implementation`,
+    );
+    assert.match(
+      messages["launch.productionStoreUnsupported"],
+      /runtime.*static|runtime.*statico/i,
+    );
+    assert.match(
+      messages["launch.androidPlayReleaseEvidence"],
+      /Google Play.*release ID|ID release Google Play/i,
+    );
+  }
 });
 
 test("source export and explicit Store submission are separate operations", () => {
@@ -169,6 +194,11 @@ test("source export and explicit Store submission are separate operations", () =
   assert.match(downloadNativePackSource, /status:\s*["']source_package_prepared["']/);
   assert.match(downloadNativePackSource, /submissionStatus:\s*["']not_executed["']/);
   assert.match(downloadNativePackSource, /base64:\s*toBase64\(zip\)/);
+  assert.match(downloadNativePackSource, /artifactKind:\s*artifactDescriptor\.artifactKind/);
+  assert.match(
+    downloadNativePackSource,
+    /nativeImplementation:\s*artifactDescriptor\.nativeImplementation/,
+  );
   assert.doesNotMatch(downloadNativePackSource, /callStoreRunner\s*\(/);
   assert.doesNotMatch(downloadNativePackSource, /apply_credit_entry\s*\(/);
   assert.doesNotMatch(downloadNativePackSource, /insert\s+into\s+store_release_jobs/i);
@@ -180,8 +210,92 @@ test("Store retries reuse one UI request and one backend release identity", () =
   assert.doesNotMatch(goStoreSource, /requestId:\s*crypto\.randomUUID\(\)/);
   assert.match(goStoreSource, /storeRequestIds\.current\[target\]\s*=\s*crypto\.randomUUID\(\)/);
   assert.match(shipStoreSource, /const releaseIdentitySha256 = await sha256Utf8Hex/);
-  assert.match(shipStoreSource, /store-release:v1:\$\{releaseIdentitySha256\}/);
+  assert.match(shipStoreSource, /store-release:v2:\$\{releaseIdentitySha256\}/);
+  assert.match(shipStoreSource, /schemaVersion:\s*["']2\.0\.0["']/);
+  assert.match(shipStoreSource, /packageSha256,/);
+  assert.match(shipStoreSource, /identity,/);
+  assert.match(shipStoreSource, /artifactDescriptor,/);
+  assert.match(shipStoreSource, /const legacyReleaseIdentitySha256/);
+  assert.match(shipStoreSource, /store-release:v1:\$\{legacyReleaseIdentitySha256\}/);
+  assert.match(shipStoreSource, /legacy as materialized/i);
+  assert.match(
+    shipStoreSource,
+    /\$21::text is not null and release\.idempotency_key = \$21::text/,
+  );
+  assert.match(shipStoreSource, /release\.package_sha256 = \$10/);
+  assert.match(shipStoreSource, /release\.source_build_level = ['"]prototype['"]/);
+  assert.match(shipStoreSource, /release\.source_workspace_sha256 is null/);
+  assert.match(shipStoreSource, /where not exists \(select 1 from legacy\)/);
+  assert.match(shipStoreSource, /idempotencyKey:\s*release\.idempotency_key/);
+  assert.match(shipStoreSource, /\n\s*release\.idempotency_key,\n/);
   assert.doesNotMatch(shipStoreSource, /store-submit:\$\{data\.jobId\}.*data\.requestId/);
+});
+
+test("Store release rows, replay, results, conflicts and events bind Production provenance", () => {
+  const rowSource = sourceSection(
+    deploySource,
+    "type StoreReleaseRow",
+    "function parseStoredStoreReport",
+  );
+  for (const column of [
+    "source_build_level",
+    "source_workspace_sha256",
+    "package_manifest_sha256",
+    "packaging_profile",
+  ]) {
+    assert.match(rowSource, new RegExp(`${column}:`));
+    assert.match(shipStoreSource, new RegExp(column));
+  }
+  assert.match(
+    shipStoreSource,
+    /store_release_jobs\.source_build_level = excluded\.source_build_level/,
+  );
+  assert.match(
+    shipStoreSource,
+    /store_release_jobs\.source_workspace_sha256\s+is not distinct from excluded\.source_workspace_sha256/,
+  );
+  assert.match(shipStoreSource, /['"]artifactDescriptor['"],\s*\$20::jsonb/);
+  assert.match(
+    advanceStoreSource,
+    /artifactDescriptor:\s*storeArtifactDescriptorFromRow\(input\.row\)/,
+  );
+
+  const resultSource = sourceSection(
+    deploySource,
+    "function storeReleaseResult",
+    "function storeReportEventKey",
+  );
+  assert.match(resultSource, /sourceBuildLevel:\s*row\.source_build_level/);
+  assert.match(resultSource, /sourceWorkspaceSha256:\s*row\.source_workspace_sha256/);
+  assert.match(resultSource, /packageManifestSha256:\s*row\.package_manifest_sha256/);
+  assert.match(resultSource, /nativeImplementation:\s*artifactDescriptor\.nativeImplementation/);
+
+  const storedEvidenceSource = sourceSection(
+    deploySource,
+    "function storedStoreReportMatchesRow",
+    "function storeReleaseResult",
+  );
+  for (const binding of [
+    "report.state !== row.state",
+    "report.releaseId !== row.id",
+    "report.idempotencyKey !== row.idempotency_key",
+    "report.packageSha256 !== row.package_sha256",
+    "report.runnerJobId !== row.runner_job_id",
+    "report.workflowRunId !== row.workflow_run_id",
+    "report.providerBuildId !== row.provider_build_id",
+    "report.providerSubmissionId !== row.provider_submission_id",
+    "report.providerReleaseId !== row.provider_release_id",
+  ]) {
+    assert.ok(storedEvidenceSource.includes(binding), `missing stored evidence binding: ${binding}`);
+  }
+  assert.match(storedEvidenceSource, /LegacyStoreRunnerReportSchema\.safeParse/);
+  assert.match(storedEvidenceSource, /row\.source_build_level === ["']prototype["']/);
+  assert.match(
+    storedEvidenceSource,
+    /JSON\.stringify\(report\.artifactDescriptor\)[\s\S]*storeArtifactDescriptorFromRow\(row\)/,
+  );
+  assert.match(resultSource, /const evidence = parseStoredStoreReport\(row\)/);
+  assert.match(resultSource, /failedClosedStoreReadiness\(row\)/);
 });
 
 test("a stale Store runner failure cannot overwrite an advanced or terminal release", () => {
@@ -192,7 +306,25 @@ test("a stale Store runner failure cannot overwrite an advanced or terminal rele
     /and state not in \('distributed', 'failed', 'action_required'\)/,
   );
   assert.match(storeFailureSource, /input\.expectedState/);
+  assert.match(storeFailureSource, /status = updated\.state/);
+  assert.match(storeFailureSource, /updated\.state = ['"]action_required['"] then \$8/);
+  assert.match(storeFailureSource, /status:\s*["']blocked["']/);
   assert.match(advanceStoreSource, /expectedState:\s*input\.row\.state/);
+});
+
+test("Store UI notifications reflect terminal and in-flight release states", () => {
+  const notifier = sourceSection(
+    launchSource,
+    "function notifyStoreReleaseState",
+    "function Launch",
+  );
+  assert.match(notifier, /status === ["']distributed["'][\s\S]*toast\.success/);
+  assert.match(notifier, /status === ["']failed["'][\s\S]*toast\.error/);
+  assert.match(notifier, /status === ["']action_required["'][\s\S]*toast\.warning/);
+  assert.match(notifier, /toast\.info/);
+  assert.match(goStoreSource, /notifyStoreReleaseState\(r\.status/);
+  assert.match(launchSource, /notifyStoreReleaseState\([\s\S]*result\.status/);
+  assert.doesNotMatch(goStoreSource, /toast\.success\(t\(["']launch\.storeAccepted/);
 });
 
 test("Store credit debit occurs atomically only after durable runner acceptance", () => {
@@ -272,10 +404,7 @@ test("Expo export contains workflows and no binary or credential file", () => {
   assert.ok(files["app.json"]);
   assert.ok(files["App.js"]);
   assert.match(files["README.md"], /does not execute a native build/i);
-  assert.match(
-    files["README.md"],
-    /must already be uploaded to the matching EAS\s+project/i,
-  );
+  assert.match(files["README.md"], /must already be uploaded to the matching EAS\s+project/i);
   assert.match(files[".eas/workflows/helix-store.yml"], /type: build/);
   assert.match(files[".eas/workflows/helix-store.yml"], /type: submit/);
   const eas = JSON.parse(files["eas.json"]);
@@ -302,6 +431,8 @@ test("accepted mappings are not presented as provider credential proof", () => {
   assert.match(readinessSource, /signingReady:\s*buildReady/);
   assert.doesNotMatch(readinessSource, /credentialsConfigured:\s*true/);
   assert.match(readinessSource, /report\.state === ["']distributed["']/);
+  assert.match(readinessSource, /STORE_ANDROID_PLAY_RELEASE_EVIDENCE_REQUIRED/);
+  assert.match(readinessSource, /Verified Google Play release ID/);
 
   for (const [locale, messages] of Object.entries(MESSAGES)) {
     assert.match(

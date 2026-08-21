@@ -40,7 +40,8 @@ test("the complete ordered migration chain applies on a clean database", async (
          'warden_alert_evidence', 'store_release_jobs',
          'augur_capacity_evidence', 'augur_capacity_ingestion_claims',
          'augur_capacity_ingestion_requests',
-         'store_release_events'
+         'store_release_events', 'harbor_production_releases',
+         'harbor_production_release_events'
        )
      order by table_name`,
   );
@@ -62,6 +63,8 @@ test("the complete ordered migration chain applies on a clean database", async (
       "build_job_quality_reports",
       "build_jobs",
       "credit_ledger",
+      "harbor_production_release_events",
+      "harbor_production_releases",
       "payment_ledger",
       "profiles",
       "public_apps",
@@ -97,6 +100,8 @@ test("the complete ordered migration chain applies on a clean database", async (
     "0021_warden_operations.sql",
     "0022_store_release_pipeline.sql",
     "0023_augur_capacity_evidence.sql",
+    "0024_harbor_production_release.sql",
+    "0025_store_production_provenance.sql",
   ]) {
     await pg.exec(await migration(name));
   }

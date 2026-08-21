@@ -1,3 +1,5 @@
+import { isHostedRuntimeEnvironment } from "./hosted-runtime";
+
 /** Which database backend is active. */
 export type DbSource = "neon" | "pglite";
 
@@ -9,7 +11,7 @@ const databaseUrl = rawDatabaseUrl && rawDatabaseUrl.trim() ? rawDatabaseUrl : u
 if (
   typeof window === "undefined" &&
   typeof process !== "undefined" &&
-  process.env.NETLIFY === "true" &&
+  isHostedRuntimeEnvironment(process.env) &&
   !databaseUrl
 ) {
   throw new Error("Invalid or missing environment variables: DATABASE_URL (PGLite is local-only)");

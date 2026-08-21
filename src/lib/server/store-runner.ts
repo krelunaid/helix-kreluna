@@ -1,4 +1,27 @@
 import { z } from "zod";
+// Node's Store runner tests execute this TypeScript module directly; Vite also
+// resolves the explicit extension and the project emits no JavaScript.
+import {
+  LEGACY_PROTOTYPE_STORE_ARTIFACT_DESCRIPTOR,
+  StoreArtifactDescriptorSchema,
+  StoreIdentitySchema,
+  type StoreArtifactDescriptor,
+  type StoreIdentity,
+} from "./store-artifact-contract.ts";
+
+export {
+  LEGACY_PROTOTYPE_PACKAGE_PROFILE,
+  LEGACY_PROTOTYPE_STORE_ARTIFACT_DESCRIPTOR,
+  ORBIT_PRODUCTION_PACKAGE_PROFILE,
+  ProductionStoreArtifactDescriptorSchema,
+  StoreArtifactDescriptorSchema,
+  StoreIdentitySchema,
+} from "./store-artifact-contract.ts";
+export type {
+  ProductionStoreArtifactDescriptor,
+  StoreArtifactDescriptor,
+  StoreIdentity,
+} from "./store-artifact-contract.ts";
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const APP_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z0-9][A-Za-z0-9-]*){2,}$/;
@@ -10,32 +33,6 @@ export const MAX_STORE_PACKAGE_BYTES = 6 * 1024 * 1024;
 
 const StoreRunnerActionSchema = z.enum(["accept", "activate", "status"]);
 export type StoreRunnerAction = z.infer<typeof StoreRunnerActionSchema>;
-
-export const StoreIdentitySchema = z
-  .object({
-    platform: z.enum(["ios", "android"]),
-    appIdentifier: z.string().trim().min(5).max(160).regex(APP_IDENTIFIER_PATTERN),
-    easProjectId: z.string().uuid(),
-    version: z.string().trim().min(1).max(40),
-    appleTeamId: z.string().regex(APPLE_TEAM_PATTERN).nullable(),
-    destination: z.enum(["testflight", "play_internal"]),
-  })
-  .strict()
-  .superRefine((identity, context) => {
-    if (
-      identity.platform === "ios" &&
-      (identity.destination !== "testflight" || identity.appleTeamId === null)
-    ) {
-      context.addIssue({ code: "custom", message: "iOS requires TestFlight and Apple Team ID" });
-    }
-    if (
-      identity.platform === "android" &&
-      (identity.destination !== "play_internal" || identity.appleTeamId !== null)
-    ) {
-      context.addIssue({ code: "custom", message: "Android requires the Play internal track" });
-    }
-  });
-export type StoreIdentity = z.infer<typeof StoreIdentitySchema>;
 
 const StorePackageSchema = z
   .object({
@@ -57,7 +54,7 @@ const StorePackageSchema = z
 export const StoreRunnerRequestSchema = z
   .object({
     kind: z.literal("helix_store_release_request"),
-    schemaVersion: z.literal("1.0.0"),
+    schemaVersion: z.literal("1.1.0"),
     action: StoreRunnerActionSchema,
     requestNonce: z.string().uuid(),
     requestedAt: z.string().datetime({ offset: true }),
@@ -65,6 +62,7 @@ export const StoreRunnerRequestSchema = z
     idempotencyKey: z.string().trim().min(16).max(240),
     packageSha256: z.string().regex(SHA256_PATTERN),
     identity: StoreIdentitySchema,
+    artifactDescriptor: StoreArtifactDescriptorSchema,
     sourcePackage: StorePackageSchema.nullable(),
   })
   .strict()
@@ -136,13 +134,25 @@ const StoreProviderEvidenceSchema = z
       "action_required",
       "canceled",
     ]),
-    buildStatus: z.enum(["not_started", "in_progress", "succeeded", "failed"]),
+    buildStatus: z.enum([
+      "not_started",
+      "in_progress",
+      "pending_cancel",
+      "succeeded",
+      "failed",
+      "skipped",
+      "action_required",
+      "unknown",
+    ]),
     submissionStatus: z.enum([
       "not_started",
       "in_progress",
+      "pending_cancel",
       "succeeded",
       "failed",
+      "skipped",
       "action_required",
+      "unknown",
     ]),
     observedAt: z.string().datetime({ offset: true }),
     rawReportSha256: z.string().regex(SHA256_PATTERN).nullable(),
@@ -158,10 +168,17 @@ const StoreRunnerErrorEvidenceSchema = z
   })
   .strict();
 
-export const StoreRunnerReportSchema = z
+const StoreRunnerErrorResponseSchema = z
+  .object({
+    kind: z.literal("helix_store_release_error"),
+    schemaVersion: z.literal("1.0.0"),
+    errorCode: z.string().min(8).max(120).regex(/^STORE_[A-Z][A-Z0-9_]*$/),
+  })
+  .strict();
+
+const StoreRunnerReportCommonSchema = z
   .object({
     kind: z.literal("helix_store_release_report"),
-    schemaVersion: z.literal("1.0.0"),
     action: StoreRunnerActionSchema,
     requestNonce: z.string().uuid(),
     releaseId: z.string().uuid(),
@@ -183,71 +200,87 @@ export const StoreRunnerReportSchema = z
     retryAfterSeconds: z.number().int().min(5).max(3_600).nullable(),
     error: StoreRunnerErrorEvidenceSchema.nullable(),
   })
-  .strict()
-  .superRefine((report, context) => {
-    const identity = report.identity;
-    const credentials = report.credentialEvidence;
-    const identityMatches =
-      credentials.platform === identity.platform &&
-      credentials.easProjectId === identity.easProjectId &&
-      (credentials.platform === "ios"
-        ? credentials.bundleId === identity.appIdentifier &&
-          credentials.appleTeamId === identity.appleTeamId
-        : credentials.packageName === identity.appIdentifier && credentials.track === "internal");
-    if (!identityMatches) {
-      context.addIssue({ code: "custom", message: "Credential evidence targets another app" });
-    }
-    if (report.action === "accept" && report.state !== "dispatch_accepted") {
-      context.addIssue({ code: "custom", message: "Accept must report durable acceptance only" });
-    }
-    if (
-      report.action === "activate" &&
-      report.state !== "dispatch_accepted" &&
-      report.state !== "workflow_queued" &&
-      report.state !== "action_required"
-    ) {
-      context.addIssue({
-        code: "custom",
-        message: "Activation must be in flight, queued, or blocked for reconciliation",
-      });
-    }
-    if (
-      report.action === "activate" &&
-      report.state === "dispatch_accepted" &&
-      report.retryAfterSeconds === null
-    ) {
-      context.addIssue({
-        code: "custom",
-        message: "In-flight activation must include a retry interval",
-      });
-    }
-    if (report.state === "workflow_queued" && report.workflowRunId === null) {
-      context.addIssue({ code: "custom", message: "Queued state requires workflow run ID" });
-    }
-    if (report.state === "distributed") {
-      if (
-        report.workflowRunId === null ||
-        report.providerBuildId === null ||
-        report.workflowBuildJobId === null ||
-        report.workflowDistributionJobId === null ||
-        report.providerEvidence.workflowStatus !== "success" ||
-        report.providerEvidence.buildStatus !== "succeeded" ||
-        report.providerEvidence.submissionStatus !== "succeeded" ||
-        report.error !== null
-      ) {
-        context.addIssue({
-          code: "custom",
-          message: "Distributed state requires explicit successful workflow/build IDs and evidence",
-        });
-      }
-    }
-    if (
-      (report.state === "failed" || report.state === "action_required") !==
-      (report.error !== null)
-    ) {
-      context.addIssue({ code: "custom", message: "Only blocked terminal reports carry errors" });
-    }
-  });
+  .strict();
+
+type StoreRunnerReportCommon = z.infer<typeof StoreRunnerReportCommonSchema>;
+
+function validateStoreRunnerReport(report: StoreRunnerReportCommon, context: z.RefinementCtx) {
+  const identity = report.identity;
+  const credentials = report.credentialEvidence;
+  const identityMatches =
+    credentials.platform === identity.platform &&
+    credentials.easProjectId === identity.easProjectId &&
+    (credentials.platform === "ios"
+      ? credentials.bundleId === identity.appIdentifier &&
+        credentials.appleTeamId === identity.appleTeamId
+      : credentials.packageName === identity.appIdentifier && credentials.track === "internal");
+  if (!identityMatches) {
+    context.addIssue({ code: "custom", message: "Credential evidence targets another app" });
+  }
+  if (report.action === "accept" && report.state !== "dispatch_accepted") {
+    context.addIssue({ code: "custom", message: "Accept must report durable acceptance only" });
+  }
+  if (
+    report.action === "activate" &&
+    report.state !== "dispatch_accepted" &&
+    report.state !== "workflow_queued" &&
+    report.state !== "action_required"
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "Activation must be in flight, queued, or blocked for reconciliation",
+    });
+  }
+  if (
+    report.action === "activate" &&
+    report.state === "dispatch_accepted" &&
+    report.retryAfterSeconds === null
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "In-flight activation must include a retry interval",
+    });
+  }
+  if (report.state === "workflow_queued" && report.workflowRunId === null) {
+    context.addIssue({ code: "custom", message: "Queued state requires workflow run ID" });
+  }
+  if (
+    report.state === "distributed" &&
+    (report.workflowRunId === null ||
+      report.providerBuildId === null ||
+      report.workflowBuildJobId === null ||
+      report.workflowDistributionJobId === null ||
+      report.providerSubmissionId === null ||
+      (report.identity.platform === "android" && report.providerReleaseId === null) ||
+      report.providerEvidence.workflowStatus !== "success" ||
+      report.providerEvidence.buildStatus !== "succeeded" ||
+      report.providerEvidence.submissionStatus !== "succeeded" ||
+      report.error !== null)
+  ) {
+    context.addIssue({
+      code: "custom",
+      message:
+        "Distributed state requires explicit workflow, build, submission, and platform-specific release evidence",
+    });
+  }
+  if (
+    (report.state === "failed" || report.state === "action_required") !==
+    (report.error !== null)
+  ) {
+    context.addIssue({ code: "custom", message: "Only blocked terminal reports carry errors" });
+  }
+}
+
+/** Strict parser for signed v1 reports retained by the rollout migration. */
+export const LegacyStoreRunnerReportSchema = StoreRunnerReportCommonSchema.extend({
+  schemaVersion: z.literal("1.0.0"),
+}).superRefine(validateStoreRunnerReport);
+export type LegacyStoreRunnerReport = z.infer<typeof LegacyStoreRunnerReportSchema>;
+
+export const StoreRunnerReportSchema = StoreRunnerReportCommonSchema.extend({
+  schemaVersion: z.literal("1.1.0"),
+  artifactDescriptor: StoreArtifactDescriptorSchema,
+}).superRefine(validateStoreRunnerReport);
 export type StoreRunnerReport = z.infer<typeof StoreRunnerReportSchema>;
 
 export class StoreRunnerError extends Error {
@@ -375,8 +408,22 @@ function sameIdentity(left: StoreIdentity, right: StoreIdentity): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function sameArtifactDescriptor(
+  left: StoreArtifactDescriptor,
+  right: StoreArtifactDescriptor,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export type CallStoreRunnerInput = Omit<
+  StoreRunnerRequest,
+  "kind" | "schemaVersion" | "requestNonce" | "requestedAt" | "artifactDescriptor"
+> & {
+  artifactDescriptor?: StoreArtifactDescriptor;
+};
+
 export async function callStoreRunner(
-  input: Omit<StoreRunnerRequest, "kind" | "schemaVersion" | "requestNonce" | "requestedAt">,
+  input: CallStoreRunnerInput,
   options: {
     fetch?: typeof fetch;
     signal?: AbortSignal;
@@ -391,10 +438,11 @@ export async function callStoreRunner(
   const requestedAtMs = now();
   const request = StoreRunnerRequestSchema.parse({
     kind: "helix_store_release_request",
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     requestNonce,
     requestedAt: new Date(requestedAtMs).toISOString(),
     ...input,
+    artifactDescriptor: input.artifactDescriptor ?? LEGACY_PROTOTYPE_STORE_ARTIFACT_DESCRIPTOR,
   });
   const body = JSON.stringify(request);
   const timestamp = String(requestedAtMs);
@@ -420,9 +468,6 @@ export async function callStoreRunner(
   } catch {
     throw new StoreRunnerError("STORE_RUNNER_REQUEST_FAILED", true);
   }
-  if (!response.ok) {
-    throw new StoreRunnerError("STORE_RUNNER_REQUEST_FAILED", response.status >= 500);
-  }
   const responseBody = await readBoundedResponse(response);
   const presented = response.headers.get("x-helix-store-signature")?.trim().toLowerCase() ?? "";
   const expected = await storeRunnerHmacHex(configured.secret, `${requestNonce}\n${responseBody}`);
@@ -435,6 +480,13 @@ export async function callStoreRunner(
   } catch {
     throw new StoreRunnerError("STORE_RUNNER_RESPONSE_INVALID");
   }
+  if (!response.ok) {
+    const parsedError = StoreRunnerErrorResponseSchema.safeParse(candidate);
+    if (!parsedError.success || response.status < 400 || response.status > 599) {
+      throw new StoreRunnerError("STORE_RUNNER_RESPONSE_INVALID");
+    }
+    throw new StoreRunnerError(parsedError.data.errorCode, response.status >= 500);
+  }
   const parsed = StoreRunnerReportSchema.safeParse(candidate);
   if (!parsed.success) throw new StoreRunnerError("STORE_RUNNER_RESPONSE_INVALID");
   const report = parsed.data;
@@ -445,7 +497,8 @@ export async function callStoreRunner(
     report.releaseId !== request.releaseId ||
     report.idempotencyKey !== request.idempotencyKey ||
     report.packageSha256 !== request.packageSha256 ||
-    !sameIdentity(report.identity, request.identity)
+    !sameIdentity(report.identity, request.identity) ||
+    !sameArtifactDescriptor(report.artifactDescriptor, request.artifactDescriptor)
   ) {
     throw new StoreRunnerError("STORE_RUNNER_RELEASE_MISMATCH");
   }
