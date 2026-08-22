@@ -56,19 +56,19 @@ function project(overrides) {
 test("the home keeps the public landing and mounts the OS dashboard only for a user", () => {
   const authenticatedBranch = sourceSection(
     homeSource,
-    "  if (user) {",
+    "  if (homeUser) {",
     '  return (\n    <div className="min-h-screen">',
   );
   const publicLanding = homeSource.slice(
     homeSource.indexOf(
       '  return (\n    <div className="min-h-screen">',
-      homeSource.indexOf("  if (user) {"),
+      homeSource.indexOf("  if (homeUser) {"),
     ),
   );
 
   assert.match(authenticatedBranch, /return \(\s*<AuthenticatedHome/);
-  assert.match(authenticatedBranch, /user=\{user\}/);
-  assert.equal((homeSource.match(/<AuthenticatedHome/g) ?? []).length, 1);
+  assert.match(authenticatedBranch, /user=\{homeUser\}/);
+  assert.equal((homeSource.match(/<AuthenticatedHome[\s>]/g) ?? []).length, 1);
 
   assert.match(publicLanding, /<SiteHeader\s*\/>/);
   assert.match(publicLanding, /<IdeaDesk/);

@@ -821,3 +821,58 @@ function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
     first.focus();
   }
 }
+
+/** Same chrome as the signed-in home while the `/` loader resolves the session. */
+export function AuthenticatedHomePending() {
+  const { locale } = useI18n();
+  const copy = authenticatedHomeCopy(locale);
+  return (
+    <div id="dashboard-top" className="dashboard-home-shell" aria-busy="true" aria-live="polite">
+      <a href="#dashboard-main" className="dashboard-skip-link">
+        {copy.skipToContent}
+      </a>
+      <aside className="dashboard-home-sidebar" aria-hidden="true">
+        <div className="flex items-center gap-3 px-2 py-1">
+          <HelixMark className="size-14 shrink-0" />
+          <span>
+            <span className="block font-semibold tracking-[0.08em]">KRELUNA</span>
+            <span className="block text-[10px] tracking-[0.16em] text-subtle uppercase">
+              Helix OS
+            </span>
+          </span>
+        </div>
+      </aside>
+      <header className="dashboard-mobile-header">
+        <HelixMark className="size-10" />
+        <span className="text-sm font-semibold">Helix</span>
+        <span className="dashboard-avatar" aria-hidden>
+          H
+        </span>
+      </header>
+      <main id="dashboard-main" className="dashboard-home-main">
+        <p className="text-sm text-muted">{copy.loading}</p>
+        <div className="dashboard-hero mt-6">
+          <div className="dashboard-hero-copy">
+            <div className="dashboard-loading-card h-10 w-48 !aspect-auto" />
+            <div className="mt-4 dashboard-loading-card h-16 w-full max-w-xl !aspect-auto" />
+          </div>
+        </div>
+        <section className="dashboard-project-section" aria-labelledby="dashboard-projects-title">
+          <h2 id="dashboard-projects-title" className="text-2xl tracking-tight">
+            {copy.project.title}
+          </h2>
+          <div className="dashboard-loading-grid">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="dashboard-loading-card" />
+            ))}
+          </div>
+        </section>
+      </main>
+      <aside className="dashboard-home-rail" aria-hidden="true">
+        <div className="dashboard-rail-panel">
+          <div className="dashboard-loading-card h-32 !aspect-auto" />
+        </div>
+      </aside>
+    </div>
+  );
+}
