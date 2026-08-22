@@ -45,7 +45,7 @@ export function StudioDemoGallery({
               }
             >
               <span className="atelier-poster-stage" aria-hidden>
-                <span className="atelier-poster-object" />
+                <span className="atelier-poster-object" data-motif={demo.id} />
               </span>
               <span className="atelier-poster-kind">{premiumKindLabel(locale, demo.kind)}</span>
               <span className="atelier-poster-name">{demo.name}</span>

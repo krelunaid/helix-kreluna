@@ -95,6 +95,7 @@ export type AuthenticatedHomeCopy = {
   studioDemos: {
     title: string;
     lead: string;
+    leadSignedIn: string;
     open: string;
     andrea: string;
   };
@@ -188,6 +189,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     studioDemos: {
       title: "In sala",
       lead: "Diciotto lavori. Aprili. Per creare, accedi.",
+      leadSignedIn: "Diciotto lavori. Aprili.",
       open: "Apri",
       andrea: "I siti di Andrea",
     },
@@ -279,6 +281,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     studioDemos: {
       title: "In the room",
       lead: "Eighteen works. Open them. Sign in to create.",
+      leadSignedIn: "Eighteen works. Open them.",
       open: "Open",
       andrea: "Andrea’s sites",
     },
@@ -370,6 +373,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     studioDemos: {
       title: "En sala",
       lead: "Dieciocho trabajos. Ábrelos. Accede para crear.",
+      leadSignedIn: "Dieciocho trabajos. Ábrelos.",
       open: "Abrir",
       andrea: "Los sitios de Andrea",
     },
@@ -461,6 +465,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     studioDemos: {
       title: "Dans la salle",
       lead: "Dix-huit œuvres. Ouvrez-les. Connectez-vous pour créer.",
+      leadSignedIn: "Dix-huit œuvres. Ouvrez-les.",
       open: "Ouvrir",
       andrea: "Les sites d’Andrea",
     },
@@ -552,6 +557,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     studioDemos: {
       title: "Im Raum",
       lead: "Achtzehn Arbeiten. Öffne sie. Melde dich an, um zu erstellen.",
+      leadSignedIn: "Achtzehn Arbeiten. Öffne sie.",
       open: "Öffnen",
       andrea: "Andreas Seiten",
     },
@@ -643,6 +649,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     studioDemos: {
       title: "Na sala",
       lead: "Dezoito trabalhos. Abra-os. Entre para criar.",
+      leadSignedIn: "Dezoito trabalhos. Abra-os.",
       open: "Abrir",
       andrea: "Os sites do Andrea",
     },

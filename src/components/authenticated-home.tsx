@@ -290,7 +290,7 @@ export function AuthenticatedHome({
         <StudioDemoGallery
           locale={locale}
           title={copy.studioDemos.title}
-          lead={copy.studioDemos.lead}
+          lead={copy.studioDemos.leadSignedIn}
           open={copy.studioDemos.open}
           andrea={copy.studioDemos.andrea}
         />
