@@ -20,9 +20,10 @@ const googleAuthEnabled =
 type SignInPanelProps = {
   next?: string;
   prompt?: string;
+  titleAs?: "h1" | "h2";
 };
 
-export function SignInPanel({ next = "/", prompt }: SignInPanelProps) {
+export function SignInPanel({ next = "/", prompt, titleAs = "h1" }: SignInPanelProps) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -78,7 +79,11 @@ export function SignInPanel({ next = "/", prompt }: SignInPanelProps) {
   return (
     <div className="w-full rounded-xl bg-surface p-8 window-shadow">
       <p className="text-[11px] tracking-[0.22em] text-subtle uppercase">Kreluna</p>
-      <h1 className="font-display mt-3 text-4xl italic tracking-tight">{t("login.title")}</h1>
+      {titleAs === "h2" ? (
+        <h2 className="font-display mt-3 text-4xl italic tracking-tight">{t("login.title")}</h2>
+      ) : (
+        <h1 className="font-display mt-3 text-4xl italic tracking-tight">{t("login.title")}</h1>
+      )}
       <p className="mt-2 text-sm text-muted">{t("login.lead")}</p>
 
       {googleAuthEnabled ? (

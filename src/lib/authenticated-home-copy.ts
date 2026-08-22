@@ -79,6 +79,7 @@ export type AuthenticatedHomeCopy = {
   credits: string;
   manage: string;
   account: string;
+  signIn: string;
   viewAll: string;
 };
 
@@ -154,6 +155,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     credits: "Crediti disponibili",
     manage: "Gestisci piano",
     account: "Account",
+    signIn: "Accedi",
     viewAll: "Mostra tutto",
   },
   en: {
@@ -227,6 +229,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     credits: "Available credits",
     manage: "Manage plan",
     account: "Account",
+    signIn: "Sign in",
     viewAll: "View all",
   },
   es: {
@@ -300,6 +303,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     credits: "Créditos disponibles",
     manage: "Gestionar plan",
     account: "Cuenta",
+    signIn: "Acceder",
     viewAll: "Ver todos",
   },
   fr: {
@@ -373,6 +377,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     credits: "Crédits disponibles",
     manage: "Gérer l’offre",
     account: "Compte",
+    signIn: "Connexion",
     viewAll: "Tout voir",
   },
   de: {
@@ -446,6 +451,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     credits: "Verfügbare Credits",
     manage: "Tarif verwalten",
     account: "Konto",
+    signIn: "Anmelden",
     viewAll: "Alle ansehen",
   },
   pt: {
@@ -519,6 +525,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     credits: "Créditos disponíveis",
     manage: "Gerir plano",
     account: "Conta",
+    signIn: "Entrar",
     viewAll: "Ver todos",
   },
 };

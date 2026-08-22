@@ -76,13 +76,18 @@ test("the home mounts the OS dashboard for a user and sign-in chrome when signed
   assert.doesNotMatch(homeSource, /<IdeaDesk/);
 
   assert.match(signInSource, /dashboard-home-shell/);
-  assert.match(signInSource, /<SignInPanel next="\/" prompt=\{prompt\} \/>/);
+  assert.match(signInSource, /dashboard-home-sidebar/);
+  assert.match(signInSource, /dashboard-home-rail/);
+  assert.match(signInSource, /dashboard-nav/);
+  assert.match(signInSource, /function focusAccedi/);
+  assert.match(signInSource, /<SignInPanel next="\/" prompt=\{prompt\} titleAs="h2" \/>/);
   assert.match(signInSource, /copy\.signedOutLead/);
+  assert.match(signInSource, /copy\.signIn/);
   assert.doesNotMatch(signInSource, /<SiteHeader/);
   assert.doesNotMatch(signInSource, /<IdeaDesk/);
   assert.doesNotMatch(signInSource, /id="idea"/);
   assert.doesNotMatch(signInSource, /mkt\.title/);
-  assert.doesNotMatch(signInSource, /useHelixCreate|startGuestBuild/);
+  assert.doesNotMatch(signInSource, /useHelixCreate|startGuestBuild|DemoProjectGallery/);
   assert.doesNotMatch(signInSource, /Prototipo|Produzione|Crea gratis/);
   assert.match(createSource, /startGuestBuild\(/);
   assert.match(landingSource, /t\("mkt\.title"\)/);
@@ -221,6 +226,7 @@ test("dashboard state, metrics, filters and activity are deterministic and data-
         assert.ok(preset.description.trim().length > 8, `${locale} has an empty preset detail`);
       }
       assert.ok(localized.signedOutLead.trim().length > 12, `${locale} missing signed-out gate copy`);
+      assert.ok(localized.signIn.trim().length > 2, `${locale} missing signed-out Accedi label`);
     }
   });
 });
