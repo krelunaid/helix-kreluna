@@ -7,7 +7,9 @@ import { archivedFor, featuredFor, featuredHtml } from "@/lib/templates";
 import { flagshipShowcaseLabels } from "@/lib/flagships";
 import type { FlagshipEntry, FlagshipSurface } from "@/lib/flagships";
 import { FLAGSHIP_CATEGORY_ORDER } from "@/lib/flagships/catalog";
+import { premiumDemosFor } from "@/demos/registry";
 import { useI18n } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-core";
 import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/vetrina")({
@@ -52,6 +54,8 @@ function Vetrina() {
             {labels.projectsCount}
           </p>
         </div>
+
+        <PremiumSpotlight locale={locale} />
 
         <div
           className="mt-8 flex flex-wrap gap-2 border-y border-border py-4"
@@ -218,5 +222,52 @@ function CategoryGroups({
         </div>
       ))}
     </div>
+  );
+}
+
+function PremiumSpotlight({ locale }: { locale: Locale }) {
+  const { t } = useI18n();
+  const demos = premiumDemosFor(locale);
+  return (
+    <section className="mt-12" aria-labelledby="premium-demo-title">
+      <div className="mb-5 flex items-center gap-3">
+        <h2 id="premium-demo-title" className="text-xs font-semibold tracking-[0.18em] text-info uppercase">
+          {demos[0]?.kind}
+        </h2>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+      <div className="grid gap-x-7 gap-y-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-end">
+        {demos.map((item) => (
+          <article key={item.id} className="min-w-0">
+            <Link
+              to="/a/$slug"
+              params={{ slug: item.id }}
+              search={{ lang: locale }}
+              onClick={() => track("cta_demo")}
+              className="group block"
+            >
+              <ProjectCard
+                title={item.brand}
+                kind={item.kind}
+                meta={item.title}
+                previewTitle={`${item.brand} · ${item.title}`}
+                cover={item.photo}
+              />
+            </Link>
+            <p className="mt-4 text-sm text-muted">{item.lead}</p>
+            <p className="mt-2 text-sm text-subtle">{item.capability}</p>
+            <Link
+              to="/a/$slug"
+              params={{ slug: item.id }}
+              search={{ lang: locale }}
+              onClick={() => track("cta_demo")}
+              className="mt-4 inline-flex text-sm font-medium text-accent hover:underline"
+            >
+              {t("vetrina.open")}
+            </Link>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
