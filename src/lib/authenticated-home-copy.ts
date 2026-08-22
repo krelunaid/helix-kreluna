@@ -92,6 +92,12 @@ export type AuthenticatedHomeCopy = {
   account: string;
   signIn: string;
   viewAll: string;
+  studioDemos: {
+    title: string;
+    lead: string;
+    open: string;
+    andrea: string;
+  };
 };
 
 const COPY: Record<Locale, AuthenticatedHomeCopy> = {
@@ -179,6 +185,12 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     account: "Account",
     signIn: "Accedi",
     viewAll: "Mostra tutto",
+    studioDemos: {
+      title: "In sala",
+      lead: "Diciotto lavori. Aprili. Per creare, accedi.",
+      open: "Apri",
+      andrea: "I siti di Andrea",
+    },
   },
   en: {
     skipToContent: "Skip to content",
@@ -264,6 +276,12 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     account: "Account",
     signIn: "Sign in",
     viewAll: "View all",
+    studioDemos: {
+      title: "In the room",
+      lead: "Eighteen works. Open them. Sign in to create.",
+      open: "Open",
+      andrea: "Andrea’s sites",
+    },
   },
   es: {
     skipToContent: "Ir al contenido",
@@ -349,6 +367,12 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     account: "Cuenta",
     signIn: "Acceder",
     viewAll: "Ver todos",
+    studioDemos: {
+      title: "En sala",
+      lead: "Dieciocho trabajos. Ábrelos. Accede para crear.",
+      open: "Abrir",
+      andrea: "Los sitios de Andrea",
+    },
   },
   fr: {
     skipToContent: "Aller au contenu",
@@ -434,6 +458,12 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     account: "Compte",
     signIn: "Connexion",
     viewAll: "Tout voir",
+    studioDemos: {
+      title: "Dans la salle",
+      lead: "Dix-huit œuvres. Ouvrez-les. Connectez-vous pour créer.",
+      open: "Ouvrir",
+      andrea: "Les sites d’Andrea",
+    },
   },
   de: {
     skipToContent: "Zum Inhalt springen",
@@ -519,6 +549,12 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     account: "Konto",
     signIn: "Anmelden",
     viewAll: "Alle ansehen",
+    studioDemos: {
+      title: "Im Raum",
+      lead: "Achtzehn Arbeiten. Öffne sie. Melde dich an, um zu erstellen.",
+      open: "Öffnen",
+      andrea: "Andreas Seiten",
+    },
   },
   pt: {
     skipToContent: "Ir para o conteúdo",
@@ -604,6 +640,12 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     account: "Conta",
     signIn: "Entrar",
     viewAll: "Ver todos",
+    studioDemos: {
+      title: "Na sala",
+      lead: "Dezoito trabalhos. Abra-os. Entre para criar.",
+      open: "Abrir",
+      andrea: "Os sites do Andrea",
+    },
   },
 };
 

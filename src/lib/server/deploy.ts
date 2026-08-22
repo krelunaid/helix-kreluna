@@ -3,6 +3,7 @@ import { getSql, type Sql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { bundleIdFromTitle, expoFiles, slugify, withPwa, windowsFiles } from "@/lib/expo-pack";
 import { archivedFor, featuredFor, featuredHtml } from "@/lib/templates";
+import { buildPremiumDemoHtml, premiumDemoFor } from "@/lib/premium-demos";
 import { normalizeLocale } from "@/lib/i18n-core";
 import { toBase64, zipFiles } from "@/lib/zip";
 import { publicOriginFromHostname } from "@/lib/env.shared";
@@ -900,6 +901,18 @@ export const getPublicApp = createServerFn({ method: "GET" })
     // Built-in examples use a reserved namespace and never depend on a
     // database row. This keeps the showcase deterministic, localizable and
     // available even when the application database is offline.
+    const premium = premiumDemoFor(data.slug, data.locale);
+    if (premium) {
+      return {
+        slug: data.slug,
+        title: premium.name,
+        html: protectGeneratedHtml(buildPremiumDemoHtml(premium.id, data.locale)),
+        isGuest: false,
+        expiresAt: null,
+        sourceArtifactSha256: null,
+        servedSha256: null,
+      };
+    }
     const builtIn = [...featuredFor(data.locale), ...archivedFor(data.locale)].find(
       (entry) => entry.id === data.slug,
     );

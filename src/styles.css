@@ -1008,6 +1008,121 @@
   padding: 18px;
 }
 
+.atelier-demo-gallery {
+  margin-top: 36px;
+}
+
+.atelier-demo-title {
+  margin-top: 8px;
+  font-family: "Cormorant Garamond", "Times New Roman", serif;
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.atelier-demo-lead {
+  margin-top: 8px;
+  max-width: 40ch;
+  color: var(--atelier-muted);
+  font-size: 15px;
+}
+
+.atelier-demo-grid {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+  padding: 0;
+  list-style: none;
+}
+
+.atelier-poster,
+.atelier-andrea-card {
+  display: flex;
+  min-height: 280px;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  border: 1px solid var(--atelier-line);
+  border-radius: 20px;
+  background: var(--poster-ink, #100e0c);
+  padding: 18px 16px 16px;
+  color: var(--poster-paper, var(--atelier-paper));
+}
+
+.atelier-poster-stage {
+  position: relative;
+  height: 150px;
+  margin: -6px -4px 18px;
+}
+
+.atelier-poster-object {
+  position: absolute;
+  right: 18px;
+  bottom: 8px;
+  width: 72px;
+  height: 110px;
+  border: 1px solid color-mix(in oklab, var(--poster-metal, var(--atelier-metal)) 70%, white);
+  background:
+    linear-gradient(160deg, var(--poster-paper, #f3ead8), var(--poster-metal, #c4b08a) 70%);
+  box-shadow: 0 22px 40px rgb(0 0 0 / 0.35);
+}
+
+.atelier-poster-kind {
+  color: var(--poster-metal, var(--atelier-metal));
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.atelier-poster-name {
+  margin-top: 8px;
+  font-family: "Cormorant Garamond", "Times New Roman", serif;
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.atelier-poster-line {
+  margin-top: 8px;
+  color: color-mix(in oklab, var(--poster-paper, var(--atelier-paper)) 72%, transparent);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.atelier-andrea-row {
+  margin-top: 28px;
+}
+
+.atelier-andrea-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.atelier-andrea-card {
+  min-height: 160px;
+  background: #100e0c;
+}
+
+@media (min-width: 640px) {
+  .atelier-demo-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .atelier-andrea-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1080px) {
+  .atelier-demo-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .atelier-copy {
   max-width: 34rem;
 }

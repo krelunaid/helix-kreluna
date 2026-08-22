@@ -20,6 +20,7 @@ import { AtelierObject } from "@/components/atelier-object";
 import { HelpButton } from "@/components/help-drawer";
 import { HelixMark } from "@/components/kreluna-mark";
 import { SignInPanel } from "@/components/sign-in-panel";
+import { StudioDemoGallery } from "@/components/studio-demo-gallery";
 import { authenticatedHomeCopy } from "@/lib/authenticated-home-copy";
 import { LOCALES, LOCALE_LABEL, useI18n } from "@/lib/i18n";
 
@@ -197,6 +198,14 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
             )}
           </div>
         </section>
+
+        <StudioDemoGallery
+          locale={locale}
+          title={copy.studioDemos.title}
+          lead={copy.studioDemos.lead}
+          open={copy.studioDemos.open}
+          andrea={copy.studioDemos.andrea}
+        />
 
         <section className="mt-8" aria-labelledby="quick-create-title">
           <h2 id="quick-create-title" className="atelier-section-label">

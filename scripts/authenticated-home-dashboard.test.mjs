@@ -90,6 +90,8 @@ test("the home mounts the OS dashboard for a user and sign-in chrome when signed
   assert.match(signInSource, /copy\.headlineBefore/);
   assert.match(signInSource, /copy\.headlineAccent/);
   assert.match(signInSource, /atelier-locked-composer/);
+  assert.match(signInSource, /<StudioDemoGallery/);
+  assert.doesNotMatch(signInSource, /Bottega del Capello|Accademia della Bugia/);
   assert.doesNotMatch(signInSource, /<SiteHeader/);
   assert.doesNotMatch(signInSource, /<IdeaDesk/);
   assert.doesNotMatch(signInSource, /id="idea"/);
@@ -239,7 +241,18 @@ test("dashboard state, metrics, filters and activity are deterministic and data-
       assert.ok(localized.atelier.title.trim().length > 8, `${locale} missing atelier title`);
       assert.ok(localized.atelier.invite.trim().length > 16, `${locale} missing atelier invite`);
       assert.doesNotMatch(localized.atelier.title, /Dalla tua idea|Cosa vuoi creare|What do you want to/);
+      assert.ok(localized.studioDemos.title.trim().length > 2, `${locale} missing studio demo title`);
     }
+  });
+
+  await t.test("the studio lists 18 premium demos plus Andrea’s live sites", async () => {
+    const premium = await vite.ssrLoadModule("/src/lib/premium-demos.ts");
+    assert.equal(premium.PREMIUM_DEMO_IDS.length, 18);
+    assert.equal(new Set(premium.PREMIUM_DEMO_IDS).size, 18);
+    assert.deepEqual(premium.ANDREA_LIVE_SITES, ["mercedes-epoque", "italvia", "mini4wd-lab"]);
+    assert.doesNotMatch(premium.PREMIUM_DEMO_IDS.join(" "), /bottega|bugia|capello/i);
+    assert.match(premium.buildPremiumDemoHtml("velvet-table", "it"), /Velvet Table/);
+    assert.match(authenticatedHomeSource, /<StudioDemoGallery/);
   });
 });
 
