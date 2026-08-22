@@ -1,0 +1,17 @@
+.nx { --hx-ink:#10141c; --hx-cream:#e7dcc8; --hx-accent:#c4a574; --hx-mute:#b3a894; }
+.nx-desk { padding:28px 6vw 48px; }
+.nx-kicker { letter-spacing:.2em; text-transform:uppercase; font-size:11px; color:var(--hx-accent); }
+.nx-desk h1, .nx-folio h2, .nx-done h2 { font-family:var(--hx-serif); font-size:clamp(34px,6vw,64px); font-weight:500; }
+.nx-desk ul { list-style:none; padding:0; display:grid; gap:12px; }
+.nx-desk button { display:grid; grid-template-columns:120px 1fr; width:100%; padding:0; border:1px solid var(--hx-line); background:transparent; color:inherit; text-align:left; }
+.nx-desk img, .nx-folio img, .nx-done img { width:100%; height:88px; object-fit:cover; }
+.nx-desk span { display:grid; align-content:center; padding:12px; }
+.nx-folio, .nx-done { display:grid; }
+.nx-folio img, .nx-done img { min-height:42vh; height:100%; object-fit:cover; }
+.nx-folio > div, .nx-done > div { padding:24px 6vw 40px; display:grid; gap:12px; }
+.nx-folio textarea { min-height:120px; padding:12px; border:1px solid var(--hx-line); background:#16141a; }
+.nx-close { min-height:48px; background:var(--hx-accent); color:#10141c; border:0; letter-spacing:.12em; text-transform:uppercase; }
+@media (min-width:900px) {
+  .nx-folio, .nx-done { grid-template-columns:1.1fr .9fr; min-height:70vh; }
+  .nx-folio img, .nx-done img { min-height:70vh; }
+}

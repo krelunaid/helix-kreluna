@@ -1,0 +1,114 @@
+.wp {
+  --hx-ink: #10110f;
+  --hx-cream: #ebe4d4;
+  --hx-accent: #c45a3a;
+  --hx-mute: #b7ad9c;
+}
+
+.wp-wire,
+.wp-copy,
+.wp-edition {
+  display: grid;
+}
+
+.wp-map {
+  position: relative;
+  min-height: 52vh;
+  overflow: hidden;
+}
+
+.wp-map img,
+.wp-copy img,
+.wp-edition img {
+  width: 100%;
+  height: 100%;
+  min-height: 52vh;
+  object-fit: cover;
+  filter: grayscale(0.35) contrast(1.08);
+}
+
+.wp-pin {
+  position: absolute;
+  display: grid;
+  gap: 2px;
+  min-width: 72px;
+  padding: 6px 8px;
+  border: 1px solid #c45a3a;
+  background: rgb(16 17 15 / 0.78);
+  color: #ebe4d4;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform: translate(-50%, -50%);
+}
+
+.wp-pin span {
+  color: var(--hx-accent);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.wp-pin[data-on="true"] {
+  background: #c45a3a;
+  color: #10110f;
+}
+
+.wp-kicker {
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--hx-accent);
+}
+
+.wp-wire h1,
+.wp-edition h2 {
+  font-family: var(--hx-serif);
+  font-size: clamp(36px, 6vw, 68px);
+  font-weight: 500;
+  line-height: 0.95;
+}
+
+.wp-wire aside,
+.wp-copy > div,
+.wp-edition article {
+  padding: 24px 6vw 40px;
+}
+
+.wp-cta {
+  min-height: 48px;
+  padding: 0 18px;
+  border: 0;
+  background: var(--hx-accent);
+  color: #10110f;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.wp-copy textarea {
+  width: 100%;
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid var(--hx-line);
+  background: #181714;
+  resize: vertical;
+}
+
+.wp-pulse,
+.wp-mute {
+  color: var(--hx-accent);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+@media (min-width: 900px) {
+  .wp-wire,
+  .wp-copy,
+  .wp-edition {
+    grid-template-columns: 1.15fr 0.85fr;
+    min-height: 70vh;
+  }
+
+  .wp-map,
+  .wp-copy img,
+  .wp-edition img {
+    min-height: 70vh;
+  }
+}

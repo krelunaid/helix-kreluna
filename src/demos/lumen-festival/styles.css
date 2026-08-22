@@ -1,0 +1,16 @@
+.lf { --hx-ink:#120d12; --hx-cream:#f3e4d0; --hx-accent:#d4a06a; --hx-mute:#c4b198; }
+.lf-poster { padding:28px 6vw 48px; }
+.lf-kicker { letter-spacing:.3em; text-transform:uppercase; font-size:11px; color:var(--hx-accent); }
+.lf-poster h1 { font-family:var(--hx-serif); font-size:clamp(56px,14vw,140px); line-height:.8; margin:8px 0 20px; }
+.lf-night h2, .lf-pass h2 { font-family:var(--hx-serif); font-size:clamp(34px,6vw,64px); font-weight:500; }
+.lf-poster > div { display:grid; gap:12px; }
+.lf-poster button { padding:0; border:1px solid var(--hx-line); background:transparent; color:inherit; text-align:left; }
+.lf-poster img, .lf-night img, .lf-pass img { width:100%; height:200px; object-fit:cover; }
+.lf-night, .lf-pass { display:grid; }
+.lf-night aside, .lf-pass > div { padding:24px 6vw 40px; display:grid; gap:12px; }
+.lf-go { min-height:48px; background:var(--hx-accent); color:#120d12; border:0; letter-spacing:.14em; text-transform:uppercase; }
+@media (min-width:900px) {
+  .lf-poster > div { grid-template-columns:repeat(3,1fr); }
+  .lf-night, .lf-pass { grid-template-columns:1.2fr .8fr; min-height:70vh; }
+  .lf-night img, .lf-pass img { min-height:70vh; height:100%; }
+}

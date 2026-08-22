@@ -1,0 +1,18 @@
+.m27 { --hx-ink:#14110e; --hx-cream:#f6edd8; --hx-accent:#c4b08a; --hx-mute:#b6aa93; }
+.m27-house { padding:28px 6vw 48px; }
+.m27-kicker { letter-spacing:.28em; text-transform:uppercase; font-size:11px; color:var(--hx-accent); }
+.m27-house h1 { font-family:var(--hx-serif); font-size:clamp(72px,16vw,160px); line-height:.8; margin:8px 0 20px; }
+.m27-stay h2, .m27-hold h2 { font-family:var(--hx-serif); font-size:clamp(36px,6vw,64px); font-weight:500; }
+.m27-house > div { display:grid; gap:14px; }
+.m27-house button { padding:0; border:1px solid var(--hx-line); background:transparent; color:inherit; text-align:left; }
+.m27-house img, .m27-stay img, .m27-hold img { width:100%; height:200px; object-fit:cover; }
+.m27-stay, .m27-hold { display:grid; }
+.m27-stay aside, .m27-hold > div { padding:24px 6vw 40px; display:grid; gap:12px; }
+.m27-nights { display:flex; align-items:center; gap:12px; }
+.m27-nights button { min-width:40px; min-height:40px; border:1px solid var(--hx-line); background:transparent; color:inherit; }
+.m27-go { min-height:48px; background:var(--hx-accent); color:#14110e; border:0; letter-spacing:.14em; text-transform:uppercase; }
+@media (min-width:900px) {
+  .m27-house > div { grid-template-columns:repeat(3,1fr); }
+  .m27-stay, .m27-hold { grid-template-columns:1.2fr .8fr; min-height:70vh; }
+  .m27-stay img, .m27-hold img { min-height:70vh; height:100%; }
+}

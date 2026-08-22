@@ -1,0 +1,16 @@
+.wf { --hx-ink:#120e0a; --hx-cream:#f0e2cc; --hx-accent:#c47a3a; --hx-mute:#c4ae94; }
+.wf-forge { padding:28px 6vw 48px; }
+.wf-kicker { letter-spacing:.22em; text-transform:uppercase; font-size:11px; color:var(--hx-accent); }
+.wf-forge h1, .wf-rule h2, .wf-world h2 { font-family:var(--hx-serif); font-size:clamp(34px,6vw,64px); font-weight:500; }
+.wf-forge > div { display:grid; gap:12px; margin-top:20px; }
+.wf-forge button { padding:0; border:1px solid var(--hx-line); background:transparent; color:inherit; text-align:left; }
+.wf-forge img, .wf-rule img, .wf-world img { width:100%; height:200px; object-fit:cover; }
+.wf-rule, .wf-world { display:grid; }
+.wf-rule aside, .wf-world > div { padding:24px 6vw 40px; display:grid; gap:12px; }
+.wf-rule input { accent-color:var(--hx-accent); }
+.wf-go { min-height:48px; background:var(--hx-accent); color:#120e0a; border:0; letter-spacing:.12em; text-transform:uppercase; }
+@media (min-width:900px) {
+  .wf-forge > div { grid-template-columns:repeat(3,1fr); }
+  .wf-rule, .wf-world { grid-template-columns:1.2fr .8fr; min-height:70vh; }
+  .wf-rule img, .wf-world img { min-height:70vh; height:100%; }
+}
