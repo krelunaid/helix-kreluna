@@ -16,6 +16,9 @@ const EXPECTED = [
   "studio-ledger",
   "pulse-booking",
   "foundry-erp",
+  "mercedes-epoque",
+  "italvia",
+  "mini4wd-lab",
   "atelier-nova",
   "casa-verde",
   "lumen-clinic",
@@ -60,7 +63,7 @@ test("inline script extraction handles case-insensitive HTML end tags", () => {
   );
 });
 
-test("the showcase contains fifteen honest and distinct flagship products", async (t) => {
+test("the showcase contains eighteen honest and distinct flagship products", async (t) => {
   const vite = await createServer({
     root: ROOT,
     configFile: false,
@@ -78,9 +81,9 @@ test("the showcase contains fifteen honest and distinct flagship products", asyn
     vite.ssrLoadModule("/src/lib/server/quality/aegis.ts"),
   ]);
 
-  await t.test("the primary registry is exactly fifteen and the legacy set is archived", () => {
+  await t.test("the primary registry is exactly eighteen and the legacy set is archived", () => {
     assert.deepEqual([...catalog.FLAGSHIP_IDS], EXPECTED);
-    assert.equal(new Set(catalog.FLAGSHIP_IDS).size, 15);
+    assert.equal(new Set(catalog.FLAGSHIP_IDS).size, 18);
     assert.deepEqual(
       [...catalog.HOME_FLAGSHIP_IDS],
       [
@@ -129,8 +132,28 @@ test("the showcase contains fifteen honest and distinct flagship products", asyn
       assert.equal(signatures.has(signature), false, `${entry.id} repeats a visual system`);
       signatures.add(signature);
     }
-    assert.equal(signatures.size, 15);
-    assert.deepEqual(surfaces, { app: 9, site: 6 });
+    assert.equal(signatures.size, 18);
+    assert.deepEqual(surfaces, { app: 9, site: 9 });
+  });
+
+  await t.test("Andrea's allowed sites lead the websites section and excluded sites stay out", () => {
+    const sites = catalog.flagshipFor("it").filter((entry) => entry.surface === "site");
+    assert.deepEqual(
+      sites.slice(0, 3).map((entry) => entry.id),
+      ["mercedes-epoque", "italvia", "mini4wd-lab"],
+    );
+    assert.equal(sites[0]?.category, "featured-sites");
+    assert.equal(sites[0]?.categoryLabel, "In evidenza");
+    assert.match(sites[0]?.kind ?? "", /auto|noleggio|collezione/i);
+    assert.match(catalog.flagshipFor("it").find((entry) => entry.id === "italvia")?.kind ?? "", /immobiliare/i);
+    assert.match(catalog.flagshipFor("it").find((entry) => entry.id === "mini4wd-lab")?.kind ?? "", /hobby|laboratorio|Mini/i);
+    for (const excluded of ["la-bottega-del-capello", "accademia-della-bugia", "peselli-hub"]) {
+      assert.equal(catalog.isFlagshipId(excluded), false);
+      assert.equal(
+        catalog.FLAGSHIP_IDS.includes(excluded),
+        false,
+      );
+    }
   });
 
   await t.test("the nine new projects have genuine metadata translations", () => {
@@ -150,7 +173,7 @@ test("the showcase contains fifteen honest and distinct flagship products", asyn
     }
   });
 
-  await t.test("all 90 localized artifacts are offline, actionable and Aegis-clean", async () => {
+  await t.test("all localized artifacts are offline, actionable and Aegis-clean", async () => {
     const english = new Map(EXPECTED.map((id) => [id, catalog.buildFlagshipHtml(id, "en")]));
     for (const locale of i18n.LOCALES) {
       for (const id of EXPECTED) {
@@ -236,6 +259,9 @@ test("the showcase contains fifteen honest and distinct flagship products", asyn
       "studio-ledger": "Build Studio Ledger for a commercialista practice",
       "pulse-booking": "Build Pulse Booking appointment planner",
       "foundry-erp": "Build Foundry ERP for inventory and orders",
+      "mercedes-epoque": "Build Mercedes Époque classic and modern Mercedes hire",
+      italvia: "Build Italvia Italy–Poland property concierge",
+      "mini4wd-lab": "Build Mini4WD Lab to cut carbon parts and race",
       "atelier-nova": "Build Atelier Nova architecture portfolio",
       "casa-verde": "Build Casa Verde hospitality retreat website",
       "lumen-clinic": "Build Lumen Clinic private clinic website",
@@ -254,6 +280,12 @@ test("the showcase contains fifteen honest and distinct flagship products", asyn
       ["pulse-booking", "Crea un'app per la gestione degli appuntamenti", "it"],
       ["foundry-erp", "Build an ERP for inventory and orders", "en"],
       ["foundry-erp", "Crea un ERP per magazzino e ordini", "it"],
+      ["mercedes-epoque", "Build Mercedes Époque for classic and modern Mercedes", "en"],
+      ["mercedes-epoque", "Crea Mercedes Époque per noleggio Mercedes classiche", "it"],
+      ["italvia", "Build Italvia Italy–Poland property concierge", "en"],
+      ["italvia", "Crea Italvia, un concierge immobiliare Italia–Polonia", "it"],
+      ["mini4wd-lab", "Build Mini4WD Lab to cut carbon parts", "en"],
+      ["mini4wd-lab", "Crea Mini4WD Lab per tagliare il carbonio", "it"],
       ["atelier-nova", "Build an architecture studio website", "en"],
       ["atelier-nova", "Crea un sito web per uno studio di architettura", "it"],
       ["casa-verde", "Build a hospitality website for a countryside retreat", "en"],
