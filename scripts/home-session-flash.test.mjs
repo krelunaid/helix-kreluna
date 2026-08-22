@@ -21,6 +21,11 @@ test("home first paint is session-aware and never cached as public HTML", async 
   assert.match(homeSource, /const loaderUser = Route\.useLoaderData\(\)/);
   assert.match(homeSource, /const homeUser = resolveHomeUser\(user, loaderUser\)/);
   assert.match(homeSource, /if \(homeUser\) \{/);
+  assert.match(homeSource, /return <HomeSignIn prompt=\{routePrompt\} \/>/);
+  assert.doesNotMatch(homeSource, /t\("mkt\.title"\)/);
+  assert.doesNotMatch(homeSource, /id="esempi"/);
+  assert.doesNotMatch(homeSource, /from "@\/components\/public-landing"/);
+  assert.doesNotMatch(homeSource, /from "@\/components\/idea-desk"/);
   assert.doesNotMatch(homeSource, /if \(user\) \{\s*return \(\s*<AuthenticatedHome/);
 
   assert.match(homeSessionSource, /export const getHomeSession = createServerFn\(\{ method: "GET" \}\)/);
@@ -82,4 +87,21 @@ test("home surface prefers the cookie loader over a still-empty client session",
   assert.deepEqual(surface.resolveHomeUser(andrea, null), andrea);
   assert.equal(surface.HOME_DOCUMENT_HEADERS["Cache-Control"], "private, no-store, max-age=0");
   assert.equal(surface.HOME_DOCUMENT_HEADERS.Vary, "Cookie");
+});
+
+test("Italian is the default locale for first paint", async (t) => {
+  const vite = await createServer({
+    root: ROOT,
+    configFile: false,
+    appType: "custom",
+    logLevel: "silent",
+    resolve: { alias: { "@": join(ROOT, "src") } },
+    server: { middlewareMode: true, hmr: false },
+  });
+  t.after(() => vite.close());
+  const i18n = await vite.ssrLoadModule("/src/lib/i18n-core.ts");
+  assert.equal(i18n.DEFAULT_LOCALE, "it");
+  assert.equal(i18n.normalizeLocale(null), "it");
+  assert.equal(i18n.detectLocale(), "it");
+  assert.equal(i18n.t("it", "login.signin"), "Accedi");
 });

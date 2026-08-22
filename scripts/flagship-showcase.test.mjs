@@ -327,7 +327,7 @@ test("the showcase contains eighteen honest and distinct flagship products", asy
 
 test("Home, Vetrina and public routing use the real localized app preview", async () => {
   const [home, vetrina, publicRoute, deploy, card, styles, browserQa] = await Promise.all([
-    readFile(new URL("../src/routes/index.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/public-landing.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/routes/vetrina.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/routes/a.$slug.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/server/deploy.ts", import.meta.url), "utf8"),

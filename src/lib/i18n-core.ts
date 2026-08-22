@@ -24,14 +24,16 @@ export const LOCALE_NAME: Record<Locale, string> = {
 const COOKIE = "kreluna.locale";
 const STORE = "kreluna.locale";
 
+export const DEFAULT_LOCALE: Locale = "it";
+
 export function isLocale(v: string): v is Locale {
   return (LOCALES as readonly string[]).includes(v);
 }
 
 export function normalizeLocale(raw?: string | null): Locale {
-  if (!raw) return "en";
+  if (!raw) return DEFAULT_LOCALE;
   const base = raw.trim().slice(0, 2).toLowerCase();
-  return isLocale(base) ? base : "en";
+  return isLocale(base) ? base : DEFAULT_LOCALE;
 }
 
 export function pickFromLanguages(langs: readonly string[]): Locale {
@@ -43,11 +45,11 @@ export function pickFromLanguages(langs: readonly string[]): Locale {
   for (const lang of langs) {
     if (lang) return normalizeLocale(lang);
   }
-  return "en";
+  return DEFAULT_LOCALE;
 }
 
 export function detectLocale(): Locale {
-  if (typeof window === "undefined") return "en";
+  if (typeof window === "undefined") return DEFAULT_LOCALE;
   try {
     const saved = localStorage.getItem(STORE);
     if (saved && isLocale(saved)) return saved;
@@ -61,7 +63,7 @@ export function detectLocale(): Locale {
   if (cookie?.[1] && isLocale(cookie[1])) return cookie[1];
   const langs = navigator.languages?.length
     ? navigator.languages
-    : [navigator.language || "en"];
+    : [navigator.language || DEFAULT_LOCALE];
   return pickFromLanguages(langs);
 }
 

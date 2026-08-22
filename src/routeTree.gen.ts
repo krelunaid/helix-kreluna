@@ -18,6 +18,9 @@ import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as TryRouteImport } from './routes/try'
 import { Route as VetrinaRouteImport } from './routes/vetrina'
+import { Route as HouseRouteImport } from './routes/house'
+import { Route as PrezziRouteImport } from './routes/prezzi'
+import { Route as ScopriRouteImport } from './routes/scopri'
 import { Route as ASlugRouteImport } from './routes/a.$slug'
 import { Route as StudioIndexRouteImport } from './routes/studio.index'
 import { Route as StudioIdRouteImport } from './routes/studio.$id'
@@ -71,6 +74,21 @@ const VetrinaRoute = VetrinaRouteImport.update({
   path: '/vetrina',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HouseRoute = HouseRouteImport.update({
+  id: '/house',
+  path: '/house',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrezziRoute = PrezziRouteImport.update({
+  id: '/prezzi',
+  path: '/prezzi',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScopriRoute = ScopriRouteImport.update({
+  id: '/scopri',
+  path: '/scopri',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ASlugRoute = ASlugRouteImport.update({
   id: '/a/$slug',
   path: '/a/$slug',
@@ -117,6 +135,9 @@ export interface FileRoutesByFullPath {
   '/studio': typeof StudioRouteWithChildren
   '/try': typeof TryRoute
   '/vetrina': typeof VetrinaRoute
+  '/house': typeof HouseRoute
+  '/prezzi': typeof PrezziRoute
+  '/scopri': typeof ScopriRoute
   '/a/$slug': typeof ASlugRoute
   '/studio/$id': typeof StudioIdRouteWithChildren
   '/t/$code': typeof TCodeRoute
@@ -134,6 +155,9 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/try': typeof TryRoute
   '/vetrina': typeof VetrinaRoute
+  '/house': typeof HouseRoute
+  '/prezzi': typeof PrezziRoute
+  '/scopri': typeof ScopriRoute
   '/a/$slug': typeof ASlugRoute
   '/studio/$id': typeof StudioIdRouteWithChildren
   '/t/$code': typeof TCodeRoute
@@ -153,6 +177,9 @@ export interface FileRoutesById {
   '/studio': typeof StudioRouteWithChildren
   '/try': typeof TryRoute
   '/vetrina': typeof VetrinaRoute
+  '/house': typeof HouseRoute
+  '/prezzi': typeof PrezziRoute
+  '/scopri': typeof ScopriRoute
   '/a/$slug': typeof ASlugRoute
   '/studio/$id': typeof StudioIdRouteWithChildren
   '/t/$code': typeof TCodeRoute
@@ -173,6 +200,9 @@ export interface FileRouteTypes {
     | '/studio'
     | '/try'
     | '/vetrina'
+    | '/house'
+    | '/prezzi'
+    | '/scopri'
     | '/a/$slug'
     | '/studio/$id'
     | '/t/$code'
@@ -190,6 +220,9 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/try'
     | '/vetrina'
+    | '/house'
+    | '/prezzi'
+    | '/scopri'
     | '/a/$slug'
     | '/studio/$id'
     | '/t/$code'
@@ -208,6 +241,9 @@ export interface FileRouteTypes {
     | '/studio'
     | '/try'
     | '/vetrina'
+    | '/house'
+    | '/prezzi'
+    | '/scopri'
     | '/a/$slug'
     | '/studio/$id'
     | '/t/$code'
@@ -227,6 +263,9 @@ export interface RootRouteChildren {
   StudioRoute: typeof StudioRouteWithChildren
   TryRoute: typeof TryRoute
   VetrinaRoute: typeof VetrinaRoute
+  HouseRoute: typeof HouseRoute
+  PrezziRoute: typeof PrezziRoute
+  ScopriRoute: typeof ScopriRoute
   ASlugRoute: typeof ASlugRoute
   TCodeRoute: typeof TCodeRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -296,6 +335,27 @@ declare module '@tanstack/react-router' {
       path: '/vetrina'
       fullPath: '/vetrina'
       preLoaderRoute: typeof VetrinaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/house': {
+      id: '/house'
+      path: '/house'
+      fullPath: '/house'
+      preLoaderRoute: typeof HouseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prezzi': {
+      id: '/prezzi'
+      path: '/prezzi'
+      fullPath: '/prezzi'
+      preLoaderRoute: typeof PrezziRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scopri': {
+      id: '/scopri'
+      path: '/scopri'
+      fullPath: '/scopri'
+      preLoaderRoute: typeof ScopriRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/a/$slug': {
@@ -385,6 +445,9 @@ const rootRouteChildren: RootRouteChildren = {
   StudioRoute: StudioRouteWithChildren,
   TryRoute: TryRoute,
   VetrinaRoute: VetrinaRoute,
+  HouseRoute: HouseRoute,
+  PrezziRoute: PrezziRoute,
+  ScopriRoute: ScopriRoute,
   ASlugRoute: ASlugRoute,
   TCodeRoute: TCodeRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

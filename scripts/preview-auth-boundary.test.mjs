@@ -554,14 +554,16 @@ test("native Google config resolves the exact Production callback without enabli
 });
 
 test("Better Auth and login expose sign-in only with no HTTP sign-up", async () => {
-  const [server, client, login, authRoute, verify, exampleEnvironment] = await Promise.all([
-    readFile(join(ROOT, "src/lib/auth/server.ts"), "utf8"),
-    readFile(join(ROOT, "src/lib/auth/client.ts"), "utf8"),
-    readFile(join(ROOT, "src/routes/login.tsx"), "utf8"),
-    readFile(join(ROOT, "src/routes/api/auth/$.ts"), "utf8"),
-    readFile(join(ROOT, "src/lib/auth/verify.server.ts"), "utf8"),
-    readFile(join(ROOT, ".env.example"), "utf8"),
-  ]);
+  const [server, client, login, signInPanel, authRoute, verify, exampleEnvironment] =
+    await Promise.all([
+      readFile(join(ROOT, "src/lib/auth/server.ts"), "utf8"),
+      readFile(join(ROOT, "src/lib/auth/client.ts"), "utf8"),
+      readFile(join(ROOT, "src/routes/login.tsx"), "utf8"),
+      readFile(join(ROOT, "src/components/sign-in-panel.tsx"), "utf8"),
+      readFile(join(ROOT, "src/routes/api/auth/$.ts"), "utf8"),
+      readFile(join(ROOT, "src/lib/auth/verify.server.ts"), "utf8"),
+      readFile(join(ROOT, ".env.example"), "utf8"),
+    ]);
 
   assert.match(server, /serverEnv\.previewPasswordSignInEnabled/u);
   assert.match(server, /disableSignUp:\s*true/u);
@@ -575,15 +577,20 @@ test("Better Auth and login expose sign-in only with no HTTP sign-up", async () 
   assert.doesNotMatch(server, /emailAndPasswordEnabled/u);
   assert.match(client, /VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED/u);
   assert.doesNotMatch(client, /email-password/u);
+  assert.match(login, /<SignInPanel next=\{next\} prompt=\{prompt\} \/>/u);
   assert.match(login, /authClient\.signIn\.email/u);
-  assert.match(login, /authClient\.signIn\.social/u);
-  assert.match(login, /provider:\s*"google"/u);
-  assert.match(login, /VITE_GOOGLE_AUTH_ENABLED/u);
-  assert.doesNotMatch(login, /GOOGLE_CLIENT_(?:ID|SECRET)/u);
-  assert.match(login, /minLength=\{16\}/u);
   assert.doesNotMatch(login, /authClient\.signUp\.email/u);
   assert.doesNotMatch(login, /login\.name/u);
   assert.doesNotMatch(login, /login\.signup/u);
+  assert.match(signInPanel, /authClient\.signIn\.email/u);
+  assert.match(signInPanel, /authClient\.signIn\.social/u);
+  assert.match(signInPanel, /provider:\s*"google"/u);
+  assert.match(signInPanel, /VITE_GOOGLE_AUTH_ENABLED/u);
+  assert.doesNotMatch(signInPanel, /GOOGLE_CLIENT_(?:ID|SECRET)/u);
+  assert.match(signInPanel, /minLength=\{16\}/u);
+  assert.doesNotMatch(signInPanel, /authClient\.signUp\.email/u);
+  assert.doesNotMatch(signInPanel, /login\.name/u);
+  assert.doesNotMatch(signInPanel, /login\.signup/u);
   assert.match(authRoute, /handlePreviewPasswordAuthRequest\(request, auth\.handler\)/u);
   assert.match(verify, /getSessionUserFromRequest\(request, \{ bearerToken \}\)/u);
   assert.match(verify, /requireUserIdFromRequest\(request, \{ bearerToken \}\)/u);

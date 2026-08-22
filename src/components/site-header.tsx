@@ -36,12 +36,11 @@ export function SiteHeader({
   }, [user?.id, credits]);
 
   const links = [
-    { href: "/#crea", label: t("nav.create") },
-    { href: "/#come", label: t("nav.how") },
-    { href: "/#house", label: t("nav.house") },
+    { href: "/scopri#come", label: t("nav.how") },
+    { href: "/house", label: t("nav.house"), to: "/house" as const },
     { href: "/vetrina", label: t("nav.examples"), to: "/vetrina" as const },
-    { href: "/pricing", label: t("nav.pricing"), to: "/pricing" as const },
-    { href: "/#fiducia", label: t("nav.trust") },
+    { href: "/prezzi", label: t("nav.pricing"), to: "/prezzi" as const },
+    { href: "/scopri#fiducia", label: t("nav.trust") },
   ];
 
   return (
@@ -108,11 +107,15 @@ export function SiteHeader({
             </button>
           )}
           {dense ? null : (
-            <a href="/#crea" className="hidden sm:inline-flex" onClick={() => track("cta_create_free")}>
+            <Link
+              to="/"
+              className="hidden sm:inline-flex"
+              onClick={() => track("cta_create_free")}
+            >
               <Button size="sm" className="h-11 px-4">
-                {t("nav.createFree")}
+                {user ? t("nav.createFree") : t("nav.signin")}
               </Button>
-            </a>
+            </Link>
           )}
           {dense ? null : (
             <button
@@ -150,9 +153,9 @@ export function SiteHeader({
               </button>
             </li>
             <li>
-              <a href="/#crea" onClick={() => setOpen(false)}>
-                {t("nav.createFree")}
-              </a>
+              <Link to="/" onClick={() => { setOpen(false); track("cta_create_free"); }}>
+                {user ? t("nav.createFree") : t("nav.signin")}
+              </Link>
             </li>
           </ul>
         </nav>

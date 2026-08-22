@@ -73,10 +73,13 @@ test("Kreluna Score v2 separates measured, estimated and not-run evidence", asyn
     const markup = renderToStaticMarkup(
       createElement(cardModule.ScoreCard, { score, compact: true }),
     );
-    assert.match(markup, /Measured evidence/);
-    assert.match(markup, /Estimated signals/);
-    assert.match(markup, /NOT RUN/);
-    assert.match(markup, /Deterministic formula, not independent specialist votes/);
+    assert.match(markup, /Measured evidence|Prove misurate/);
+    assert.match(markup, /Estimated signals|Segnali stimati/);
+    assert.match(markup, /NOT RUN|NON ESEGUITO/);
+    assert.match(
+      markup,
+      /Deterministic formula, not independent specialist votes|Formula deterministica, non voti indipendenti di specialisti/,
+    );
     assert.doesNotMatch(markup, /Browser action coverage<\/span><span[^>]*>0/);
   });
 

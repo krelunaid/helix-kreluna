@@ -13,15 +13,25 @@ import {
 } from "../src/lib/build-entry.ts";
 
 const ROOT = join(import.meta.dirname, "..");
-const [agentsSource, vetraSource, gatewaySource, homeSource, workerSource, loginSource] =
-  await Promise.all([
-    readFile(join(ROOT, "src/lib/server/agents.ts"), "utf8"),
-    readFile(join(ROOT, "src/lib/server/vetra.ts"), "utf8"),
-    readFile(join(ROOT, "src/lib/server/ai/gateway.ts"), "utf8"),
-    readFile(join(ROOT, "src/routes/index.tsx"), "utf8"),
-    readFile(join(ROOT, "src/lib/server/jobs/worker.ts"), "utf8"),
-    readFile(join(ROOT, "src/routes/login.tsx"), "utf8"),
-  ]);
+const [
+  agentsSource,
+  vetraSource,
+  gatewaySource,
+  homeSource,
+  indexSource,
+  workerSource,
+  loginSource,
+  signInPanelSource,
+] = await Promise.all([
+  readFile(join(ROOT, "src/lib/server/agents.ts"), "utf8"),
+  readFile(join(ROOT, "src/lib/server/vetra.ts"), "utf8"),
+  readFile(join(ROOT, "src/lib/server/ai/gateway.ts"), "utf8"),
+  readFile(join(ROOT, "src/lib/use-helix-create.ts"), "utf8"),
+  readFile(join(ROOT, "src/routes/index.tsx"), "utf8"),
+  readFile(join(ROOT, "src/lib/server/jobs/worker.ts"), "utf8"),
+  readFile(join(ROOT, "src/routes/login.tsx"), "utf8"),
+  readFile(join(ROOT, "src/components/sign-in-panel.tsx"), "utf8"),
+]);
 
 function sourceSection(source, start, end) {
   const startAt = source.indexOf(start);
@@ -266,7 +276,7 @@ test("login handoff preserves the exact normalized prompt in URL state and sessi
 });
 
 test("home wires pending-session resolution and prompt handoff before login or generation", () => {
-  const build = sourceSection(homeSource, "async function build(", "return (");
+  const build = sourceSection(homeSource, "async function build(", "return { prompt");
   const decisionAt = build.indexOf("decideBuildEntry({");
   const pendingAt = build.indexOf('entry === "wait_for_session"', decisionAt);
   const sessionAt = build.indexOf("await authClient.getSession()", pendingAt);
@@ -289,7 +299,7 @@ test("home wires pending-session resolution and prompt handoff before login or g
   );
   assert.match(build.slice(loginGateAt, generationAt), /return;/);
   assert.match(homeSource, /const \{ user, isPending \} = useCurrentUserState\(\)/);
-  assert.match(homeSource, /const \{ prompt: routePrompt \} = Route\.useSearch\(\)/);
+  assert.match(indexSource, /const \{ prompt: routePrompt \} = Route\.useSearch\(\)/);
   assert.match(homeSource, /takePendingBuildPrompt\(window\.sessionStorage, routePrompt\)/);
 });
 
@@ -298,15 +308,20 @@ test("login uses the prompt-bearing destination for resolved sessions, email and
     "const destPath = buildPromptDestination(next, prompt)",
   );
   const sessionNavigateAt = loginSource.indexOf("navigate({ to: destPath })", destinationAt);
-  const emailNavigateAt = loginSource.indexOf("navigate({ to: destPath })", sessionNavigateAt + 1);
-  const callbackAt = loginSource.indexOf("const callbackURL", destinationAt);
-  const socialAt = loginSource.indexOf("authClient.signIn.social", callbackAt);
+  const panelDestinationAt = signInPanelSource.indexOf(
+    "const destPath = buildPromptDestination(next, prompt)",
+  );
+  const emailNavigateAt = signInPanelSource.indexOf("navigate({ to: destPath })", panelDestinationAt);
+  const callbackAt = signInPanelSource.indexOf("const callbackURL", panelDestinationAt);
+  const socialAt = signInPanelSource.indexOf("authClient.signIn.social", callbackAt);
   assert.ok(
     destinationAt >= 0 &&
       sessionNavigateAt > destinationAt &&
-      emailNavigateAt > sessionNavigateAt &&
-      callbackAt > destinationAt &&
+      panelDestinationAt >= 0 &&
+      emailNavigateAt > panelDestinationAt &&
+      callbackAt > panelDestinationAt &&
       socialAt > callbackAt,
   );
   assert.doesNotMatch(loginSource, /navigate\(\{ to: next/);
+  assert.doesNotMatch(signInPanelSource, /navigate\(\{ to: next/);
 });

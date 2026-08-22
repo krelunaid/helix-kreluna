@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  DEFAULT_LOCALE,
   detectLocale,
   persistLocale,
   t as translate,
@@ -11,6 +12,7 @@ export {
   LOCALES,
   LOCALE_LABEL,
   LOCALE_NAME,
+  DEFAULT_LOCALE,
   detectLocale,
   normalizeLocale,
   persistLocale,
@@ -27,7 +29,7 @@ type I18nValue = {
 const I18nContext = createContext<I18nValue | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>("en");
+  const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -60,9 +62,10 @@ export function useI18n() {
   const ctx = useContext(I18nContext);
   if (!ctx) {
     return {
-      locale: "en" as Locale,
+      locale: DEFAULT_LOCALE,
       setLocale: () => undefined,
-      t: (key: MessageKey, vars?: Record<string, string | number>) => translate("en", key, vars),
+      t: (key: MessageKey, vars?: Record<string, string | number>) =>
+        translate(DEFAULT_LOCALE, key, vars),
     };
   }
   return ctx;
