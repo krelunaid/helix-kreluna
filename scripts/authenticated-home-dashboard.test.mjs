@@ -79,16 +79,22 @@ test("the home mounts the OS dashboard for a user and sign-in chrome when signed
   assert.match(signInSource, /dashboard-home-sidebar/);
   assert.match(signInSource, /dashboard-home-rail/);
   assert.match(signInSource, /dashboard-nav/);
+  assert.match(signInSource, /atelier-home/);
+  assert.match(signInSource, /<AtelierObject/);
   assert.match(signInSource, /function focusAccedi/);
-  assert.match(signInSource, /<SignInPanel next="\/" prompt=\{prompt\} titleAs="h2" \/>/);
+  assert.match(signInSource, /<SignInPanel next="\/" prompt=\{prompt\} titleAs="h2" variant="atelier" \/>/);
   assert.match(signInSource, /copy\.signedOutLead/);
   assert.match(signInSource, /copy\.signIn/);
+  assert.match(signInSource, /copy\.atelier\.title/);
   assert.doesNotMatch(signInSource, /<SiteHeader/);
   assert.doesNotMatch(signInSource, /<IdeaDesk/);
   assert.doesNotMatch(signInSource, /id="idea"/);
   assert.doesNotMatch(signInSource, /mkt\.title/);
+  assert.doesNotMatch(signInSource, /HelixOrb|dashboard-quick-card|dashboard-metric-card/);
+  assert.doesNotMatch(signInSource, /copy\.greeting|copy\.headlineBefore|Ciao/);
   assert.doesNotMatch(signInSource, /useHelixCreate|startGuestBuild|DemoProjectGallery/);
-  assert.doesNotMatch(signInSource, /Prototipo|Produzione|Crea gratis/);
+  assert.doesNotMatch(signInSource, /Prototipo|Produzione|Crea gratis|Dalla tua idea/);
+  assert.doesNotMatch(signInSource, />—</);
   assert.match(createSource, /startGuestBuild\(/);
   assert.match(landingSource, /t\("mkt\.title"\)/);
   assert.match(landingSource, /id="esempi"/);
@@ -227,6 +233,9 @@ test("dashboard state, metrics, filters and activity are deterministic and data-
       }
       assert.ok(localized.signedOutLead.trim().length > 12, `${locale} missing signed-out gate copy`);
       assert.ok(localized.signIn.trim().length > 2, `${locale} missing signed-out Accedi label`);
+      assert.ok(localized.atelier.title.trim().length > 8, `${locale} missing atelier title`);
+      assert.ok(localized.atelier.invite.trim().length > 16, `${locale} missing atelier invite`);
+      assert.doesNotMatch(localized.atelier.title, /Dalla tua idea|Cosa vuoi creare|What do you want to/);
     }
   });
 });

@@ -13,6 +13,17 @@ export type AuthenticatedHomeCopy = {
   headlineAfter: string;
   lead: string;
   signedOutLead: string;
+  atelier: {
+    evening: string;
+    kicker: string;
+    title: string;
+    invite: string;
+    guest: string;
+    guestNote: string;
+    room: string;
+    roomLine: string;
+    desk: string;
+  };
   nav: {
     home: string;
     newProject: string;
@@ -92,6 +103,17 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAfter: "oggi?",
     lead: "Descrivi la tua idea. Helix la progetta, sviluppa e prepara per la pubblicazione.",
     signedOutLead: "Accedi per creare, vedere i progetti e usare i crediti.",
+    atelier: {
+      evening: "Buonasera.",
+      kicker: "Atelier",
+      title: "La sala è accesa.",
+      invite: "Sei già dentro. Accedi per sederti al banco.",
+      guest: "Ospite",
+      guestNote: "Il banco si apre con un accesso.",
+      room: "Sala 01",
+      roomLine: "Luce bassa. Un oggetto. Il resto aspetta te.",
+      desk: "Il banco",
+    },
     nav: {
       home: "Home",
       newProject: "Nuovo progetto",
@@ -166,6 +188,17 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAfter: "today?",
     lead: "Describe your idea. Helix designs, builds, and prepares it for launch.",
     signedOutLead: "Sign in to create, see your projects, and use credits.",
+    atelier: {
+      evening: "Good evening.",
+      kicker: "Atelier",
+      title: "The room is lit.",
+      invite: "You are already inside. Sign in to sit at the bench.",
+      guest: "Guest",
+      guestNote: "The bench opens with a sign-in.",
+      room: "Room 01",
+      roomLine: "Low light. One object. The rest waits for you.",
+      desk: "The bench",
+    },
     nav: {
       home: "Home",
       newProject: "New project",
@@ -240,6 +273,17 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAfter: "hoy?",
     lead: "Describe tu idea. Helix la diseña, desarrolla y prepara para publicarla.",
     signedOutLead: "Accede para crear, ver tus proyectos y usar créditos.",
+    atelier: {
+      evening: "Buenas noches.",
+      kicker: "Atelier",
+      title: "La sala está encendida.",
+      invite: "Ya estás dentro. Accede para sentarte al banco.",
+      guest: "Invitado",
+      guestNote: "El banco se abre con un acceso.",
+      room: "Sala 01",
+      roomLine: "Luz baja. Un objeto. El resto te espera.",
+      desk: "El banco",
+    },
     nav: {
       home: "Inicio",
       newProject: "Nuevo proyecto",
@@ -314,6 +358,17 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAfter: "aujourd’hui ?",
     lead: "Décrivez votre idée. Helix la conçoit, la développe et la prépare au lancement.",
     signedOutLead: "Connectez-vous pour créer, voir vos projets et utiliser les crédits.",
+    atelier: {
+      evening: "Bonsoir.",
+      kicker: "Atelier",
+      title: "La salle est allumée.",
+      invite: "Vous êtes déjà à l’intérieur. Connectez-vous pour vous asseoir au banc.",
+      guest: "Invité",
+      guestNote: "Le banc s’ouvre avec une connexion.",
+      room: "Salle 01",
+      roomLine: "Lumière basse. Un objet. Le reste vous attend.",
+      desk: "Le banc",
+    },
     nav: {
       home: "Accueil",
       newProject: "Nouveau projet",
@@ -388,6 +443,17 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAfter: "heute?",
     lead: "Beschreibe deine Idee. Helix entwirft und entwickelt sie und bereitet den Launch vor.",
     signedOutLead: "Melde dich an, um zu erstellen, Projekte zu sehen und Credits zu nutzen.",
+    atelier: {
+      evening: "Guten Abend.",
+      kicker: "Atelier",
+      title: "Der Raum ist erleuchtet.",
+      invite: "Du bist schon drinnen. Melde dich an, um am Pult Platz zu nehmen.",
+      guest: "Gast",
+      guestNote: "Das Pult öffnet sich mit der Anmeldung.",
+      room: "Salon 01",
+      roomLine: "Wenig Licht. Ein Objekt. Der Rest wartet auf dich.",
+      desk: "Das Pult",
+    },
     nav: {
       home: "Start",
       newProject: "Neues Projekt",
@@ -462,6 +528,17 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAfter: "hoje?",
     lead: "Descreva a sua ideia. A Helix desenha, desenvolve e prepara tudo para o lançamento.",
     signedOutLead: "Entre para criar, ver os projetos e usar créditos.",
+    atelier: {
+      evening: "Boa noite.",
+      kicker: "Atelier",
+      title: "A sala está acesa.",
+      invite: "Já está dentro. Entre para se sentar à banca.",
+      guest: "Convidado",
+      guestNote: "A banca abre-se com um acesso.",
+      room: "Sala 01",
+      roomLine: "Luz baixa. Um objeto. O resto espera por si.",
+      desk: "A banca",
+    },
     nav: {
       home: "Início",
       newProject: "Novo projeto",
