@@ -1,9 +1,19 @@
 import type { Locale } from "@/lib/i18n-core";
 import {
+  ANDREA_VETRINA_COVERS,
+  EPOQUE_CAR_PHOTOS,
+  EPOQUE_PHOTOS,
+  ITALVIA_HOME_PHOTOS,
+  ITALVIA_PHOTOS,
+  MINI4WD_PHOTOS,
+} from "@/lib/flagships/andrea-photos";
+import {
   escapeFlagshipMarkup,
   flagshipDocument,
   flagshipScriptData,
 } from "@/lib/flagships/shared";
+
+export { ANDREA_VETRINA_COVERS };
 
 export const ANDREA_SITE_IDS = ["mercedes-epoque", "italvia", "mini4wd-lab"] as const;
 export const EXCLUDED_ANDREA_SITE_IDS = [
@@ -46,13 +56,14 @@ function buildMercedesEpoque(locale: Locale): string {
       prev: "Precedente",
       calendar: "Calendario",
       status: "Selezione aggiornata",
-      cars: ["300 SL Gullwing", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
-      years: ["1955", "1957", "1963", "2024", "2023"],
-      eras: ["historic", "historic", "historic", "modern", "modern"],
-      prices: ["2200", "2100", "1600", "2800", "2400"],
-      places: ["Parigi · Plaza Athénée", "Parigi · Hôtel de Crillon", "Como · Villa d’Este", "Monaco · Hôtel de Paris", "Courchevel · Annapurna"],
+      cars: ["300 SL Gullwing", "190 SL", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
+      years: ["1955", "1960", "1957", "1963", "2024", "2023"],
+      eras: ["historic", "historic", "historic", "historic", "modern", "modern"],
+      prices: ["2200", "1400", "2100", "1600", "2800", "2400"],
+      places: ["Parigi · Plaza Athénée", "Parigi · Saint-Germain", "Parigi · Hôtel de Crillon", "Como · Villa d’Este", "Monaco · Hôtel de Paris", "Courchevel · Annapurna"],
       notes: [
         "Porte ad ali di gabbiano: la prima supercar, prima della parola.",
+        "La sorella minore: avorio, pelle rossa, un weekend che dura fino a mezzanotte.",
         "La stessa stella, a cielo aperto.",
         "Il tetto pagoda e la luce del Lago di Como.",
         "Eccellenza moderna, stessa stella.",
@@ -84,13 +95,14 @@ function buildMercedesEpoque(locale: Locale): string {
       prev: "Previous",
       calendar: "Calendar",
       status: "Selection updated",
-      cars: ["300 SL Gullwing", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
-      years: ["1955", "1957", "1963", "2024", "2023"],
-      eras: ["historic", "historic", "historic", "modern", "modern"],
-      prices: ["2200", "2100", "1600", "2800", "2400"],
-      places: ["Paris · Plaza Athénée", "Paris · Hôtel de Crillon", "Como · Villa d’Este", "Monaco · Hôtel de Paris", "Courchevel · Annapurna"],
+      cars: ["300 SL Gullwing", "190 SL", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
+      years: ["1955", "1960", "1957", "1963", "2024", "2023"],
+      eras: ["historic", "historic", "historic", "historic", "modern", "modern"],
+      prices: ["2200", "1400", "2100", "1600", "2800", "2400"],
+      places: ["Paris · Plaza Athénée", "Paris · Saint-Germain", "Paris · Hôtel de Crillon", "Como · Villa d’Este", "Monaco · Hôtel de Paris", "Courchevel · Annapurna"],
       notes: [
         "Gullwing doors: the first supercar, before the word existed.",
+        "The little sister: ivory paint, red leather, a weekend that lasts until midnight.",
         "The same star, open to the sky.",
         "The pagoda roof and Como light.",
         "Modern excellence, same star.",
@@ -122,13 +134,14 @@ function buildMercedesEpoque(locale: Locale): string {
       prev: "Anterior",
       calendar: "Calendario",
       status: "Selección actualizada",
-      cars: ["300 SL Gullwing", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
-      years: ["1955", "1957", "1963", "2024", "2023"],
-      eras: ["historic", "historic", "historic", "modern", "modern"],
-      prices: ["2200", "2100", "1600", "2800", "2400"],
-      places: ["París · Plaza Athénée", "París · Hôtel de Crillon", "Como · Villa d’Este", "Mónaco · Hôtel de Paris", "Courchevel · Annapurna"],
+      cars: ["300 SL Gullwing", "190 SL", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
+      years: ["1955", "1960", "1957", "1963", "2024", "2023"],
+      eras: ["historic", "historic", "historic", "historic", "modern", "modern"],
+      prices: ["2200", "1400", "2100", "1600", "2800", "2400"],
+      places: ["París · Plaza Athénée", "París · Saint-Germain", "París · Hôtel de Crillon", "Como · Villa d’Este", "Mónaco · Hôtel de Paris", "Courchevel · Annapurna"],
       notes: [
         "Puertas alas de gaviota: el primer superdeportivo, antes de la palabra.",
+        "La hermana menor: marfil, piel roja, un fin de semana que llega a medianoche.",
         "La misma estrella, a cielo abierto.",
         "El techo pagoda y la luz del Lago de Como.",
         "Excelencia moderna, la misma estrella.",
@@ -160,13 +173,14 @@ function buildMercedesEpoque(locale: Locale): string {
       prev: "Précédente",
       calendar: "Calendrier",
       status: "Sélection actualisée",
-      cars: ["300 SL Gullwing", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
-      years: ["1955", "1957", "1963", "2024", "2023"],
-      eras: ["historic", "historic", "historic", "modern", "modern"],
-      prices: ["2200", "2100", "1600", "2800", "2400"],
-      places: ["Paris · Plaza Athénée", "Paris · Hôtel de Crillon", "Côme · Villa d’Este", "Monaco · Hôtel de Paris", "Courchevel · Annapurna"],
+      cars: ["300 SL Gullwing", "190 SL", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
+      years: ["1955", "1960", "1957", "1963", "2024", "2023"],
+      eras: ["historic", "historic", "historic", "historic", "modern", "modern"],
+      prices: ["2200", "1400", "2100", "1600", "2800", "2400"],
+      places: ["Paris · Plaza Athénée", "Paris · Saint-Germain", "Paris · Hôtel de Crillon", "Côme · Villa d’Este", "Monaco · Hôtel de Paris", "Courchevel · Annapurna"],
       notes: [
         "Portes papillon : la première supercar, avant le mot.",
+        "La petite sœur : ivoire, cuir rouge, un week-end qui dure jusqu’à minuit.",
         "La même étoile, à ciel ouvert.",
         "Le toit pagode et la lumière du lac de Côme.",
         "Excellence moderne, même étoile.",
@@ -198,13 +212,14 @@ function buildMercedesEpoque(locale: Locale): string {
       prev: "Vorherige",
       calendar: "Kalender",
       status: "Auswahl aktualisiert",
-      cars: ["300 SL Gullwing", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
-      years: ["1955", "1957", "1963", "2024", "2023"],
-      eras: ["historic", "historic", "historic", "modern", "modern"],
-      prices: ["2200", "2100", "1600", "2800", "2400"],
-      places: ["Paris · Plaza Athénée", "Paris · Hôtel de Crillon", "Como · Villa d’Este", "Monaco · Hôtel de Paris", "Courchevel · Annapurna"],
+      cars: ["300 SL Gullwing", "190 SL", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
+      years: ["1955", "1960", "1957", "1963", "2024", "2023"],
+      eras: ["historic", "historic", "historic", "historic", "modern", "modern"],
+      prices: ["2200", "1400", "2100", "1600", "2800", "2400"],
+      places: ["Paris · Plaza Athénée", "Paris · Saint-Germain", "Paris · Hôtel de Crillon", "Como · Villa d’Este", "Monaco · Hôtel de Paris", "Courchevel · Annapurna"],
       notes: [
         "Flügeltüren: der erste Supersportwagen, bevor das Wort existierte.",
+        "Die kleine Schwester: Elfenbein, rotes Leder, ein Wochenende bis Mitternacht.",
         "Derselbe Stern, unter offenem Himmel.",
         "Das Pagodendach und das Licht vom Comer See.",
         "Moderne Exzellenz, derselbe Stern.",
@@ -236,13 +251,14 @@ function buildMercedesEpoque(locale: Locale): string {
       prev: "Anterior",
       calendar: "Calendário",
       status: "Seleção atualizada",
-      cars: ["300 SL Gullwing", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
-      years: ["1955", "1957", "1963", "2024", "2023"],
-      eras: ["historic", "historic", "historic", "modern", "modern"],
-      prices: ["2200", "2100", "1600", "2800", "2400"],
-      places: ["Paris · Plaza Athénée", "Paris · Hôtel de Crillon", "Como · Villa d’Este", "Mónaco · Hôtel de Paris", "Courchevel · Annapurna"],
+      cars: ["300 SL Gullwing", "190 SL", "300 SL Roadster", "280 SL Pagoda", "AMG GT", "G 63"],
+      years: ["1955", "1960", "1957", "1963", "2024", "2023"],
+      eras: ["historic", "historic", "historic", "historic", "modern", "modern"],
+      prices: ["2200", "1400", "2100", "1600", "2800", "2400"],
+      places: ["Paris · Plaza Athénée", "Paris · Saint-Germain", "Paris · Hôtel de Crillon", "Como · Villa d’Este", "Mónaco · Hôtel de Paris", "Courchevel · Annapurna"],
       notes: [
         "Portas asa de gaivota: o primeiro supercarro, antes da palavra.",
+        "A irmã mais nova: marfim, pele vermelha, um fim de semana até à meia-noite.",
         "A mesma estrela, a céu aberto.",
         "O teto pagode e a luz do Lago de Como.",
         "Excelência moderna, a mesma estrela.",
@@ -257,69 +273,77 @@ function buildMercedesEpoque(locale: Locale): string {
     price: t.prices[index],
     place: t.places[index],
     note: t.notes[index],
+    photo: EPOQUE_CAR_PHOTOS[index] ?? EPOQUE_PHOTOS.wings,
   }));
   return flagshipDocument({
     id: "mercedes-epoque",
     locale,
     title: t.title,
-    themeColor: "#0b0b0b",
+    themeColor: "#070707",
     css: `
-:root{color-scheme:dark;--bg:#0b0b0b;--surface:#141414;--elev:#1c1c1c;--cream:#f3ebda;--gold:#c9a84c;--muted:#8e8778;--line:#2c281e}
-body{background:var(--bg);color:var(--cream);font-family:system-ui,"Segoe UI",sans-serif}
-.wrap{min-height:100vh;display:grid;grid-template-rows:auto auto 1fr}
-.mast{height:72px;display:grid;grid-template-columns:1fr auto;align-items:center;padding:0 22px;border-bottom:1px solid var(--line);background:var(--surface)}
-.brand{display:flex;align-items:center;gap:10px}
+:root{color-scheme:dark;--bg:#070707;--surface:#101010;--elev:#161616;--cream:#f3ebda;--red:#8f1d2c;--chrome:#c8c6c2;--muted:#8a8378;--line:#2a2620}
+body{background:var(--bg);color:var(--cream);font-family:"Iowan Old Style",Georgia,"Times New Roman",serif}
+.wrap{min-height:100vh}
+.mast{height:72px;display:grid;grid-template-columns:1fr auto;align-items:center;padding:0 22px;border-bottom:1px solid var(--line);background:#0b0b0b}
+.brand{display:flex;align-items:center;gap:12px}
 .crest{width:28px;height:28px}
-.brand small{display:block;color:var(--gold);letter-spacing:.28em;text-transform:uppercase;font-size:8px}
-.brand strong{display:block;font:600 22px/1 Georgia,serif;letter-spacing:.04em}
-.explore{border:1px solid rgb(201 168 76/.5);background:transparent;color:var(--cream);padding:10px 14px;font-size:10px;letter-spacing:.18em;text-transform:uppercase}
-.hero{display:grid;grid-template-columns:1.05fr 1.15fr;min-height:420px;background:var(--elev)}
-.hero-copy{padding:42px 28px}
-.hero-copy span{color:var(--gold);font:italic 20px Georgia,serif}
-.hero h1{font:400 clamp(46px,7vw,86px)/.92 Georgia,serif;margin:14px 0 18px}
-.hero p{max-width:34ch;color:var(--muted)}
-.stage{position:relative;overflow:hidden;background:#101010}
-.stage svg{width:100%;height:100%;min-height:420px}
-.search{display:flex;align-items:center;gap:10px;margin:16px 22px 0;background:var(--elev);padding:0 14px;border-radius:14px}
-.search input{flex:1;height:48px;border:0;background:transparent;color:inherit}
+.brand small{display:block;color:var(--chrome);letter-spacing:.32em;text-transform:uppercase;font:11px/1 system-ui,sans-serif}
+.brand strong{display:block;font:500 26px/1 Georgia,serif;letter-spacing:.06em}
+.explore{border:1px solid rgb(200 198 194/.45);background:transparent;color:var(--cream);padding:10px 16px;font:11px/1 system-ui,sans-serif;letter-spacing:.2em;text-transform:uppercase}
+.hero{display:grid;grid-template-columns:minmax(260px,.82fr) 1.28fr;min-height:min(78vh,680px);background:#050505}
+.hero-copy{padding:56px 36px 40px;display:flex;flex-direction:column;justify-content:center}
+.hero-copy span{color:var(--cream);font:italic 22px/1.2 Georgia,serif}
+.hero h1{font:400 clamp(48px,8vw,92px)/.9 Georgia,serif;letter-spacing:-.03em;margin:16px 0 18px}
+.hero p{max-width:28ch;color:var(--muted);font:15px/1.55 system-ui,sans-serif}
+.stage{position:relative;overflow:hidden;min-height:360px;background:#050505}
+.stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:58% 50%;display:block}
+.stage::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#050505 0%,transparent 28%);pointer-events:none}
+.search{display:flex;align-items:center;gap:10px;margin:18px 22px 0;background:var(--elev);padding:0 16px;border-radius:14px}
+.search input{flex:1;height:50px;border:0;background:transparent;color:inherit;font:15px system-ui,sans-serif}
 .eras{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:14px 22px;background:var(--elev);padding:6px;border-radius:14px}
-.eras button{min-height:40px;border:0;border-radius:10px;background:transparent;color:var(--muted)}
-.eras button[aria-pressed="true"]{background:rgb(201 168 76/.16);color:var(--gold)}
-.board{display:grid;grid-template-columns:1.4fr .8fr;gap:18px;padding:8px 22px 28px}
-.cars{display:grid;gap:8px}
-.car{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--surface);color:inherit;padding:12px 14px;border-radius:12px}
-.car b{display:block;font:500 16px Georgia,serif}
-.car small{color:var(--muted)}
-.car[aria-pressed="true"]{border-color:var(--gold);background:#1a1710}
-.book{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column}
-.book h2{margin:0 0 8px;font:400 22px Georgia,serif}
-.book p{margin:0 0 14px;color:var(--muted);font-size:13px}
+.eras button{min-height:42px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:13px system-ui,sans-serif}
+.eras button[aria-pressed="true"]{background:rgb(143 29 44/.22);color:var(--cream)}
+.board{display:grid;grid-template-columns:1.35fr .75fr;gap:20px;padding:8px 22px 32px}
+.cars{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.car{padding:0;overflow:hidden;text-align:left;border:1px solid var(--line);background:#0d0d0d;color:inherit;border-radius:16px}
+.car img{width:100%;height:148px;object-fit:cover;display:block;background:#111}
+.car .plate{padding:12px 14px 14px}
+.car b{display:block;font:500 17px/1.15 Georgia,serif}
+.car small{color:var(--muted);font:12px system-ui,sans-serif}
+.car strong{display:block;margin-top:6px;font:600 13px system-ui,sans-serif;color:var(--chrome)}
+.car[aria-pressed="true"]{border-color:var(--red);box-shadow:0 0 0 1px var(--red)}
+.book{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;display:flex;flex-direction:column}
+.book-photo{width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:14px;display:block;background:#111}
+.book h2{margin:0 0 8px;font:400 26px Georgia,serif}
+.book p{margin:0 0 14px;color:var(--muted);font:14px/1.45 system-ui,sans-serif}
 .meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
-.meta span{display:block;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}
-.meta strong{display:block;margin-top:4px}
+.meta span{display:block;font:10px/1 system-ui,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--chrome)}
+.meta strong{display:block;margin-top:6px;font:16px Georgia,serif}
 .days{display:flex;align-items:center;justify-content:space-between;margin:8px 0 14px}
 .days button{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:transparent;color:inherit}
-.reserve{border:0;background:var(--gold);color:#1a1408;min-height:48px;font-weight:700}
-.events{margin-top:14px}
-.events button{width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:transparent;color:var(--cream);padding:10px 0;font-size:12px}
-.empty{color:var(--muted);text-align:center;padding:20px}
-.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--gold);color:#1a1408;padding:12px 16px;font-size:12px}
-@media(max-width:820px){.hero,.board{grid-template-columns:1fr}.hero-copy{padding:28px 18px}.stage svg{min-height:260px}.mast{padding:0 14px}.search,.eras,.board{margin-inline:14px}.board{padding-inline:14px}}
+.reserve{border:0;background:var(--red);color:#f6efe8;min-height:50px;font:700 13px/1 system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.events{margin-top:16px;display:grid;gap:10px}
+.event-strip{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.event-strip img{width:100%;height:72px;object-fit:cover;border-radius:10px;display:block}
+.events button{width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:transparent;color:var(--cream);padding:10px 0;font:12px system-ui,sans-serif}
+.empty{color:var(--muted);text-align:center;padding:20px;grid-column:1/-1}
+.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--cream);color:#1a1408;padding:12px 16px;font:12px system-ui,sans-serif}
+@media(max-width:860px){.hero,.board,.cars,.event-strip{grid-template-columns:1fr}.hero{min-height:auto}.hero-copy{padding:28px 18px}.stage{min-height:280px}.stage::after{background:linear-gradient(180deg,#050505 0%,transparent 34%)}.mast{padding:0 14px}.search,.eras,.board{margin-inline:14px}.board{padding-inline:14px}}
 `,
     body: `
 <main class="wrap">
-<header class="mast"><div class="brand"><svg class="crest" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="22" fill="none" stroke="#c9a84c" stroke-width="2.4"/><path d="M32 12 L32 32 L18 46 M32 32 L46 46" fill="none" stroke="#c9a84c" stroke-width="2.4" stroke-linecap="round"/></svg><span><small>Mercedes</small><strong>Époque</strong></span></div><button type="button" class="explore" data-action="jump-collection">${markup(t.explore)}</button></header>
+<header class="mast"><div class="brand"><svg class="crest" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="22" fill="none" stroke="#c8c6c2" stroke-width="2.4"/><path d="M32 12 L32 32 L18 46 M32 32 L46 46" fill="none" stroke="#c8c6c2" stroke-width="2.4" stroke-linecap="round"/></svg><span><small>Mercedes</small><strong>Époque</strong></span></div><button type="button" class="explore" data-action="jump-collection">${markup(t.explore)}</button></header>
 <section class="hero"><article class="hero-copy"><span>${markup(t.lede)}</span><h1>${markup(t.headline)}</h1><p>${markup(t.kicker)}</p></article>
-<div class="stage" id="epoque-stage" data-car="0" aria-hidden="true"><svg viewBox="0 0 720 420" preserveAspectRatio="xMidYMid slice"><rect width="720" height="420" fill="#101010"/><path d="M80 290 H640" stroke="#2c281e" stroke-width="2"/><path id="epoque-body" d="M92 262 C140 250 168 214 230 208 H430 C500 208 540 230 590 248 C630 258 640 270 640 270 L620 286 H100 Z" fill="#cfc6b4"/><path d="M210 208 C230 176 310 168 360 176 C410 168 490 176 510 208" fill="#8a8374"/><circle cx="210" cy="286" r="28" fill="#1a1a1a" stroke="#c9a84c"/><circle cx="530" cy="286" r="28" fill="#1a1a1a" stroke="#c9a84c"/></svg></div></section>
+<div class="stage" id="epoque-stage" data-car="0"><img id="epoque-hero" src="${EPOQUE_PHOTOS.wings}" alt="${markup(cars[0].name)}" width="1100" height="618"></div></section>
 <div class="search"><input id="epoque-q" data-action="search" placeholder="${markup(t.search)}" aria-label="${markup(t.search)}"></div>
 <div class="eras" id="epoque-collection"><button type="button" data-action="era" data-era="historic" aria-pressed="true">${markup(t.historic)}</button><button type="button" data-action="era" data-era="modern" aria-pressed="false">${markup(t.modern)}</button><button type="button" data-action="era" data-era="all" aria-pressed="false">${markup(t.all)}</button></div>
 <section class="board"><div class="cars" id="epoque-cars">${cars
       .map(
         (car, index) =>
-          `<button type="button" class="car" data-action="select-car" data-car="${index}" data-era="${car.era}" data-query="${markup(`${car.name} ${car.year}`)}" aria-pressed="${index === 0}"><small>${markup(car.year)}</small><span><b>${markup(car.name)}</b><small>${markup(car.place)}</small></span><strong>€${car.price}</strong></button>`,
+          `<button type="button" class="car" data-action="select-car" data-car="${index}" data-era="${car.era}" data-query="${markup(`${car.name} ${car.year}`)}" aria-pressed="${index === 0}"><img src="${car.photo}" alt="${markup(car.name)}" width="640" height="360"><span class="plate"><small>${markup(car.year)}</small><b>${markup(car.name)}</b><small>${markup(car.place)}</small><strong>€${car.price}</strong></span></button>`,
       )
       .join("")}<p class="empty" id="epoque-empty" hidden>${markup(t.empty)}</p></div>
-<aside class="book"><h2 id="epoque-name">${markup(cars[0].name)}</h2><p id="epoque-note">${markup(cars[0].note)}</p><div class="meta"><div><span>${markup(t.rate)}</span><strong id="epoque-price">€${cars[0].price}</strong></div><div><span>${markup(t.pickup)}</span><strong id="epoque-place">${markup(cars[0].place)}</strong></div></div><div class="days"><button type="button" data-action="days-down" aria-label="−">−</button><output id="epoque-days">2 ${markup(t.days)}</output><button type="button" data-action="days-up" aria-label="+">+</button></div><button type="button" class="reserve" data-action="reserve">${markup(t.reserve)}</button><div class="events"><button type="button" data-action="prev-car">${markup(t.prev)}</button><button type="button" data-action="next-car">${markup(t.next)}</button><button type="button" data-action="show-events">${markup(t.events)}</button></div></aside></section>
+<aside class="book"><img class="book-photo" id="epoque-book-photo" src="${cars[0].photo}" alt="${markup(cars[0].name)}" width="640" height="360"><h2 id="epoque-name">${markup(cars[0].name)}</h2><p id="epoque-note">${markup(cars[0].note)}</p><div class="meta"><div><span>${markup(t.rate)}</span><strong id="epoque-price">€${cars[0].price}</strong></div><div><span>${markup(t.pickup)}</span><strong id="epoque-place">${markup(cars[0].place)}</strong></div></div><div class="days"><button type="button" data-action="days-down" aria-label="−">−</button><output id="epoque-days">2 ${markup(t.days)}</output><button type="button" data-action="days-up" aria-label="+">+</button></div><button type="button" class="reserve" data-action="reserve">${markup(t.reserve)}</button><div class="events"><div class="event-strip"><img src="${EPOQUE_PHOTOS.salon}" alt="" width="480" height="270"><img src="${EPOQUE_PHOTOS.villa}" alt="" width="480" height="270"></div><button type="button" data-action="prev-car">${markup(t.prev)}</button><button type="button" data-action="next-car">${markup(t.next)}</button><button type="button" data-action="show-events">${markup(t.events)}</button></div></aside></section>
 </main>
 <output class="toast" id="epoque-toast" hidden></output>`,
     script: `
@@ -327,7 +351,7 @@ const model=${flagshipScriptData({ cars, demo: t.demo, status: t.status, events:
 const state={car:0,era:"historic",days:2,query:""};
 const byId=(id)=>document.getElementById(id);
 function toast(value){const node=byId("epoque-toast");node.textContent=value;node.hidden=false;window.setTimeout(()=>{node.hidden=true;},2300);}
-function paint(){const car=model.cars[state.car];byId("epoque-name").textContent=car.name;byId("epoque-note").textContent=car.note;byId("epoque-price").textContent="€"+car.price;byId("epoque-place").textContent=car.place;byId("epoque-days").textContent=String(state.days)+" "+model.daysLabel;byId("epoque-stage").setAttribute("data-car",String(state.car));const q=state.query;let visible=0;document.querySelectorAll('[data-action="select-car"]').forEach((button,index)=>{const eraOk=state.era==="all"||button.getAttribute("data-era")===state.era;const queryOk=!q||(button.getAttribute("data-query")||"").toLowerCase().includes(q);const show=eraOk&&queryOk;button.hidden=!show;if(show)visible+=1;button.setAttribute("aria-pressed",String(index===state.car));});byId("epoque-empty").hidden=visible>0;document.querySelectorAll('[data-action="era"]').forEach((button)=>button.setAttribute("aria-pressed",String(button.getAttribute("data-era")===state.era)));}
+function paint(){const car=model.cars[state.car];byId("epoque-name").textContent=car.name;byId("epoque-note").textContent=car.note;byId("epoque-price").textContent="€"+car.price;byId("epoque-place").textContent=car.place;byId("epoque-days").textContent=String(state.days)+" "+model.daysLabel;byId("epoque-stage").setAttribute("data-car",String(state.car));const hero=byId("epoque-hero");hero.setAttribute("src",car.photo);hero.setAttribute("alt",car.name);const folio=byId("epoque-book-photo");folio.setAttribute("src",car.photo);folio.setAttribute("alt",car.name);const q=state.query;let visible=0;document.querySelectorAll('[data-action="select-car"]').forEach((button,index)=>{const eraOk=state.era==="all"||button.getAttribute("data-era")===state.era;const queryOk=!q||(button.getAttribute("data-query")||"").toLowerCase().includes(q);const show=eraOk&&queryOk;button.hidden=!show;if(show)visible+=1;button.setAttribute("aria-pressed",String(index===state.car));});byId("epoque-empty").hidden=visible>0;document.querySelectorAll('[data-action="era"]').forEach((button)=>button.setAttribute("aria-pressed",String(button.getAttribute("data-era")===state.era)));}
 document.querySelectorAll("[data-action]").forEach((control)=>control.addEventListener(control.matches("input")?"input":"click",()=>{const action=control.getAttribute("data-action");if(action==="era"){state.era=control.getAttribute("data-era");paint();}else if(action==="select-car"){state.car=Number(control.getAttribute("data-car"));paint();toast(model.status);}else if(action==="next-car"||action==="prev-car"){state.car=(state.car+(action==="next-car"?1:model.cars.length-1))%model.cars.length;paint();}else if(action==="days-up"||action==="days-down"){state.days=Math.max(1,Math.min(14,state.days+(action==="days-up"?1:-1)));paint();}else if(action==="reserve")toast(model.demo);else if(action==="show-events")toast(model.events.join(" · "));else if(action==="search"){state.query=control.value.trim().toLowerCase();paint();}else if(action==="jump-collection")byId("epoque-collection").scrollIntoView({behavior:"smooth"});}));
 paint();`,
   });
@@ -528,18 +552,22 @@ function buildItalvia(locale: Locale): string {
     price: t.prices[index],
     total: t.totals[index],
     note: t.notes[index],
+    photo: ITALVIA_HOME_PHOTOS[index] ?? ITALVIA_PHOTOS.scalea,
   }));
   return flagshipDocument({
     id: "italvia",
     locale,
     title: t.title,
-    themeColor: "#1c2c4a",
+    themeColor: "#1a2744",
     css: `
-:root{color-scheme:light;--ivory:#f4efe6;--paper:#fbf8f1;--navy:#1c2c4a;--terracotta:#c45c3e;--sand:#d9c4a8;--muted:#6b6458;--line:#e2d9cc;--sage:#5f7f66}
+:root{color-scheme:light;--ivory:#f4efe6;--paper:#fbf8f1;--navy:#1a2744;--terracotta:#c45c3e;--sand:#d9c4a8;--muted:#6b6458;--line:#e2d9cc;--sage:#5f7f66}
 body{background:var(--ivory);color:var(--navy);font-family:Georgia,"Times New Roman",serif}
-.hero{min-height:78vh;background:linear-gradient(180deg,#2a3d63,#1c2c4a 55%,#152238);color:#fbf8f1;padding:28px 24px 40px;display:flex;flex-direction:column}
-.kicker{letter-spacing:.22em;text-transform:uppercase;font:11px system-ui,sans-serif;color:var(--sand)}
-.hero h1{font:600 clamp(46px,8vw,84px)/1.02 Georgia,serif;margin:18px 0 10px;max-width:16ch}
+.hero{position:relative;min-height:86vh;overflow:hidden;color:#fbf8f1;display:flex;flex-direction:column;justify-content:flex-end;padding:28px 24px 40px}
+.hero-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 60%;display:block}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgb(26 39 68/.18),rgb(26 39 68/.78) 72%)}
+.hero-copy{position:relative;z-index:1}
+.kicker{letter-spacing:.24em;text-transform:uppercase;font:11px system-ui,sans-serif;color:var(--sand)}
+.hero h1{font:600 clamp(46px,8vw,86px)/1.02 Georgia,serif;margin:18px 0 10px;max-width:16ch;letter-spacing:-.03em}
 .hero p{max-width:46ch;color:#fbf8f1cc;font:16px/1.5 system-ui,sans-serif}
 .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
 .actions button{min-height:46px;padding:0 16px;border-radius:10px;font:600 14px system-ui,sans-serif}
@@ -547,41 +575,42 @@ body{background:var(--ivory);color:var(--navy);font-family:Georgia,"Times New Ro
 .ghost{border:1px solid #fbf8f166;background:transparent;color:#fbf8f1}
 .section{padding:36px 24px}
 .section h2{font:600 34px/1.1 Georgia,serif;margin:8px 0 16px}
-.twin{position:relative;min-height:320px;border-radius:18px;overflow:hidden;background:var(--navy)}
+.twin{position:relative;min-height:360px;border-radius:18px;overflow:hidden;background:var(--navy)}
 .twin-scene{position:absolute;inset:0;transition:opacity .35s}
-.twin[data-season="winter"] .summer{opacity:.15}
-.twin[data-season="summer"] .winter{opacity:.15}
-.summer{background:linear-gradient(#f2c48a 0 42%,#5f7f66 42% 70%,#1c2c4a 70%)}
-.winter{background:linear-gradient(#c9d6e4 0 46%,#8aa0b0 46% 72%,#1c2c4a 72%)}
-.house{position:absolute;left:18%;bottom:18%;width:38%;height:42%;background:#fbf8f1;clip-path:polygon(50% 0,100% 28%,100% 100%,0 100%,0 28%)}
+.twin-scene img{width:100%;height:100%;object-fit:cover;display:block}
+.twin[data-season="winter"] .summer{opacity:0}
+.twin[data-season="summer"] .winter{opacity:0}
 .season-bar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
 .season-bar button{min-height:44px;border:1px solid var(--line);background:var(--paper);color:var(--navy)}
 .season-bar button[aria-pressed="true"]{background:var(--navy);color:#fff}
-.homes{display:grid;gap:10px}
-.home{display:grid;grid-template-columns:1fr auto;gap:8px;text-align:left;border:1px solid var(--line);background:var(--paper);color:inherit;padding:14px;border-radius:14px}
-.home[aria-pressed="true"]{border-color:var(--terracotta);box-shadow:0 0 0 1px var(--terracotta)}
+.homes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}
+.home{padding:0;overflow:hidden;text-align:left;border:1px solid var(--line);background:var(--paper);color:inherit;border-radius:16px}
+.home img{width:100%;height:150px;object-fit:cover;display:block}
+.home span{display:block;padding:12px 14px 14px}
 .home small{color:var(--muted)}
+.home[aria-pressed="true"]{border-color:var(--terracotta);box-shadow:0 0 0 1px var(--terracotta)}
 .cost{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:16px}
 .cost dl{display:grid;grid-template-columns:1fr auto;gap:8px 16px;margin:12px 0 0;font-family:system-ui,sans-serif}
 .checks{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .checks button{border:1px solid var(--line);background:#fff;color:var(--navy);padding:8px 10px;border-radius:999px;font:12px system-ui,sans-serif}
 .checks button[aria-pressed="true"]{background:var(--sage);color:#fff;border-color:var(--sage)}
-.agent{display:grid;grid-template-columns:1fr 160px;gap:18px;align-items:end}
-.portrait{height:200px;border-radius:16px;background:linear-gradient(160deg,#c45c3e,#d9c4a8 55%,#1c2c4a)}
+.agent{display:grid;grid-template-columns:1fr minmax(180px,280px);gap:18px;align-items:end}
+.portrait{height:220px;border-radius:16px;overflow:hidden}
+.portrait img{width:100%;height:100%;object-fit:cover;display:block}
 .write{margin-top:16px;border:0;background:var(--navy);color:#fff;min-height:48px;padding:0 16px}
 .toast{position:fixed;right:16px;bottom:16px;background:var(--navy);color:#fff;padding:12px 14px;max-width:320px}
-@media(max-width:700px){.hero,.section{padding-inline:16px}.agent{grid-template-columns:1fr}.hero h1{font-size:48px}}
+@media(max-width:800px){.hero,.section{padding-inline:16px}.homes,.agent{grid-template-columns:1fr}.hero{min-height:78vh}.hero h1{font-size:48px}}
 `,
     body: `
 <main>
-<section class="hero"><p class="kicker">${markup(t.kicker)}</p><h1>${markup(t.headline)}<br>${markup(t.headline2)}</h1><p>${markup(t.lede)}</p><div class="actions"><button type="button" class="primary" data-action="start">${markup(t.start)}</button><button type="button" class="ghost" data-action="see-january">${markup(t.see)}</button></div></section>
+<section class="hero"><img class="hero-photo" src="${ITALVIA_PHOTOS.road}" alt="" width="1400" height="900"><div class="hero-copy"><p class="kicker">${markup(t.kicker)}</p><h1>${markup(t.headline)}<br>${markup(t.headline2)}</h1><p>${markup(t.lede)}</p><div class="actions"><button type="button" class="primary" data-action="start">${markup(t.start)}</button><button type="button" class="ghost" data-action="see-january">${markup(t.see)}</button></div></div></section>
 <section class="section" id="italvia-homes"><p class="kicker">${markup(t.same)}</p><h2 id="italvia-title">${markup(homes[0].name)}</h2>
-<div class="twin" id="italvia-twin" data-season="summer"><div class="twin-scene summer"><span class="house"></span></div><div class="twin-scene winter"><span class="house"></span></div></div>
+<div class="twin" id="italvia-twin" data-season="summer"><div class="twin-scene summer"><img src="${ITALVIA_PHOTOS.cypress}" alt="" width="1400" height="900"></div><div class="twin-scene winter"><img src="${ITALVIA_PHOTOS.january}" alt="" width="1400" height="900"></div></div>
 <div class="season-bar"><button type="button" data-action="season" data-season="summer" aria-pressed="true">${markup(t.summer)}</button><button type="button" data-action="season" data-season="winter" aria-pressed="false">${markup(t.winter)}</button></div>
 <div class="homes">${homes
       .map(
         (home, index) =>
-          `<button type="button" class="home" data-action="select-home" data-home="${index}" aria-pressed="${index === 0}"><span><b>${markup(home.name)}</b><small> ${markup(home.kind)}</small></span><strong>€${home.price}</strong></button>`,
+          `<button type="button" class="home" data-action="select-home" data-home="${index}" aria-pressed="${index === 0}"><img src="${home.photo}" alt="${markup(home.name)}" width="720" height="480"><span><b>${markup(home.name)}</b><small> ${markup(home.kind)}</small><strong>€${home.price}</strong></span></button>`,
       )
       .join("")}</div>
 <aside class="cost" id="italvia-cost"><p class="kicker">${markup(t.cost)}</p><p id="italvia-note">${markup(homes[0].note)}</p><dl><div><dt>${markup(t.homes)}</dt><dd id="italvia-list">€${homes[0].price}</dd></div><div><dt>${markup(t.cost)}</dt><dd id="italvia-total">€${homes[0].total}</dd></div></dl><div class="checks">${t.checks
@@ -591,7 +620,7 @@ body{background:var(--ivory);color:var(--navy);font-family:Georgia,"Times New Ro
       )
       .join("")}</div></aside>
 </section>
-<section class="section"><div class="agent"><div><p class="kicker">${markup(t.dossier)}</p><h2>${markup(t.agent)}</h2><p>${markup(t.agentNote)}</p></div><div class="portrait" aria-hidden="true"></div></div><button type="button" class="write" data-action="write">${markup(t.write)}</button></section>
+<section class="section"><div class="agent"><div><p class="kicker">${markup(t.dossier)}</p><h2>${markup(t.agent)}</h2><p>${markup(t.agentNote)}</p></div><div class="portrait"><img src="${ITALVIA_PHOTOS.agent}" alt="" width="640" height="480"></div></div><button type="button" class="write" data-action="write">${markup(t.write)}</button></section>
 </main>
 <output class="toast" id="italvia-toast" hidden></output>`,
     script: `
@@ -726,42 +755,48 @@ function buildMini4wdLab(locale: Locale): string {
     id: "mini4wd-lab",
     locale,
     title: t.title,
-    themeColor: "#0a0a0b",
+    themeColor: "#07080a",
     css: `
-:root{color-scheme:dark;--bg:#0a0a0b;--surface:#121214;--fg:#eceae6;--muted:#8c8884;--accent:#c8ccd4;--ok:#6a9a78;--curb:#b55244;--line:#2a2a2e}
+:root{color-scheme:dark;--bg:#07080a;--surface:#101114;--fg:#eceae6;--muted:#8c8884;--accent:#3dffd0;--hot:#ff3b5c;--ok:#6a9a78;--curb:#ff3b5c;--line:#2a2a2e}
 body{background:var(--bg);color:var(--fg);font-family:"Segoe UI",system-ui,sans-serif}
 .shell{min-height:100vh;padding:20px}
-.hero{position:relative;overflow:hidden;border-radius:18px;background:var(--surface);padding:32px 24px;min-height:280px}
-.weave{position:absolute;inset:0;background:repeating-linear-gradient(45deg,#121214 0 8px,#1a1a1e 8px 16px);opacity:.7}
-.hero-copy{position:relative;max-width:460px}
-.kicker{color:var(--accent);letter-spacing:.2em;text-transform:uppercase;font-size:11px}
-.hero h1{font:700 52px/1 "Arial Narrow",Arial,sans-serif;letter-spacing:.04em;margin:10px 0}
-.hero p{color:var(--muted);max-width:40ch}
-.start{margin-top:18px;border:0;background:var(--accent);color:#0a0a0b;min-height:44px;padding:0 16px;font-weight:600}
+.hero{position:relative;overflow:hidden;border-radius:18px;background:#050608;min-height:min(62vh,520px);padding:32px 24px;display:flex;align-items:flex-end}
+.hero-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 40%;display:block;filter:saturate(1.15) contrast(1.08)}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgb(7 8 10/.15),rgb(7 8 10/.86))}
+.hero-copy{position:relative;z-index:1;max-width:520px}
+.kicker{color:var(--accent);letter-spacing:.22em;text-transform:uppercase;font-size:11px}
+.hero h1{font:700 56px/0.92 "Arial Narrow",Arial,sans-serif;letter-spacing:.05em;margin:10px 0}
+.hero p{color:#d7d3cc;max-width:40ch}
+.start{margin-top:18px;border:0;background:var(--accent);color:#07110e;min-height:44px;padding:0 16px;font-weight:700}
 .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0}
 .tabs button{min-height:44px;border:1px solid var(--line);background:var(--surface);color:var(--muted)}
-.tabs button[aria-pressed="true"]{color:#0a0a0b;background:var(--accent);border-color:var(--accent)}
+.tabs button[aria-pressed="true"]{color:#07110e;background:var(--accent);border-color:var(--accent)}
 .panel{display:none;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px}
 .panel.on{display:block}
+.shot{width:100%;height:180px;object-fit:cover;border-radius:12px;margin-bottom:12px;display:block;background:#111}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.pair img{width:100%;height:140px;object-fit:cover;border-radius:12px;display:block}
 .goals,.parts,.steps{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .goals button,.parts button,.steps button{min-height:48px;border:1px solid var(--line);background:#17171b;color:inherit;text-align:left;padding:10px 12px}
-.goals button[aria-pressed="true"],.parts button[aria-pressed="true"],.steps button[aria-pressed="true"]{border-color:var(--accent);background:#222228}
-.track{position:relative;height:180px;margin:12px 0;border-radius:12px;overflow:hidden;background:#141418}
-.lane{position:absolute;inset:28px 12px;border:8px solid var(--curb);border-radius:18px}
-.car{position:absolute;width:34px;height:18px;border-radius:5px;background:var(--accent);left:18%;top:46%;transition:left .7s,top .7s}
-.track[data-run="land"] .car{left:72%;top:48%}
-.track[data-run="fly"] .car{left:78%;top:18%}
+.goals button[aria-pressed="true"],.parts button[aria-pressed="true"],.steps button[aria-pressed="true"]{border-color:var(--accent);background:#16332c}
+.track{position:relative;height:220px;margin:12px 0;border-radius:12px;overflow:hidden;background:#141418}
+.track-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.lane{position:absolute;inset:36px 14px;border:8px solid rgb(255 59 92/.72);border-radius:18px;pointer-events:none}
+.car{position:absolute;width:54px;height:30px;border-radius:6px;left:16%;top:52%;transition:left .7s,top .7s;overflow:hidden;box-shadow:0 8px 18px rgb(0 0 0/.45)}
+.car img{width:100%;height:100%;object-fit:cover;display:block}
+.track[data-run="land"] .car{left:70%;top:54%}
+.track[data-run="fly"] .car{left:76%;top:16%}
 .row{display:flex;gap:8px;margin-top:12px}
-.row button{flex:1;min-height:44px;border:0;background:var(--accent);color:#0a0a0b;font-weight:700}
+.row button{flex:1;min-height:44px;border:0;background:var(--accent);color:#07110e;font-weight:700}
 .row .ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
 .toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:var(--ok);color:#08120c;padding:12px 14px}
-@media(max-width:620px){.hero h1{font-size:40px}.goals,.parts,.steps{grid-template-columns:1fr}.shell{padding:12px}}
+@media(max-width:620px){.hero{min-height:420px}.hero h1{font-size:40px}.goals,.parts,.steps,.pair{grid-template-columns:1fr}.shell{padding:12px}}
 `,
     body: `
 <main class="shell">
-<section class="hero"><div class="weave" aria-hidden="true"></div><div class="hero-copy"><p class="kicker">${markup(t.kicker)}</p><h1>MINI4WD LAB</h1><p>${markup(t.lead)}</p><button type="button" class="start" data-action="start">${markup(t.start)}</button></div></section>
+<section class="hero"><img class="hero-photo" src="${MINI4WD_PHOTOS.track}" alt="" width="1400" height="900"><div class="hero-copy"><p class="kicker">${markup(t.kicker)}</p><h1>MINI4WD LAB</h1><p>${markup(t.lead)}</p><button type="button" class="start" data-action="start">${markup(t.start)}</button></div></section>
 <nav class="tabs" id="lab-tabs"><button type="button" data-action="tab" data-tab="modify" aria-pressed="true">${markup(t.modify)}</button><button type="button" data-action="tab" data-tab="carbon" aria-pressed="false">${markup(t.carbon)}</button><button type="button" data-action="tab" data-tab="track" aria-pressed="false">${markup(t.track)}</button></nav>
-<section class="panel on" id="lab-modify"><div class="goals">${t.goals
+<section class="panel on" id="lab-modify"><img class="shot" src="${MINI4WD_PHOTOS.fleet}" alt="" width="1200" height="800"><div class="goals">${t.goals
       .map(
         (goal, index) =>
           `<button type="button" data-action="goal" data-goal="${index}" aria-pressed="${index === 0}">${markup(goal)}</button>`,
@@ -772,13 +807,13 @@ body{background:var(--bg);color:var(--fg);font-family:"Segoe UI",system-ui,sans-
           `<button type="button" data-action="part" data-part="${index}" aria-pressed="${index < 2}">${markup(part)}</button>`,
       )
       .join("")}</div></section>
-<section class="panel" id="lab-carbon"><div class="steps">${t.steps
+<section class="panel" id="lab-carbon"><div class="pair"><img src="${MINI4WD_PHOTOS.avante}" alt="" width="800" height="500"><img src="${MINI4WD_PHOTOS.workshop}" alt="" width="800" height="500"></div><div class="steps">${t.steps
       .map(
         (step, index) =>
           `<button type="button" data-action="step" data-step="${index}" aria-pressed="${index === 0}">${markup(step)}</button>`,
       )
       .join("")}</div><div class="row"><button type="button" data-action="next-step">${markup(t.steps[1])}</button><button type="button" class="ghost" data-action="prev-step">${markup(t.steps[0])}</button></div></section>
-<section class="panel" id="lab-track"><div class="track" id="lab-track-view" data-run="idle"><div class="lane"></div><div class="car" aria-hidden="true"></div></div><div class="row"><button type="button" data-action="launch">${markup(t.launch)}</button><button type="button" class="ghost" data-action="reset">${markup(t.reset)}</button><button type="button" class="ghost" data-action="save">${markup(t.save)}</button></div></section>
+<section class="panel" id="lab-track"><div class="track" id="lab-track-view" data-run="idle"><img class="track-photo" src="${MINI4WD_PHOTOS.track}" alt="" width="1400" height="900"><div class="lane"></div><div class="car" aria-hidden="true"><img src="${MINI4WD_PHOTOS.yaris}" alt="" width="200" height="120"></div></div><div class="row"><button type="button" data-action="launch">${markup(t.launch)}</button><button type="button" class="ghost" data-action="reset">${markup(t.reset)}</button><button type="button" class="ghost" data-action="save">${markup(t.save)}</button></div></section>
 </main>
 <output class="toast" id="lab-toast" hidden></output>`,
     script: `
