@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Building2, LayoutDashboard, Monitor, Smartphone, Store } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
-import { AuthenticatedHome } from "@/components/authenticated-home";
+import { AuthenticatedHome, AuthenticatedHomePending } from "@/components/authenticated-home";
+import { getHomeSession } from "@/lib/auth/home-session";
+import { HOME_DOCUMENT_HEADERS, resolveHomeUser } from "@/lib/home-surface";
 import { HelixOrb } from "@/components/helix-orb";
 import { HelixMark } from "@/components/kreluna-mark";
 import { ProjectCard } from "@/components/project-card";
@@ -37,6 +39,10 @@ export const Route = createFileRoute("/")({
         ? search.prompt.trim().slice(0, 2_000) || undefined
         : undefined,
   }),
+  loader: () => getHomeSession(),
+  headers: () => HOME_DOCUMENT_HEADERS,
+  pendingMs: 0,
+  pendingComponent: AuthenticatedHomePending,
   component: Home,
 });
 
@@ -73,6 +79,8 @@ const SUGGEST = [
 
 function Home() {
   const { user, isPending } = useCurrentUserState();
+  const loaderUser = Route.useLoaderData();
+  const homeUser = resolveHomeUser(user, loaderUser);
   const { prompt: routePrompt } = Route.useSearch();
   const { locale, t } = useI18n();
   const navigate = useNavigate();
@@ -167,11 +175,11 @@ function Home() {
     }
   }
 
-  if (user) {
+  if (homeUser) {
     return (
       <AuthenticatedHome
-        key={user.id}
-        user={user}
+        key={homeUser.id}
+        user={homeUser}
         prompt={prompt}
         onPromptChange={setPrompt}
         busy={busy}

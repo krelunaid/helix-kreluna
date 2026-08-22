@@ -20,6 +20,12 @@
   command = "npm run build:netlify:branch"
 
 [[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "private, no-store, max-age=0"
+    Vary = "Cookie"
+
+[[headers]]
   for = "/*"
   [headers.values]
     Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://images.unsplash.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
