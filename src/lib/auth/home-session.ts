@@ -4,8 +4,8 @@ import { DEV_USER, type AppUser } from "./use-current-user";
 
 /**
  * Cookie-backed identity for the home document. Used by the `/` loader so the
- * first HTML for a signed-in visitor is the authenticated shell, not the
- * marketing landing. Never throws: a session miss renders the public home.
+ * first HTML for a signed-in visitor is the authenticated shell, not sign-in.
+ * Never throws: a session miss renders compact Accedi chrome.
  */
 export const getHomeSession = createServerFn({ method: "GET" }).handler(
   async (): Promise<AppUser | null> => {

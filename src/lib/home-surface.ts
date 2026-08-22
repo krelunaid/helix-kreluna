@@ -31,7 +31,7 @@ export function mapHomeSessionUser(user: SessionLikeUser | null | undefined): Ap
  * The cookie-backed loader is the SSR source of truth. The client session is
  * preferred once it exists so a later sign-out still wins. Do not branch on
  * `isPending` here: that flag differs between server and client and would
- * hydrate the guest landing over an authenticated document (or the reverse).
+ * hydrate sign-in chrome over an authenticated document (or the reverse).
  */
 export function resolveHomeUser(
   clientUser: AppUser | null,

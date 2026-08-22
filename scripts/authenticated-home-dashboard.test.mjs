@@ -53,29 +53,34 @@ function project(overrides) {
   });
 }
 
-test("the home keeps the public landing and mounts the OS dashboard only for a user", () => {
-  const authenticatedBranch = sourceSection(
-    homeSource,
-    "  if (homeUser) {",
-    '  return (\n    <div className="min-h-screen">',
-  );
-  const publicLanding = homeSource.slice(
-    homeSource.indexOf(
-      '  return (\n    <div className="min-h-screen">',
-      homeSource.indexOf("  if (homeUser) {"),
-    ),
-  );
+test("the home mounts the OS dashboard for a user and sign-in chrome when signed out", async () => {
+  const [createSource, signInSource, landingSource, houseSource, prezziSource] = await Promise.all([
+    readFile(join(ROOT, "src/lib/use-helix-create.ts"), "utf8"),
+    readFile(join(ROOT, "src/components/home-sign-in.tsx"), "utf8"),
+    readFile(join(ROOT, "src/components/public-landing.tsx"), "utf8"),
+    readFile(join(ROOT, "src/routes/house.tsx"), "utf8"),
+    readFile(join(ROOT, "src/routes/prezzi.tsx"), "utf8"),
+  ]);
+  const authenticatedBranch = sourceSection(homeSource, "  if (homeUser) {", "  return <HomeSignIn");
 
   assert.match(authenticatedBranch, /return \(\s*<AuthenticatedHome/);
   assert.match(authenticatedBranch, /user=\{homeUser\}/);
   assert.equal((homeSource.match(/<AuthenticatedHome[\s>]/g) ?? []).length, 1);
+  assert.match(homeSource, /return <HomeSignIn prompt=\{routePrompt\} \/>/);
+  assert.doesNotMatch(homeSource, /t\("mkt\.title"\)/);
+  assert.doesNotMatch(homeSource, /id="esempi"/);
+  assert.doesNotMatch(homeSource, /<HouseRoster/);
+  assert.doesNotMatch(homeSource, /<IdeaDesk/);
 
-  assert.match(publicLanding, /<SiteHeader\s*\/>/);
-  assert.match(publicLanding, /<IdeaDesk/);
-  assert.match(publicLanding, /id="esempi"/);
-  assert.match(publicLanding, /featured\.map\(/);
-  assert.match(publicLanding, /t\("mkt\.title"\)/);
-  assert.match(homeSource, /startGuestBuild\(/);
+  assert.match(signInSource, /<SignInPanel next="\/" prompt=\{prompt\} \/>/);
+  assert.match(createSource, /startGuestBuild\(/);
+  assert.match(landingSource, /t\("mkt\.title"\)/);
+  assert.match(landingSource, /id="esempi"/);
+  assert.match(landingSource, /<HouseRoster/);
+  assert.match(houseSource, /createFileRoute\("\/house"\)/);
+  assert.match(houseSource, /<HouseRoster/);
+  assert.match(prezziSource, /createFileRoute\("\/prezzi"\)/);
+  assert.match(prezziSource, /<Navigate to="\/pricing" replace \/>/);
 });
 
 test("the legacy dashboard route preserves auth gates and reuses the authenticated home", () => {
