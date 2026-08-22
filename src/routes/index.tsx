@@ -4,7 +4,7 @@ import { AuthenticatedHome, AuthenticatedHomePending } from "@/components/authen
 import { HomeSignIn } from "@/components/home-sign-in";
 import { getHomeSession } from "@/lib/auth/home-session";
 import { HOME_DOCUMENT_HEADERS, resolveHomeUser } from "@/lib/home-surface";
-import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { useCurrentUserState, type AppUser } from "@/lib/auth/use-current-user";
 import { useHelixCreate } from "@/lib/use-helix-create";
 import { track } from "@/lib/analytics";
 
@@ -29,26 +29,29 @@ function Home() {
   const loaderUser = Route.useLoaderData();
   const homeUser = resolveHomeUser(user, loaderUser);
   const { prompt: routePrompt } = Route.useSearch();
-  const { prompt, setPrompt, busy, build } = useHelixCreate(routePrompt);
 
   useEffect(() => {
     track("home_view");
   }, []);
 
   if (homeUser) {
-    return (
-      <AuthenticatedHome
-        key={homeUser.id}
-        user={homeUser}
-        prompt={prompt}
-        onPromptChange={setPrompt}
-        busy={busy}
-        onSubmit={({ prompt: nextPrompt, gear, max, buildLevel }) =>
-          void build(nextPrompt, gear, max, buildLevel)
-        }
-      />
-    );
+    return <SignedInHome key={homeUser.id} user={homeUser} routePrompt={routePrompt} />;
   }
 
   return <HomeSignIn prompt={routePrompt} />;
+}
+
+function SignedInHome({ user, routePrompt }: { user: AppUser; routePrompt?: string }) {
+  const { prompt, setPrompt, busy, build } = useHelixCreate(routePrompt);
+  return (
+    <AuthenticatedHome
+      user={user}
+      prompt={prompt}
+      onPromptChange={setPrompt}
+      busy={busy}
+      onSubmit={({ prompt: nextPrompt, gear, max, buildLevel }) =>
+        void build(nextPrompt, gear, max, buildLevel)
+      }
+    />
+  );
 }

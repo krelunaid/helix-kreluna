@@ -3,7 +3,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { SiteHeader } from "@/components/site-header";
 import { SignInPanel } from "@/components/sign-in-panel";
+import { authClient } from "@/lib/auth/client";
 import { buildPromptDestination } from "@/lib/build-entry";
+
+/** /login is sign-in only. Email uses authClient.signIn.email — no HTTP sign-up. */
+export const loginEmailSignIn = authClient.signIn.email;
 
 type Search = { next?: string; prompt?: string };
 

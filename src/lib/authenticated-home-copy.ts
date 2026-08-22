@@ -12,6 +12,7 @@ export type AuthenticatedHomeCopy = {
   headlineAccent: string;
   headlineAfter: string;
   lead: string;
+  signedOutLead: string;
   nav: {
     home: string;
     newProject: string;
@@ -89,6 +90,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAccent: "creare",
     headlineAfter: "oggi?",
     lead: "Descrivi la tua idea. Helix la progetta, sviluppa e prepara per la pubblicazione.",
+    signedOutLead: "Accedi per creare, vedere i progetti e usare i crediti.",
     nav: {
       home: "Home",
       newProject: "Nuovo progetto",
@@ -161,6 +163,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAccent: "create",
     headlineAfter: "today?",
     lead: "Describe your idea. Helix designs, builds, and prepares it for launch.",
+    signedOutLead: "Sign in to create, see your projects, and use credits.",
     nav: {
       home: "Home",
       newProject: "New project",
@@ -233,6 +236,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAccent: "crear",
     headlineAfter: "hoy?",
     lead: "Describe tu idea. Helix la diseña, desarrolla y prepara para publicarla.",
+    signedOutLead: "Accede para crear, ver tus proyectos y usar créditos.",
     nav: {
       home: "Inicio",
       newProject: "Nuevo proyecto",
@@ -305,6 +309,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAccent: "créer",
     headlineAfter: "aujourd’hui ?",
     lead: "Décrivez votre idée. Helix la conçoit, la développe et la prépare au lancement.",
+    signedOutLead: "Connectez-vous pour créer, voir vos projets et utiliser les crédits.",
     nav: {
       home: "Accueil",
       newProject: "Nouveau projet",
@@ -377,6 +382,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAccent: "erstellen",
     headlineAfter: "heute?",
     lead: "Beschreibe deine Idee. Helix entwirft und entwickelt sie und bereitet den Launch vor.",
+    signedOutLead: "Melde dich an, um zu erstellen, Projekte zu sehen und Credits zu nutzen.",
     nav: {
       home: "Start",
       newProject: "Neues Projekt",
@@ -449,6 +455,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     headlineAccent: "criar",
     headlineAfter: "hoje?",
     lead: "Descreva a sua ideia. A Helix desenha, desenvolve e prepara tudo para o lançamento.",
+    signedOutLead: "Entre para criar, ver os projetos e usar créditos.",
     nav: {
       home: "Início",
       newProject: "Novo projeto",

@@ -578,6 +578,7 @@ test("Better Auth and login expose sign-in only with no HTTP sign-up", async () 
   assert.match(client, /VITE_PREVIEW_PASSWORD_SIGNIN_ENABLED/u);
   assert.doesNotMatch(client, /email-password/u);
   assert.match(login, /<SignInPanel next=\{next\} prompt=\{prompt\} \/>/u);
+  assert.match(login, /authClient\.signIn\.email/u);
   assert.doesNotMatch(login, /authClient\.signUp\.email/u);
   assert.doesNotMatch(login, /login\.name/u);
   assert.doesNotMatch(login, /login\.signup/u);

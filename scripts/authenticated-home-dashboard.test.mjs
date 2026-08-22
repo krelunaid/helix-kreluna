@@ -63,16 +63,27 @@ test("the home mounts the OS dashboard for a user and sign-in chrome when signed
   ]);
   const authenticatedBranch = sourceSection(homeSource, "  if (homeUser) {", "  return <HomeSignIn");
 
-  assert.match(authenticatedBranch, /return \(\s*<AuthenticatedHome/);
+  assert.match(authenticatedBranch, /return <SignedInHome/);
   assert.match(authenticatedBranch, /user=\{homeUser\}/);
+  assert.match(homeSource, /<AuthenticatedHome[\s\n]/);
   assert.equal((homeSource.match(/<AuthenticatedHome[\s>]/g) ?? []).length, 1);
   assert.match(homeSource, /return <HomeSignIn prompt=\{routePrompt\} \/>/);
+  assert.doesNotMatch(homeSource, /from "@\/components\/public-landing"/);
+  assert.doesNotMatch(homeSource, /from "@\/components\/idea-desk"/);
   assert.doesNotMatch(homeSource, /t\("mkt\.title"\)/);
   assert.doesNotMatch(homeSource, /id="esempi"/);
   assert.doesNotMatch(homeSource, /<HouseRoster/);
   assert.doesNotMatch(homeSource, /<IdeaDesk/);
 
+  assert.match(signInSource, /dashboard-home-shell/);
   assert.match(signInSource, /<SignInPanel next="\/" prompt=\{prompt\} \/>/);
+  assert.match(signInSource, /copy\.signedOutLead/);
+  assert.doesNotMatch(signInSource, /<SiteHeader/);
+  assert.doesNotMatch(signInSource, /<IdeaDesk/);
+  assert.doesNotMatch(signInSource, /id="idea"/);
+  assert.doesNotMatch(signInSource, /mkt\.title/);
+  assert.doesNotMatch(signInSource, /useHelixCreate|startGuestBuild/);
+  assert.doesNotMatch(signInSource, /Prototipo|Produzione|Crea gratis/);
   assert.match(createSource, /startGuestBuild\(/);
   assert.match(landingSource, /t\("mkt\.title"\)/);
   assert.match(landingSource, /id="esempi"/);
@@ -209,6 +220,7 @@ test("dashboard state, metrics, filters and activity are deterministic and data-
         assert.ok(preset.label.trim().length > 2, `${locale} has an empty preset label`);
         assert.ok(preset.description.trim().length > 8, `${locale} has an empty preset detail`);
       }
+      assert.ok(localized.signedOutLead.trim().length > 12, `${locale} missing signed-out gate copy`);
     }
   });
 });

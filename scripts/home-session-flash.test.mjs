@@ -24,6 +24,8 @@ test("home first paint is session-aware and never cached as public HTML", async 
   assert.match(homeSource, /return <HomeSignIn prompt=\{routePrompt\} \/>/);
   assert.doesNotMatch(homeSource, /t\("mkt\.title"\)/);
   assert.doesNotMatch(homeSource, /id="esempi"/);
+  assert.doesNotMatch(homeSource, /from "@\/components\/public-landing"/);
+  assert.doesNotMatch(homeSource, /from "@\/components\/idea-desk"/);
   assert.doesNotMatch(homeSource, /if \(user\) \{\s*return \(\s*<AuthenticatedHome/);
 
   assert.match(homeSessionSource, /export const getHomeSession = createServerFn\(\{ method: "GET" \}\)/);
