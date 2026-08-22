@@ -2,10 +2,11 @@ import { lazy, Suspense } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { getPublicApp } from "@/lib/server/deploy";
 import { GENERATED_APP_SANDBOX } from "@/lib/generated-content-policy";
-import { isPremiumDemoId } from "@/demos/registry";
+import { isPremiumDemoId, premiumDemoTitle } from "@/demos/registry";
 import { normalizeLocale, type Locale } from "@/lib/i18n-core";
 
 const VelvetTableApp = lazy(() => import("@/demos/velvet-table/app"));
+const PremiumPlayer = lazy(() => import("@/demos/player"));
 
 type PublicAppSearch = { access?: string; lang?: Locale };
 
@@ -23,7 +24,7 @@ export const Route = createFileRoute("/a/$slug")({
       return {
         kind: "premium" as const,
         slug: params.slug,
-        title: "Velvet Table",
+        title: premiumDemoTitle(params.slug, deps.lang ?? "it"),
         isGuest: false,
       };
     }
@@ -64,11 +65,15 @@ function PublicApp() {
       <Suspense
         fallback={
           <div className="grid min-h-[100dvh] place-items-center bg-[#0D090A] text-[#F4E7DA]">
-            Velvet Table
+            {data.title}
           </div>
         }
       >
-        <VelvetTableApp />
+        {data.slug === "velvet-table" ? (
+          <VelvetTableApp />
+        ) : (
+          <PremiumPlayer id={data.slug} />
+        )}
       </Suspense>
     );
   }

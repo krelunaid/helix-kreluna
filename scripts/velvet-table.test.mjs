@@ -37,6 +37,9 @@ test("Velvet Table is a lazy premium demo, not a nineteenth flagship", async (t)
 
   await t.test("vetrina and /a/velvet-table host the lazy demo", () => {
     assert.equal(registry.isPremiumDemoId("velvet-table"), true);
+    assert.equal(registry.PREMIUM_DEMO_IDS.length, 18);
+    assert.equal(registry.PREMIUM_DEMO_IDS.includes("la-bottega-del-capello"), false);
+    assert.equal(registry.PREMIUM_DEMO_IDS.includes("accademia-della-bugia"), false);
     assert.match(vetrina, /premiumDemosFor/);
     assert.match(vetrina, /PremiumSpotlight/);
     assert.match(vetrina, /cover=\{item\.photo\}/);

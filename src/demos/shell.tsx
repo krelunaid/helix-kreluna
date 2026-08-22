@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { VELVET_CREATE_PROMPT } from "@/demos/registry";
 
@@ -10,6 +10,11 @@ export function DemoShell({
   touring,
   made,
   create,
+  prompt = VELVET_CREATE_PROMPT,
+  className = "vt",
+  demoId,
+  layout,
+  style,
   onReset,
   onTour,
   tourActive,
@@ -22,25 +27,30 @@ export function DemoShell({
   touring: string;
   made: string;
   create: string;
+  prompt?: string;
+  className?: string;
+  demoId?: string;
+  layout?: string;
+  style?: CSSProperties;
   onReset: () => void;
   onTour: () => void;
   tourActive: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="vt">
-      <header className="vt-shell">
-        <Link to="/vetrina" search={{ app: undefined }} className="vt-text">
+    <div className={className} data-demo={demoId} data-layout={layout} style={style}>
+      <header className="hx-shell vt-shell">
+        <Link to="/vetrina" search={{ app: undefined }} className="hx-text vt-text">
           {back}
         </Link>
-        <p className="vt-shell-brand">{brand}</p>
-        <div className="vt-shell-actions">
-          <button type="button" className="vt-ghost" onClick={onReset}>
+        <p className="hx-brand vt-shell-brand">{brand}</p>
+        <div className="hx-actions vt-shell-actions">
+          <button type="button" className="hx-ghost vt-ghost" onClick={onReset}>
             {reset}
           </button>
           <button
             type="button"
-            className="vt-ghost"
+            className="hx-ghost vt-ghost"
             data-active={tourActive}
             onClick={onTour}
             disabled={tourActive}
@@ -49,10 +59,10 @@ export function DemoShell({
           </button>
         </div>
       </header>
-      <div className="vt-body">{children}</div>
-      <footer className="vt-foot">
-        <p className="vt-made">{made}</p>
-        <Link to="/" search={{ prompt: VELVET_CREATE_PROMPT }} className="vt-create">
+      <div className="hx-body vt-body">{children}</div>
+      <footer className="hx-foot vt-foot">
+        <p className="hx-made vt-made">{made}</p>
+        <Link to="/" search={{ prompt }} className="hx-create vt-create">
           {create}
         </Link>
       </footer>
