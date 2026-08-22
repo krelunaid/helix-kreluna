@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { Link } from "@tanstack/react-router";
+import { StudioPosterArt } from "@/components/studio-posters";
 import { ANDREA_LIVE_SITES, premiumDemos, premiumKindLabel } from "@/lib/premium-demos";
 import { flagshipCopy } from "@/lib/flagships/copy";
 import type { Locale } from "@/lib/i18n-core";
@@ -44,8 +45,8 @@ export function StudioDemoGallery({
                 } as CSSProperties
               }
             >
-              <span className="atelier-poster-stage" aria-hidden>
-                <span className="atelier-poster-object" data-motif={demo.id} />
+              <span className="atelier-poster-stage">
+                <StudioPosterArt id={demo.id} ink={demo.ink} paper={demo.paper} metal={demo.metal} />
               </span>
               <span className="atelier-poster-kind">{premiumKindLabel(locale, demo.kind)}</span>
               <span className="atelier-poster-name">{demo.name}</span>
@@ -69,6 +70,14 @@ export function StudioDemoGallery({
                   className="atelier-andrea-card"
                   aria-label={`${open}: ${copy.brand}`}
                 >
+                  <span className="atelier-poster-stage">
+                    <StudioPosterArt
+                      id={id}
+                      ink="#0b0b0b"
+                      paper="#f3ebda"
+                      metal="#c9a84c"
+                    />
+                  </span>
                   <span className="atelier-poster-kind">{copy.kind}</span>
                   <span className="atelier-poster-name">{copy.brand}</span>
                   <span className="atelier-poster-line">{copy.title}</span>

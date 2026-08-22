@@ -255,7 +255,37 @@ test("dashboard state, metrics, filters and activity are deterministic and data-
     assert.deepEqual(premium.ANDREA_LIVE_SITES, ["mercedes-epoque", "italvia", "mini4wd-lab"]);
     assert.doesNotMatch(premium.PREMIUM_DEMO_IDS.join(" "), /bottega|bugia|capello/i);
     assert.match(premium.buildPremiumDemoHtml("velvet-table", "it"), /Velvet Table/);
+    assert.deepEqual(
+      premium.premiumDemos("it").map((item) => item.name),
+      [
+        "Velvet Table",
+        "CutCraft",
+        "Nexora CRM",
+        "Sonora",
+        "ToonVerse",
+        "Orbital",
+        "StormGlass",
+        "World Pulse",
+        "RoomVerse",
+        "Aurelion Motors",
+        "Vela Noir",
+        "Maison 27",
+        "Studio Monolith",
+        "Nestra Estates",
+        "Lumen Festival",
+        "Cinematica",
+        "Atlas Command",
+        "WorldForge",
+      ],
+    );
     assert.match(authenticatedHomeSource, /<StudioDemoGallery/);
+    const gallerySource = await readFile(join(ROOT, "src/components/studio-demo-gallery.tsx"), "utf8");
+    assert.match(gallerySource, /to="\/a\/\$slug"/);
+    assert.match(gallerySource, /<StudioPosterArt/);
+    assert.ok(
+      authenticatedHomeSource.indexOf("<StudioDemoGallery") >
+        authenticatedHomeSource.indexOf("dashboard-composer-wrap"),
+    );
   });
 });
 

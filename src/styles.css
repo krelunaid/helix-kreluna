@@ -1071,136 +1071,17 @@
 
 .atelier-poster-stage {
   position: relative;
-  height: 150px;
-  margin: -6px -4px 18px;
+  height: 190px;
+  margin: -18px -16px 16px;
+  overflow: hidden;
+  background: #100e0c;
 }
 
-.atelier-poster-object {
-  position: absolute;
-  right: 18px;
-  bottom: 8px;
-  width: 72px;
-  height: 110px;
-  border: 1px solid color-mix(in oklab, var(--poster-metal, var(--atelier-metal)) 70%, white);
-  background:
-    linear-gradient(160deg, var(--poster-paper, #f3ead8), var(--poster-metal, #c4b08a) 70%);
-  box-shadow: 0 22px 40px rgb(0 0 0 / 0.35);
-}
-
-.atelier-poster-object[data-motif="velvet-table"] {
-  width: 108px;
-  height: 18px;
-  right: 22px;
-  bottom: 42px;
-  border-radius: 999px;
-}
-
-.atelier-poster-object[data-motif="cutcraft"] {
-  width: 86px;
-  height: 86px;
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
-}
-
-.atelier-poster-object[data-motif="nexora-crm"] {
-  width: 92px;
-  height: 64px;
-  border-radius: 8px;
-}
-
-.atelier-poster-object[data-motif="sonora"] {
-  width: 92px;
-  height: 92px;
-  border-radius: 999px;
-}
-
-.atelier-poster-object[data-motif="toonverse"] {
-  width: 70px;
-  height: 96px;
-  border-radius: 40px 40px 10px 10px;
-}
-
-.atelier-poster-object[data-motif="orbital"] {
-  width: 100px;
-  height: 100px;
-  border-radius: 999px;
-  background: radial-gradient(circle at 35% 30%, var(--poster-paper), var(--poster-metal) 58%, #1a1c20);
-}
-
-.atelier-poster-object[data-motif="stormglass"] {
-  width: 78px;
-  height: 118px;
-  border-radius: 40px 40px 6px 6px;
-}
-
-.atelier-poster-object[data-motif="world-pulse"] {
-  width: 110px;
-  height: 8px;
-  right: 16px;
-  bottom: 56px;
-}
-
-.atelier-poster-object[data-motif="roomverse"] {
-  width: 96px;
-  height: 72px;
-  border-radius: 4px 4px 0 0;
-}
-
-.atelier-poster-object[data-motif="aurelion-motors"] {
-  width: 120px;
-  height: 36px;
-  right: 10px;
-  bottom: 36px;
-  border-radius: 40px 80px 12px 12px;
-}
-
-.atelier-poster-object[data-motif="vela-noir"] {
-  width: 64px;
-  height: 120px;
-  clip-path: polygon(50% 0, 100% 18%, 78% 100%, 22% 100%, 0 18%);
-}
-
-.atelier-poster-object[data-motif="maison-27"] {
-  width: 88px;
-  height: 88px;
-  clip-path: polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%);
-}
-
-.atelier-poster-object[data-motif="studio-monolith"] {
-  width: 48px;
-  height: 128px;
-}
-
-.atelier-poster-object[data-motif="nestra-estates"] {
-  width: 118px;
-  height: 54px;
-  right: 12px;
-  bottom: 28px;
-}
-
-.atelier-poster-object[data-motif="lumen-festival"] {
-  width: 16px;
-  height: 120px;
-  right: 48px;
-  box-shadow: 0 0 28px var(--poster-metal);
-}
-
-.atelier-poster-object[data-motif="cinematica"] {
-  width: 118px;
-  height: 68px;
-  border-radius: 6px;
-}
-
-.atelier-poster-object[data-motif="atlas-command"] {
-  width: 96px;
-  height: 96px;
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
-}
-
-.atelier-poster-object[data-motif="worldforge"] {
-  width: 88px;
-  height: 88px;
-  border-radius: 8px;
-  transform: rotate(12deg);
+.atelier-poster-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .atelier-poster-kind {
@@ -1239,7 +1120,7 @@
 }
 
 .atelier-andrea-card {
-  min-height: 160px;
+  min-height: 280px;
   background: #100e0c;
 }
 
