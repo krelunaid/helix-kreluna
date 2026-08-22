@@ -239,9 +239,16 @@
 
 .hx-door strong,
 .hx-card h3 {
+  display: block;
   font-family: var(--hx-serif);
   font-size: 26px;
   font-weight: 500;
+}
+
+.hx-door .hx-meta,
+.hx-door .hx-lead,
+.hx-thumb span {
+  display: block;
 }
 
 .hx-door:hover,
