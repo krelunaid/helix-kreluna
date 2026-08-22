@@ -7,7 +7,14 @@ import { archivedFor, featuredFor, featuredHtml } from "@/lib/templates";
 import { flagshipShowcaseLabels } from "@/lib/flagships";
 import type { FlagshipEntry, FlagshipSurface } from "@/lib/flagships";
 import { FLAGSHIP_CATEGORY_ORDER } from "@/lib/flagships/catalog";
+import {
+  premiumDemosFor,
+  SURFACE_LABELS,
+  SURFACE_TITLES,
+  type PremiumSurface,
+} from "@/demos/registry";
 import { useI18n } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-core";
 import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/vetrina")({
@@ -52,6 +59,8 @@ function Vetrina() {
             {labels.projectsCount}
           </p>
         </div>
+
+        <PremiumSpotlight locale={locale} />
 
         <div
           className="mt-8 flex flex-wrap gap-2 border-y border-border py-4"
@@ -218,5 +227,71 @@ function CategoryGroups({
         </div>
       ))}
     </div>
+  );
+}
+
+function PremiumSpotlight({ locale }: { locale: Locale }) {
+  const { t } = useI18n();
+  const labels = SURFACE_LABELS[locale];
+  const titles = SURFACE_TITLES[locale];
+  const surfaces: PremiumSurface[] = ["app", "site", "program"];
+  return (
+    <section className="mt-12 space-y-14" aria-labelledby="premium-demo-title">
+      <div>
+        <p id="premium-demo-title" className="text-xs font-semibold tracking-[0.18em] text-info uppercase">
+          {labels.all}
+        </p>
+        <h2 className="mt-3 text-3xl tracking-tight sm:text-4xl">
+          {locale === "it" ? "Diciotto demos di maison" : "Eighteen maison demos"}
+        </h2>
+      </div>
+      {surfaces.map((surface) => {
+        const demos = premiumDemosFor(locale, surface);
+        return (
+          <div key={surface}>
+            <div className="mb-5 flex items-center gap-3">
+              <h3 className="text-xs font-semibold tracking-[0.18em] text-info uppercase">
+                {titles[surface].title}
+              </h3>
+              <span className="h-px flex-1 bg-border" />
+              <span className="font-mono text-[11px] text-subtle">{demos.length}</span>
+            </div>
+            <p className="mb-6 max-w-2xl text-sm text-muted">{titles[surface].lead}</p>
+            <div className="grid gap-x-7 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+              {demos.map((item) => (
+                <article key={item.id} className="min-w-0">
+                  <Link
+                    to="/a/$slug"
+                    params={{ slug: item.id }}
+                    search={{ lang: locale }}
+                    onClick={() => track("cta_demo")}
+                    className="group block"
+                  >
+                    <ProjectCard
+                      title={item.brand}
+                      kind={item.kind}
+                      meta={item.title}
+                      previewTitle={`${item.brand} · ${item.title}`}
+                      cover={item.photo}
+                    />
+                  </Link>
+                  <p className="mt-4 text-sm text-muted">{item.lead}</p>
+                  <p className="mt-2 text-sm text-subtle">{item.capability}</p>
+                  <Link
+                    to="/a/$slug"
+                    params={{ slug: item.id }}
+                    search={{ lang: locale }}
+                    onClick={() => track("cta_demo")}
+                    className="mt-4 inline-flex text-sm font-medium text-accent hover:underline"
+                  >
+                    {t("vetrina.open")}
+                  </Link>
+                </article>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </section>
   );
 }
