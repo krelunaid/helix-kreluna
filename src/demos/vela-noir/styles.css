@@ -1,0 +1,18 @@
+.vn { --hx-ink:#0c0a0c; --hx-cream:#efe6dc; --hx-accent:#8c6a7a; --hx-mute:#b5a6ab; }
+.vn-book { padding:28px 6vw 48px; }
+.vn-kicker { letter-spacing:.26em; text-transform:uppercase; font-size:11px; color:var(--hx-accent); }
+.vn-book h1, .vn-cloth h2, .vn-ward h2 { font-family:var(--hx-serif); font-size:clamp(36px,7vw,72px); font-weight:500; }
+.vn-book > div { display:grid; gap:14px; margin-top:22px; }
+.vn-book button { padding:0; border:0; background:transparent; color:inherit; text-align:left; }
+.vn-book img, .vn-cloth img, .vn-ward img { width:100%; height:260px; object-fit:cover; }
+.vn-cloth, .vn-ward { display:grid; }
+.vn-cloth aside, .vn-ward > div { padding:24px 6vw 40px; display:grid; gap:12px; }
+.vn-cloth aside > div { display:flex; gap:8px; }
+.vn-cloth aside > div button { min-width:44px; min-height:44px; border:1px solid var(--hx-line); background:transparent; color:inherit; }
+.vn-cloth aside > div button[data-on="true"], .vn-go { background:var(--hx-accent); color:#0c0a0c; border-color:var(--hx-accent); }
+.vn-go { min-height:48px; border:0; letter-spacing:.14em; text-transform:uppercase; }
+@media (min-width:900px) {
+  .vn-book > div { grid-template-columns:repeat(3,1fr); }
+  .vn-cloth, .vn-ward { grid-template-columns:1.15fr .85fr; min-height:70vh; }
+  .vn-cloth img, .vn-ward img { min-height:70vh; height:100%; }
+}

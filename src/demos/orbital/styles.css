@@ -1,0 +1,17 @@
+.ob { --hx-ink:#07090e; --hx-cream:#dce4ea; --hx-accent:#8aa4b8; --hx-mute:#8e9aaa; --hx-serif:"IBM Plex Mono",monospace; }
+.ob-fleet { padding:28px 6vw 48px; }
+.ob-kicker { letter-spacing:.22em; text-transform:uppercase; font-size:11px; color:var(--hx-accent); }
+.ob-fleet h1, .ob-console h2, .ob-hold h2 { font-family:var(--hx-serif); font-size:clamp(30px,5vw,52px); }
+.ob-fleet > div { display:grid; gap:12px; margin-top:20px; }
+.ob-fleet button { padding:0; border:1px solid var(--hx-line); background:transparent; color:inherit; text-align:left; }
+.ob-fleet img, .ob-void img, .ob-hold img { width:100%; height:180px; object-fit:cover; }
+.ob-console, .ob-hold { display:grid; }
+.ob-void { position:relative; min-height:48vh; }
+.ob-void svg { position:absolute; inset:12%; stroke:var(--hx-accent); fill:var(--hx-accent); stroke-width:1.2; }
+.ob-console aside, .ob-hold > div { padding:24px 6vw 40px; display:grid; gap:12px; }
+.ob-go { min-height:48px; background:var(--hx-accent); color:#07090e; border:0; letter-spacing:.12em; text-transform:uppercase; }
+@media (min-width:900px) {
+  .ob-fleet > div { grid-template-columns:repeat(3,1fr); }
+  .ob-console, .ob-hold { grid-template-columns:1.2fr .8fr; min-height:70vh; }
+  .ob-void img, .ob-hold img { min-height:70vh; height:100%; }
+}

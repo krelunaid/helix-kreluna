@@ -1,7 +1,11 @@
+import { lazy, Suspense } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { getPublicApp } from "@/lib/server/deploy";
 import { GENERATED_APP_SANDBOX } from "@/lib/generated-content-policy";
+import { isPremiumDemoId, PREMIUM_LAZY, premiumDemoTitle } from "@/demos/registry";
 import { normalizeLocale, type Locale } from "@/lib/i18n-core";
+
+const VelvetTableApp = lazy(() => import("@/demos/velvet-table/app"));
 
 type PublicAppSearch = { access?: string; lang?: Locale };
 
@@ -14,10 +18,20 @@ export const Route = createFileRoute("/a/$slug")({
     lang: typeof search.lang === "string" ? normalizeLocale(search.lang) : undefined,
   }),
   loaderDeps: ({ search }) => ({ access: search.access, lang: search.lang }),
-  loader: async ({ params, deps }) =>
-    getPublicApp({
+  loader: async ({ params, deps }) => {
+    if (isPremiumDemoId(params.slug)) {
+      return {
+        kind: "premium" as const,
+        slug: params.slug,
+        title: premiumDemoTitle(params.slug, deps.lang ?? "it"),
+        isGuest: false,
+      };
+    }
+    const app = await getPublicApp({
       data: { slug: params.slug, accessToken: deps.access, locale: deps.lang },
-    }),
+    });
+    return { kind: "public" as const, app, isGuest: Boolean(app?.isGuest), title: app?.title ?? "Helix" };
+  },
   component: PublicApp,
   headers: ({ loaderData }) => ({
     "Cache-Control": "private, no-store, max-age=0",
@@ -30,7 +44,7 @@ export const Route = createFileRoute("/a/$slug")({
     meta: [
       { title: loaderData?.title ?? "Helix" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
-      { name: "theme-color", content: "#0a0a0b" },
+      { name: "theme-color", content: loaderData?.kind === "premium" ? "#0D090A" : "#0a0a0b" },
       {
         name: "robots",
         content: loaderData?.isGuest
@@ -43,7 +57,24 @@ export const Route = createFileRoute("/a/$slug")({
 });
 
 function PublicApp() {
-  const app = Route.useLoaderData();
+  const data = Route.useLoaderData();
+
+  if (data.kind === "premium") {
+    const Demo = data.slug === "velvet-table" ? VelvetTableApp : PREMIUM_LAZY[data.slug];
+    return (
+      <Suspense
+        fallback={
+          <div className="grid min-h-[100dvh] place-items-center bg-[#0D090A] text-[#F4E7DA]">
+            {data.title}
+          </div>
+        }
+      >
+        <Demo />
+      </Suspense>
+    );
+  }
+
+  const app = data.app;
 
   if (!app) {
     return (

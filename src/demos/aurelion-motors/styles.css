@@ -1,0 +1,272 @@
+.am {
+  --hx-ink: #070707;
+  --hx-cream: #f3ebda;
+  --hx-accent: #c9a84c;
+  --hx-mute: #b8ae98;
+}
+
+.am-salon {
+  display: grid;
+}
+
+.am-hero {
+  position: relative;
+  min-height: min(72vh, 720px);
+  overflow: hidden;
+}
+
+.am-hero .hx-stack,
+.am-hero img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.am-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.15), #070707 92%);
+}
+
+.am-word {
+  position: absolute;
+  right: 4vw;
+  bottom: 18%;
+  margin: 0;
+  font-family: var(--hx-serif);
+  font-size: clamp(72px, 16vw, 180px);
+  line-height: 0.8;
+  letter-spacing: -0.04em;
+  color: rgb(243 235 218 / 0.16);
+}
+
+.am-hero-copy {
+  position: relative;
+  z-index: 2;
+  max-width: 18ch;
+  padding: 12vh 6vw 0;
+}
+
+.am-kicker {
+  margin: 0 0 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--hx-accent);
+}
+
+.am-hero-copy h1,
+.am-folio h2,
+.am-request-copy h2,
+.am-hold h2 {
+  margin: 0 0 12px;
+  font-family: var(--hx-serif);
+  font-size: clamp(40px, 7vw, 84px);
+  font-weight: 500;
+  line-height: 0.92;
+}
+
+.am-board {
+  display: grid;
+  gap: 28px;
+  padding: 28px 6vw 48px;
+}
+
+.am-search input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid var(--hx-line);
+  background: transparent;
+}
+
+.am-eras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.am-eras button,
+.am-days button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--hx-line);
+  background: transparent;
+  color: var(--hx-cream);
+}
+
+.am-eras button[data-on="true"] {
+  background: var(--hx-accent);
+  color: var(--hx-ink);
+  border-color: var(--hx-accent);
+}
+
+.am-fleet {
+  display: grid;
+  gap: 12px;
+}
+
+.am-car {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 14px;
+  padding: 0;
+  border: 1px solid var(--hx-line);
+  background: transparent;
+  text-align: left;
+  color: inherit;
+}
+
+.am-car img {
+  width: 112px;
+  height: 76px;
+  object-fit: cover;
+}
+
+.am-car span {
+  display: grid;
+  align-content: center;
+  padding-right: 12px;
+}
+
+.am-car strong {
+  font-family: var(--hx-serif);
+  font-size: 22px;
+  font-weight: 500;
+}
+
+.am-car em {
+  color: var(--hx-mute);
+  font-style: normal;
+  font-size: 13px;
+}
+
+.am-car[data-on="true"] {
+  border-color: var(--hx-accent);
+}
+
+.am-folio {
+  padding-top: 8px;
+}
+
+.am-folio p,
+.am-request-copy p,
+.am-hold p {
+  max-width: 36ch;
+  color: var(--hx-mute);
+}
+
+.am-folio dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.am-folio dt {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hx-accent);
+}
+
+.am-folio dd {
+  margin: 6px 0 0;
+  font-family: var(--hx-serif);
+  font-size: 28px;
+}
+
+.am-days {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.am-reserve {
+  min-height: 48px;
+  padding: 0 20px;
+  border: 0;
+  background: #8f1d2c;
+  color: #f3ebda;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.am-request,
+.am-hold {
+  display: grid;
+  min-height: 70vh;
+}
+
+.am-request-photo img,
+.am-hold img {
+  width: 100%;
+  height: min(48vh, 420px);
+  object-fit: cover;
+}
+
+.am-request-copy,
+.am-hold > div {
+  padding: 28px 6vw 48px;
+}
+
+.am-events {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 22px 0;
+}
+
+.am-events img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+}
+
+.am-sum,
+.am-mute {
+  color: var(--hx-accent);
+}
+
+.am-empty {
+  color: var(--hx-mute);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+@media (min-width: 960px) {
+  .am-board {
+    grid-template-columns: 1fr 320px;
+  }
+
+  .am-search,
+  .am-eras,
+  .am-fleet {
+    grid-column: 1;
+  }
+
+  .am-folio {
+    grid-column: 2;
+    grid-row: 1 / 4;
+  }
+
+  .am-request,
+  .am-hold {
+    grid-template-columns: 1.2fr 0.8fr;
+  }
+
+  .am-request-photo img,
+  .am-hold img {
+    height: 100%;
+    min-height: 70vh;
+  }
+}

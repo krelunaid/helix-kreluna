@@ -1,0 +1,150 @@
+.cm {
+  --hx-ink: #0c0b0b;
+  --hx-cream: #f0e6d8;
+  --hx-accent: #c4b08a;
+  --hx-mute: #b3a594;
+}
+
+.cm-bills {
+  padding: 28px 6vw 48px;
+}
+
+.cm-kicker {
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--hx-accent);
+}
+
+.cm-bills h1,
+.cm-hall h2,
+.cm-ticket h2 {
+  font-family: var(--hx-serif);
+  font-size: clamp(36px, 6vw, 72px);
+  font-weight: 500;
+  line-height: 0.95;
+}
+
+.cm-posters {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.cm-posters button {
+  padding: 0;
+  border: 1px solid var(--hx-line);
+  background: #14110f;
+  color: inherit;
+  text-align: left;
+}
+
+.cm-posters img,
+.cm-screen img,
+.cm-ticket img {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+}
+
+.cm-posters span {
+  display: grid;
+  padding: 14px 16px;
+}
+
+.cm-posters strong {
+  font-family: var(--hx-serif);
+  font-size: 24px;
+}
+
+.cm-hall,
+.cm-ticket {
+  display: grid;
+}
+
+.cm-screen {
+  position: relative;
+  min-height: 42vh;
+}
+
+.cm-screen img {
+  height: 100%;
+  min-height: 42vh;
+  object-fit: cover;
+  filter: contrast(1.08);
+}
+
+.cm-screen p {
+  position: absolute;
+  inset: auto 0 12px;
+  text-align: center;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+.cm-hall aside,
+.cm-ticket article {
+  padding: 24px 6vw 40px;
+  display: grid;
+  gap: 14px;
+}
+
+.cm-seats {
+  display: grid;
+  gap: 8px;
+}
+
+.cm-seats > div {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.cm-seats button {
+  min-height: 36px;
+  border: 1px solid var(--hx-line);
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+}
+
+.cm-seats button[data-on="true"] {
+  background: var(--hx-accent);
+  color: #0c0b0b;
+}
+
+.cm-seats button:disabled {
+  opacity: 0.28;
+}
+
+.cm-hold {
+  min-height: 48px;
+  border: 0;
+  background: var(--hx-accent);
+  color: #0c0b0b;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.cm-mute {
+  color: var(--hx-mute);
+}
+
+@media (min-width: 900px) {
+  .cm-posters {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .cm-hall,
+  .cm-ticket {
+    grid-template-columns: 1.15fr 0.85fr;
+    min-height: 70vh;
+  }
+
+  .cm-screen img,
+  .cm-ticket img {
+    min-height: 70vh;
+    height: 100%;
+  }
+}

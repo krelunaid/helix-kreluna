@@ -1,0 +1,162 @@
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,400;1,500&family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap");
+
+.hx {
+  --hx-ink: #0d090a;
+  --hx-cream: #f4e7da;
+  --hx-accent: #d7b16d;
+  --hx-mute: #c9b8a6;
+  --hx-serif: "Cormorant Garamond", "Times New Roman", serif;
+  --hx-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --hx-line: color-mix(in srgb, var(--hx-accent) 32%, transparent);
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--hx-ink);
+  color: var(--hx-cream);
+  font-family: var(--hx-sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.hx *,
+.hx *::before,
+.hx *::after {
+  box-sizing: border-box;
+}
+
+.hx button,
+.hx input,
+.hx textarea,
+.hx select {
+  font: inherit;
+  color: inherit;
+}
+
+.hx button:not(:disabled) {
+  cursor: pointer;
+}
+
+.hx img {
+  display: block;
+  max-width: 100%;
+}
+
+.hx-shell,
+.hx-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--hx-ink) 88%, transparent);
+  z-index: 20;
+}
+
+.hx-shell {
+  border-bottom: 1px solid var(--hx-line);
+}
+
+.hx-foot {
+  border-top: 1px solid var(--hx-line);
+}
+
+.hx-brand {
+  margin: 0;
+  font-family: var(--hx-serif);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.hx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hx-ghost,
+.hx-text,
+.hx-create {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--hx-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--hx-mute);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.hx-text {
+  border-color: transparent;
+}
+
+.hx-ghost:hover,
+.hx-text:hover,
+.hx-create:hover {
+  color: var(--hx-cream);
+  border-color: var(--hx-accent);
+}
+
+.hx-ghost[data-active="true"],
+.hx-create:hover {
+  color: var(--hx-ink);
+  background: var(--hx-accent);
+  border-color: var(--hx-accent);
+}
+
+.hx-create {
+  color: var(--hx-accent);
+}
+
+.hx-made {
+  margin: 0;
+  color: var(--hx-mute);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.hx-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.hx-notice {
+  position: absolute;
+  left: 50%;
+  top: 64px;
+  z-index: 30;
+  transform: translateX(-50%);
+  max-width: min(92vw, 420px);
+  padding: 10px 14px;
+  border: 1px solid var(--hx-line);
+  background: color-mix(in srgb, var(--hx-ink) 92%, transparent);
+}
+
+.hx-stack {
+  position: relative;
+}
+
+.hx-stack img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (max-width: 640px) {
+  .hx-brand {
+    display: none;
+  }
+
+  .hx-shell,
+  .hx-foot {
+    padding: 8px 10px;
+  }
+}
