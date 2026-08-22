@@ -297,6 +297,7 @@ body{background:var(--bg);color:var(--cream);font-family:"Iowan Old Style",Georg
 .hero p{max-width:28ch;color:var(--muted);font:15px/1.55 system-ui,sans-serif}
 .stage{position:relative;overflow:hidden;min-height:360px;background:#050505}
 .stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:58% 50%;display:block}
+.stage img[hidden]{display:none!important}
 .stage::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#050505 0%,transparent 28%);pointer-events:none}
 .search{display:flex;align-items:center;gap:10px;margin:18px 22px 0;background:var(--elev);padding:0 16px;border-radius:14px}
 .search input{flex:1;height:50px;border:0;background:transparent;color:inherit;font:15px system-ui,sans-serif}
@@ -313,7 +314,9 @@ body{background:var(--bg);color:var(--cream);font-family:"Iowan Old Style",Georg
 .car strong{display:block;margin-top:6px;font:600 13px system-ui,sans-serif;color:var(--chrome)}
 .car[aria-pressed="true"]{border-color:var(--red);box-shadow:0 0 0 1px var(--red)}
 .book{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;display:flex;flex-direction:column}
-.book-photo{width:100%;height:150px;object-fit:cover;border-radius:12px;margin-bottom:14px;display:block;background:#111}
+.book-photo{position:relative;width:100%;height:150px;border-radius:12px;margin-bottom:14px;overflow:hidden;background:#111}
+.book-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.book-photo img[hidden]{display:none!important}
 .book h2{margin:0 0 8px;font:400 26px Georgia,serif}
 .book p{margin:0 0 14px;color:var(--muted);font:14px/1.45 system-ui,sans-serif}
 .meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
@@ -334,7 +337,12 @@ body{background:var(--bg);color:var(--cream);font-family:"Iowan Old Style",Georg
 <main class="wrap">
 <header class="mast"><div class="brand"><svg class="crest" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="22" fill="none" stroke="#c8c6c2" stroke-width="2.4"/><path d="M32 12 L32 32 L18 46 M32 32 L46 46" fill="none" stroke="#c8c6c2" stroke-width="2.4" stroke-linecap="round"/></svg><span><small>Mercedes</small><strong>Époque</strong></span></div><button type="button" class="explore" data-action="jump-collection">${markup(t.explore)}</button></header>
 <section class="hero"><article class="hero-copy"><span>${markup(t.lede)}</span><h1>${markup(t.headline)}</h1><p>${markup(t.kicker)}</p></article>
-<div class="stage" id="epoque-stage" data-car="0"><img id="epoque-hero" src="${EPOQUE_PHOTOS.wings}" alt="${markup(cars[0].name)}" width="1100" height="618"></div></section>
+<div class="stage" id="epoque-stage" data-car="0">${cars
+      .map(
+        (car, index) =>
+          `<img src="${car.photo}" alt="${markup(car.name)}" width="1100" height="618" data-hero-car="${index}" ${index === 0 ? "" : "hidden"}>`,
+      )
+      .join("")}</div></section>
 <div class="search"><input id="epoque-q" data-action="search" placeholder="${markup(t.search)}" aria-label="${markup(t.search)}"></div>
 <div class="eras" id="epoque-collection"><button type="button" data-action="era" data-era="historic" aria-pressed="true">${markup(t.historic)}</button><button type="button" data-action="era" data-era="modern" aria-pressed="false">${markup(t.modern)}</button><button type="button" data-action="era" data-era="all" aria-pressed="false">${markup(t.all)}</button></div>
 <section class="board"><div class="cars" id="epoque-cars">${cars
@@ -343,7 +351,12 @@ body{background:var(--bg);color:var(--cream);font-family:"Iowan Old Style",Georg
           `<button type="button" class="car" data-action="select-car" data-car="${index}" data-era="${car.era}" data-query="${markup(`${car.name} ${car.year}`)}" aria-pressed="${index === 0}"><img src="${car.photo}" alt="${markup(car.name)}" width="640" height="360"><span class="plate"><small>${markup(car.year)}</small><b>${markup(car.name)}</b><small>${markup(car.place)}</small><strong>€${car.price}</strong></span></button>`,
       )
       .join("")}<p class="empty" id="epoque-empty" hidden>${markup(t.empty)}</p></div>
-<aside class="book"><img class="book-photo" id="epoque-book-photo" src="${cars[0].photo}" alt="${markup(cars[0].name)}" width="640" height="360"><h2 id="epoque-name">${markup(cars[0].name)}</h2><p id="epoque-note">${markup(cars[0].note)}</p><div class="meta"><div><span>${markup(t.rate)}</span><strong id="epoque-price">€${cars[0].price}</strong></div><div><span>${markup(t.pickup)}</span><strong id="epoque-place">${markup(cars[0].place)}</strong></div></div><div class="days"><button type="button" data-action="days-down" aria-label="−">−</button><output id="epoque-days">2 ${markup(t.days)}</output><button type="button" data-action="days-up" aria-label="+">+</button></div><button type="button" class="reserve" data-action="reserve">${markup(t.reserve)}</button><div class="events"><div class="event-strip"><img src="${EPOQUE_PHOTOS.salon}" alt="" width="480" height="270"><img src="${EPOQUE_PHOTOS.villa}" alt="" width="480" height="270"></div><button type="button" data-action="prev-car">${markup(t.prev)}</button><button type="button" data-action="next-car">${markup(t.next)}</button><button type="button" data-action="show-events">${markup(t.events)}</button></div></aside></section>
+<aside class="book"><div class="book-photo">${cars
+      .map(
+        (car, index) =>
+          `<img src="${car.photo}" alt="${markup(car.name)}" width="640" height="360" data-folio-car="${index}" ${index === 0 ? "" : "hidden"}>`,
+      )
+      .join("")}</div><h2 id="epoque-name">${markup(cars[0].name)}</h2><p id="epoque-note">${markup(cars[0].note)}</p><div class="meta"><div><span>${markup(t.rate)}</span><strong id="epoque-price">€${cars[0].price}</strong></div><div><span>${markup(t.pickup)}</span><strong id="epoque-place">${markup(cars[0].place)}</strong></div></div><div class="days"><button type="button" data-action="days-down" aria-label="−">−</button><output id="epoque-days">2 ${markup(t.days)}</output><button type="button" data-action="days-up" aria-label="+">+</button></div><button type="button" class="reserve" data-action="reserve">${markup(t.reserve)}</button><div class="events"><div class="event-strip"><img src="${EPOQUE_PHOTOS.salon}" alt="" width="480" height="270"><img src="${EPOQUE_PHOTOS.villa}" alt="" width="480" height="270"></div><button type="button" data-action="prev-car">${markup(t.prev)}</button><button type="button" data-action="next-car">${markup(t.next)}</button><button type="button" data-action="show-events">${markup(t.events)}</button></div></aside></section>
 </main>
 <output class="toast" id="epoque-toast" hidden></output>`,
     script: `
@@ -351,7 +364,7 @@ const model=${flagshipScriptData({ cars, demo: t.demo, status: t.status, events:
 const state={car:0,era:"historic",days:2,query:""};
 const byId=(id)=>document.getElementById(id);
 function toast(value){const node=byId("epoque-toast");node.textContent=value;node.hidden=false;window.setTimeout(()=>{node.hidden=true;},2300);}
-function paint(){const car=model.cars[state.car];byId("epoque-name").textContent=car.name;byId("epoque-note").textContent=car.note;byId("epoque-price").textContent="€"+car.price;byId("epoque-place").textContent=car.place;byId("epoque-days").textContent=String(state.days)+" "+model.daysLabel;byId("epoque-stage").setAttribute("data-car",String(state.car));const hero=byId("epoque-hero");hero.setAttribute("src",car.photo);hero.setAttribute("alt",car.name);const folio=byId("epoque-book-photo");folio.setAttribute("src",car.photo);folio.setAttribute("alt",car.name);const q=state.query;let visible=0;document.querySelectorAll('[data-action="select-car"]').forEach((button,index)=>{const eraOk=state.era==="all"||button.getAttribute("data-era")===state.era;const queryOk=!q||(button.getAttribute("data-query")||"").toLowerCase().includes(q);const show=eraOk&&queryOk;button.hidden=!show;if(show)visible+=1;button.setAttribute("aria-pressed",String(index===state.car));});byId("epoque-empty").hidden=visible>0;document.querySelectorAll('[data-action="era"]').forEach((button)=>button.setAttribute("aria-pressed",String(button.getAttribute("data-era")===state.era)));}
+function paint(){const car=model.cars[state.car];byId("epoque-name").textContent=car.name;byId("epoque-note").textContent=car.note;byId("epoque-price").textContent="€"+car.price;byId("epoque-place").textContent=car.place;byId("epoque-days").textContent=String(state.days)+" "+model.daysLabel;byId("epoque-stage").setAttribute("data-car",String(state.car));document.querySelectorAll("[data-hero-car]").forEach((img)=>{img.hidden=Number(img.getAttribute("data-hero-car"))!==state.car;});document.querySelectorAll("[data-folio-car]").forEach((img)=>{img.hidden=Number(img.getAttribute("data-folio-car"))!==state.car;});const q=state.query;let visible=0;document.querySelectorAll('[data-action="select-car"]').forEach((button,index)=>{const eraOk=state.era==="all"||button.getAttribute("data-era")===state.era;const queryOk=!q||(button.getAttribute("data-query")||"").toLowerCase().includes(q);const show=eraOk&&queryOk;button.hidden=!show;if(show)visible+=1;button.setAttribute("aria-pressed",String(index===state.car));});byId("epoque-empty").hidden=visible>0;document.querySelectorAll('[data-action="era"]').forEach((button)=>button.setAttribute("aria-pressed",String(button.getAttribute("data-era")===state.era)));}
 document.querySelectorAll("[data-action]").forEach((control)=>control.addEventListener(control.matches("input")?"input":"click",()=>{const action=control.getAttribute("data-action");if(action==="era"){state.era=control.getAttribute("data-era");paint();}else if(action==="select-car"){state.car=Number(control.getAttribute("data-car"));paint();toast(model.status);}else if(action==="next-car"||action==="prev-car"){state.car=(state.car+(action==="next-car"?1:model.cars.length-1))%model.cars.length;paint();}else if(action==="days-up"||action==="days-down"){state.days=Math.max(1,Math.min(14,state.days+(action==="days-up"?1:-1)));paint();}else if(action==="reserve")toast(model.demo);else if(action==="show-events")toast(model.events.join(" · "));else if(action==="search"){state.query=control.value.trim().toLowerCase();paint();}else if(action==="jump-collection")byId("epoque-collection").scrollIntoView({behavior:"smooth"});}));
 paint();`,
   });
