@@ -179,7 +179,7 @@ const IT: Record<PremiumDemoId, CardCopy> = {
     brand: "Vela Noir",
     kind: "Sito",
     title: "Lookbook",
-    lead: "Nero, avorio, un rosso di atelier. Non una vetrina di crêpe.",
+    lead: "Nero, avorio, un rosso di atelier. Abito, non vetrina.",
     capability: "Look, taglia, guardaroba.",
   },
   "maison-27": {
@@ -308,7 +308,7 @@ const EN: Record<PremiumDemoId, CardCopy> = {
     brand: "Vela Noir",
     kind: "Site",
     title: "Lookbook",
-    lead: "Black, ivory, atelier red. Not a crêpe shopfront.",
+    lead: "Black, ivory, atelier red. Cloth, not a shop window.",
     capability: "Look, size, wardrobe.",
   },
   "maison-27": {

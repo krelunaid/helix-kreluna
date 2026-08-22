@@ -242,6 +242,16 @@ function Hero({
           </button>
         ))}
       </div>
+      {spec.items.length > 3 ? (
+        <div className="hx-fleet">
+          {spec.items.slice(3).map((item) => (
+            <button key={item.id} type="button" className="hx-thumb" onClick={() => onOpen(item.id)}>
+              <img src={item.photo} alt="" />
+              <span>{line(locale, item.title)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

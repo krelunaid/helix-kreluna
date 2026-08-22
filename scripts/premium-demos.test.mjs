@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { access } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -62,16 +63,38 @@ test("all eighteen premium demos are addressable, photographed and Helix-labelle
   assert.equal(cards.filter((card) => card.surface === "site").length, 6);
   assert.equal(cards.filter((card) => card.surface === "program").length, 3);
 
+  const photoHashes = new Map();
   for (const card of cards) {
     assert.doesNotMatch(
       `${card.brand}${card.lead}${card.title}`,
       /Bottega del Capello|Accademia della Bugia|crêpe|Rue de Verneuil/i,
     );
-    await access(join(ROOT, "public", card.photo.replace(/^\//, "")));
+    const photoPath = join(ROOT, "public", card.photo.replace(/^\//, ""));
+    await access(photoPath);
+    const hash = createHash("md5").update(await readFile(photoPath)).digest("hex");
+    assert.equal(photoHashes.has(hash), false, `cover reused: ${card.photo}`);
+    photoHashes.set(hash, card.photo);
   }
 
   const aurelion = specs.demoSpec("aurelion");
   assert.match(aurelion.hero, /mercedes-300-sl-wings/);
   assert.ok(aurelion.items.length >= 5);
   assert.equal(aurelion.work, "reserve");
+
+  const itemHashes = new Map();
+  for (const id of registry.PREMIUM_DEMO_IDS) {
+    if (id === "velvet-table") continue;
+    const spec = specs.demoSpec(id);
+    assert.doesNotMatch(
+      `${spec.lead.it}${spec.lead.en}${spec.title.it}${spec.title.en}`,
+      /Bottega del Capello|Accademia della Bugia|crêpe|Rue de Verneuil/i,
+    );
+    for (const item of spec.items) {
+      const photoPath = join(ROOT, "public", item.photo.replace(/^\//, ""));
+      await access(photoPath);
+      const hash = createHash("md5").update(await readFile(photoPath)).digest("hex");
+      assert.equal(itemHashes.has(hash), false, `photo reused: ${item.photo}`);
+      itemHashes.set(hash, item.photo);
+    }
+  }
 });
