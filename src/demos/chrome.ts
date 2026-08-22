@@ -18,7 +18,14 @@ const EN = {
   create: "Create something like this",
 } as const;
 
-export type DemoChrome = typeof IT;
+export type DemoChrome = {
+  back: string;
+  reset: string;
+  tour: string;
+  touring: string;
+  made: string;
+  create: string;
+};
 
 export function demoChrome(locale: Locale): DemoChrome {
   return locale === "it" ? IT : EN;
