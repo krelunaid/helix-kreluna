@@ -609,6 +609,13 @@
 }
 
 @media (min-width: 640px) {
+  .atelier-quick-grid {
+    grid-auto-flow: initial;
+    grid-auto-columns: initial;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+  }
+
   .dashboard-home-main {
     padding-inline: 24px;
   }
@@ -711,7 +718,8 @@
     display: none;
   }
 
-  .dashboard-quick-grid {
+  .dashboard-quick-grid,
+  .atelier-quick-grid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
@@ -906,10 +914,98 @@
   font-size: 12px;
 }
 
+.atelier-studio-hero,
 .atelier-stage {
   display: grid;
   gap: 28px;
   margin-top: 18px;
+}
+
+.atelier-account-pill {
+  height: 42px;
+  border: 1px solid var(--atelier-line);
+  border-radius: 999px;
+  background: rgb(16 14 12 / 0.8);
+  padding: 0 14px;
+  color: var(--atelier-paper);
+  font-size: 12px;
+}
+
+.atelier-section-label {
+  color: var(--atelier-metal);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.atelier-quick-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(168px, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.atelier-quick-card,
+.atelier-locked-projects,
+.atelier-locked-composer {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid var(--atelier-line);
+  border-radius: 18px;
+  background: color-mix(in oklab, var(--atelier-paper) 6%, transparent);
+  color: var(--atelier-paper);
+  text-align: left;
+}
+
+.atelier-quick-card {
+  min-height: 108px;
+  padding: 14px;
+}
+
+.atelier-quick-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--atelier-paper) 10%, transparent);
+  color: var(--atelier-metal);
+}
+
+.atelier-locked-composer {
+  min-height: 168px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px;
+}
+
+.atelier-locked-placeholder {
+  color: var(--atelier-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.atelier-accedi-inline {
+  width: fit-content;
+  margin-top: 0;
+  padding-inline: 22px;
+}
+
+.atelier-project-section {
+  margin-top: 28px;
+}
+
+.atelier-locked-projects {
+  min-height: 120px;
+  align-items: center;
+  padding: 18px;
 }
 
 .atelier-copy {
@@ -927,17 +1023,23 @@
 
 .atelier-title {
   margin-top: 6px;
-  max-width: 14ch;
+  max-width: 16ch;
   font-family: "Cormorant Garamond", "Times New Roman", serif;
-  font-size: clamp(3.1rem, 11vw, 6.4rem);
+  font-size: clamp(2.8rem, 8vw, 5.6rem);
   font-weight: 500;
   letter-spacing: -0.035em;
-  line-height: 0.92;
+  line-height: 0.94;
+}
+
+.atelier-title em {
+  font-style: italic;
+  font-weight: 500;
+  color: var(--atelier-cream);
 }
 
 .atelier-invite {
   margin-top: 18px;
-  max-width: 28ch;
+  max-width: 38ch;
   color: color-mix(in oklab, var(--atelier-paper) 78%, var(--atelier-muted));
   font-size: 1.05rem;
   line-height: 1.55;
@@ -1064,6 +1166,7 @@
     background: rgb(10 9 8 / 0.78);
   }
 
+  .atelier-studio-hero,
   .atelier-stage {
     grid-template-columns: minmax(0, 1fr) minmax(240px, 0.85fr);
     align-items: end;
@@ -1098,6 +1201,7 @@
     background: rgb(10 9 8 / 0.68);
   }
 
+  .atelier-studio-hero,
   .atelier-stage {
     min-height: calc(100vh - 64px);
   }
@@ -1105,7 +1209,7 @@
 
 @media (max-width: 639px) {
   .atelier-title {
-    max-width: 11ch;
+    max-width: 13ch;
   }
 
   .atelier-object {
