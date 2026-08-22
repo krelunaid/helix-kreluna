@@ -26,17 +26,18 @@ test("the authenticated empty state exposes the complete flagship gallery withou
   ]);
 
   const items = catalog.flagshipFor("it");
-  assert.equal(items.length, 15);
+  assert.equal(items.length, 18);
   assert.deepEqual(
     items.reduce((counts, item) => ({ ...counts, [item.surface]: counts[item.surface] + 1 }), {
       app: 0,
       site: 0,
     }),
-    { app: 9, site: 6 },
+    { app: 9, site: 9 },
   );
   assert.deepEqual(
     [...catalog.FLAGSHIP_CATEGORY_ORDER],
     [
+      "featured-sites",
       "professional-management",
       "appointments",
       "control-data",

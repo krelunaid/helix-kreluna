@@ -25,6 +25,15 @@ function matchTemplate(prompt: string) {
 		/foundry erp|\berp\b|gestional.*(?:ordini|magazzino|crm|inventario)|(?:inventory|orders?|warehouse|stock).*(?:management|system|software)/.test(p)
 	) return "foundry-erp";
 	if (
+		/mercedes epoque|mercedes-epoque|mercedes époque|noleggio mercedes|classic and modern mercedes|mercedes classiche/.test(p)
+	) return "mercedes-epoque";
+	if (
+		/italvia|concierge immobiliare|casa sicura in italia|italy.?poland property|italy–poland property|immobiliare italia.?polonia/.test(p)
+	) return "italvia";
+	if (
+		/mini4wd lab|mini 4wd lab|mini4wd|taglia il carbonio|cut carbon parts/.test(p)
+	) return "mini4wd-lab";
+	if (
 		/atelier nova|(?:architect(?:ure|ural)?|interior design|architett).*(?:website|site|portfolio|studio|sito)|(?:website|site|portfolio|studio|sito).*(?:architect(?:ure|ural)?|interior design|architett)/.test(p)
 	) return "atelier-nova";
 	if (
@@ -727,6 +736,9 @@ export function htmlForPrompt(prompt: string, locale: Locale = "en") {
 		case "studio-ledger": return buildFlagshipHtml("studio-ledger", locale);
 		case "pulse-booking": return buildFlagshipHtml("pulse-booking", locale);
 		case "foundry-erp": return buildFlagshipHtml("foundry-erp", locale);
+		case "mercedes-epoque": return buildFlagshipHtml("mercedes-epoque", locale);
+		case "italvia": return buildFlagshipHtml("italvia", locale);
+		case "mini4wd-lab": return buildFlagshipHtml("mini4wd-lab", locale);
 		case "atelier-nova": return buildFlagshipHtml("atelier-nova", locale);
 		case "casa-verde": return buildFlagshipHtml("casa-verde", locale);
 		case "lumen-clinic": return buildFlagshipHtml("lumen-clinic", locale);

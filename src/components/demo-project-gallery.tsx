@@ -46,7 +46,7 @@ export function DemoProjectGallery({ locale, copy }: DemoProjectGalleryProps) {
               {copy.title}
             </h2>
             <span className="rounded-full border border-accent/50 bg-accent/10 px-2.5 py-1 text-[10px] font-semibold tracking-[0.15em] text-accent-soft uppercase">
-              15 Demo
+              18 Demo
             </span>
           </div>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">{copy.lead}</p>

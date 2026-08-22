@@ -142,7 +142,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     },
     demo: {
       title: "Progetti dimostrativi",
-      lead: "Esplora 15 esempi funzionanti, divisi per categoria. Non sono salvati nel tuo account e non consumano crediti.",
+      lead: "Esplora 18 esempi funzionanti, divisi per categoria. Non sono salvati nel tuo account e non consumano crediti.",
       apps: "App e software",
       sites: "Siti web",
       open: "Apri demo",
@@ -214,7 +214,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     },
     demo: {
       title: "Demo projects",
-      lead: "Explore 15 working examples organized by category. They are not saved to your account and use no credits.",
+      lead: "Explore 18 working examples organized by category. They are not saved to your account and use no credits.",
       apps: "Apps and software",
       sites: "Websites",
       open: "Open demo",
@@ -286,7 +286,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     },
     demo: {
       title: "Proyectos demo",
-      lead: "Explora 15 ejemplos funcionales organizados por categoría. No se guardan en tu cuenta ni consumen créditos.",
+      lead: "Explora 18 ejemplos funcionales organizados por categoría. No se guardan en tu cuenta ni consumen créditos.",
       apps: "Apps y software",
       sites: "Sitios web",
       open: "Abrir demo",
@@ -358,7 +358,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     },
     demo: {
       title: "Projets démo",
-      lead: "Explorez 15 exemples fonctionnels classés par catégorie. Ils ne sont pas enregistrés dans votre compte et ne consomment aucun crédit.",
+      lead: "Explorez 18 exemples fonctionnels classés par catégorie. Ils ne sont pas enregistrés dans votre compte et ne consomment aucun crédit.",
       apps: "Apps et logiciels",
       sites: "Sites web",
       open: "Ouvrir la démo",
@@ -430,7 +430,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     },
     demo: {
       title: "Demo-Projekte",
-      lead: "Entdecke 15 funktionsfähige Beispiele nach Kategorien. Sie werden nicht in deinem Konto gespeichert und verbrauchen keine Credits.",
+      lead: "Entdecke 18 funktionsfähige Beispiele nach Kategorien. Sie werden nicht in deinem Konto gespeichert und verbrauchen keine Credits.",
       apps: "Apps und Software",
       sites: "Websites",
       open: "Demo öffnen",
@@ -502,7 +502,7 @@ const COPY: Record<Locale, AuthenticatedHomeCopy> = {
     },
     demo: {
       title: "Projetos demo",
-      lead: "Explore 15 exemplos funcionais organizados por categoria. Não ficam guardados na sua conta e não consomem créditos.",
+      lead: "Explore 18 exemplos funcionais organizados por categoria. Não ficam guardados na sua conta e não consomem créditos.",
       apps: "Apps e software",
       sites: "Sites",
       open: "Abrir demo",

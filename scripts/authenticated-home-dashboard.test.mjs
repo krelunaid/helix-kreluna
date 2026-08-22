@@ -115,7 +115,7 @@ test("dashboard state, metrics, filters and activity are deterministic and data-
       }),
       false,
     );
-    assert.equal(catalog.flagshipFor("it").length, 15);
+    assert.equal(catalog.flagshipFor("it").length, 18);
   });
 
   await t.test("metrics and filters derive only from owned projects", () => {
@@ -268,7 +268,7 @@ test("owned and demo cards keep distinct destinations and no fabricated KPI", ()
   assert.match(authenticatedHomeSource, /to="\/studio\/\$id"/);
   assert.match(gallerySource, /to="\/a\/\$slug"/);
   assert.match(gallerySource, /flagshipFor\(locale\)/);
-  assert.match(gallerySource, />\s*15 Demo\s*</);
+  assert.match(gallerySource, />\s*18 Demo\s*</);
 
   const dashboardProductSource = [authenticatedHomeSource, modelSource, copySource].join("\n");
   assert.doesNotMatch(

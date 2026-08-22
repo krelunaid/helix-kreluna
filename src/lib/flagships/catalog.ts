@@ -4,6 +4,7 @@ import { buildBusinessSuiteHtml } from "@/lib/flagships/business-suite";
 import { buildMorphHtml } from "@/lib/flagships/morph";
 import { buildNeuraHtml } from "@/lib/flagships/neura";
 import { buildOrbitCommandHtml } from "@/lib/flagships/orbit-command";
+import { buildAndreaSiteHtml } from "@/lib/flagships/andrea-sites";
 import { buildPremiumSiteHtml } from "@/lib/flagships/premium-sites";
 import { buildSynapseHtml } from "@/lib/flagships/synapse";
 import { buildVantaHtml } from "@/lib/flagships/vanta";
@@ -40,6 +41,7 @@ export type FlagshipVisualSignature = {
 export type FlagshipSurface = "app" | "site";
 
 export type FlagshipCategory =
+  | "featured-sites"
   | "control-data"
   | "collaboration"
   | "product-design"
@@ -50,6 +52,7 @@ export type FlagshipCategory =
   | "culture-events";
 
 export const FLAGSHIP_CATEGORY_ORDER = [
+  "featured-sites",
   "professional-management",
   "appointments",
   "control-data",
@@ -160,6 +163,33 @@ const VISUAL_SIGNATURES: Record<FlagshipId, FlagshipVisualSignature> = {
     palette: ["#111719", "#f1b84b", "#83d7c7"],
     motion: "production-flow",
   },
+  "mercedes-epoque": {
+    shell: "nocturne-collection-salon",
+    typography: "cream-serif-and-gold-caps",
+    navigation: "era-pills-and-reservation-folio",
+    geometry: "star-crest-and-gullwing-silhouette",
+    density: "airy",
+    palette: ["#0b0b0b", "#f3ebda", "#c9a84c"],
+    motion: "headlamp-sweep",
+  },
+  italvia: {
+    shell: "seasonal-concierge-dossier",
+    typography: "navy-display-serif",
+    navigation: "season-toggle-and-agent-thread",
+    geometry: "split-horizon-and-terrace-mass",
+    density: "balanced",
+    palette: ["#1c2c4a", "#f4efe6", "#c45c3e"],
+    motion: "season-reveal",
+  },
+  "mini4wd-lab": {
+    shell: "carbon-workshop-bench",
+    typography: "condensed-pit-sans",
+    navigation: "build-carbon-track-tabs",
+    geometry: "lane-curbs-and-mini-chassis",
+    density: "dense",
+    palette: ["#0a0a0b", "#c8ccd4", "#b55244"],
+    motion: "jump-launch",
+  },
   "atelier-nova": {
     shell: "architectural-editorial-gallery",
     typography: "high-contrast-serif-and-grotesk",
@@ -229,6 +259,9 @@ const FLAGSHIP_TAXONOMY: Record<
   "studio-ledger": { surface: "app", category: "professional-management" },
   "pulse-booking": { surface: "app", category: "appointments" },
   "foundry-erp": { surface: "app", category: "professional-management" },
+  "mercedes-epoque": { surface: "site", category: "featured-sites" },
+  italvia: { surface: "site", category: "featured-sites" },
+  "mini4wd-lab": { surface: "site", category: "featured-sites" },
   "atelier-nova": { surface: "site", category: "professional-sites" },
   "casa-verde": { surface: "site", category: "hospitality-commerce" },
   "lumen-clinic": { surface: "site", category: "professional-sites" },
@@ -239,6 +272,7 @@ const FLAGSHIP_TAXONOMY: Record<
 
 const CATEGORY_LABELS: Record<Locale, Record<FlagshipCategory, string>> = {
   en: {
+    "featured-sites": "Featured",
     "control-data": "Control & data",
     collaboration: "Collaboration",
     "product-design": "Product design",
@@ -249,6 +283,7 @@ const CATEGORY_LABELS: Record<Locale, Record<FlagshipCategory, string>> = {
     "culture-events": "Culture & events",
   },
   it: {
+    "featured-sites": "In evidenza",
     "control-data": "Controllo e dati",
     collaboration: "Collaborazione",
     "product-design": "Prodotto e configurazione",
@@ -259,6 +294,7 @@ const CATEGORY_LABELS: Record<Locale, Record<FlagshipCategory, string>> = {
     "culture-events": "Cultura ed eventi",
   },
   es: {
+    "featured-sites": "Destacados",
     "control-data": "Control y datos",
     collaboration: "Colaboración",
     "product-design": "Diseño de producto",
@@ -269,6 +305,7 @@ const CATEGORY_LABELS: Record<Locale, Record<FlagshipCategory, string>> = {
     "culture-events": "Cultura y eventos",
   },
   fr: {
+    "featured-sites": "À la une",
     "control-data": "Contrôle et données",
     collaboration: "Collaboration",
     "product-design": "Design produit",
@@ -279,6 +316,7 @@ const CATEGORY_LABELS: Record<Locale, Record<FlagshipCategory, string>> = {
     "culture-events": "Culture et événements",
   },
   de: {
+    "featured-sites": "Hervorgehoben",
     "control-data": "Kontrolle und Daten",
     collaboration: "Zusammenarbeit",
     "product-design": "Produktdesign",
@@ -289,6 +327,7 @@ const CATEGORY_LABELS: Record<Locale, Record<FlagshipCategory, string>> = {
     "culture-events": "Kultur und Events",
   },
   pt: {
+    "featured-sites": "Em destaque",
     "control-data": "Controle e dados",
     collaboration: "Colaboração",
     "product-design": "Design de produto",
@@ -358,6 +397,10 @@ export function buildFlagshipHtml(id: FlagshipId, locale: Locale): string {
     case "pulse-booking":
     case "foundry-erp":
       return buildBusinessSuiteHtml(id, locale);
+    case "mercedes-epoque":
+    case "italvia":
+    case "mini4wd-lab":
+      return buildAndreaSiteHtml(id, locale);
     case "atelier-nova":
     case "casa-verde":
     case "lumen-clinic":
