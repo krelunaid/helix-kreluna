@@ -21,9 +21,15 @@ type SignInPanelProps = {
   next?: string;
   prompt?: string;
   titleAs?: "h1" | "h2";
+  variant?: "default" | "atelier";
 };
 
-export function SignInPanel({ next = "/", prompt, titleAs = "h1" }: SignInPanelProps) {
+export function SignInPanel({
+  next = "/",
+  prompt,
+  titleAs = "h1",
+  variant = "default",
+}: SignInPanelProps) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -76,21 +82,33 @@ export function SignInPanel({ next = "/", prompt, titleAs = "h1" }: SignInPanelP
     void onEmail();
   }
 
+  const atelier = variant === "atelier";
+
   return (
-    <div className="w-full rounded-xl bg-surface p-8 window-shadow">
-      <p className="text-[11px] tracking-[0.22em] text-subtle uppercase">Kreluna</p>
+    <div className={atelier ? "atelier-sign-in" : "w-full rounded-xl bg-surface p-8 window-shadow"}>
+      <p className={atelier ? "atelier-sign-in-kicker" : "text-[11px] tracking-[0.22em] text-subtle uppercase"}>
+        Kreluna
+      </p>
       {titleAs === "h2" ? (
-        <h2 className="font-display mt-3 text-4xl italic tracking-tight">{t("login.title")}</h2>
+        <h2 className={atelier ? "atelier-sign-in-title" : "font-display mt-3 text-4xl italic tracking-tight"}>
+          {t("login.title")}
+        </h2>
       ) : (
-        <h1 className="font-display mt-3 text-4xl italic tracking-tight">{t("login.title")}</h1>
+        <h1 className={atelier ? "atelier-sign-in-title" : "font-display mt-3 text-4xl italic tracking-tight"}>
+          {t("login.title")}
+        </h1>
       )}
-      <p className="mt-2 text-sm text-muted">{t("login.lead")}</p>
+      <p className={atelier ? "atelier-sign-in-lead" : "mt-2 text-sm text-muted"}>{t("login.lead")}</p>
 
       {googleAuthEnabled ? (
         <div className="mt-6 grid gap-2">
           <Button
             variant="secondary"
-            className="h-12 w-full bg-fg text-bg hover:opacity-95"
+            className={
+              atelier
+                ? "atelier-sign-in-loud h-12 w-full"
+                : "h-12 w-full bg-fg text-bg hover:opacity-95"
+            }
             disabled={busy}
             onClick={() => void onGoogle()}
           >
@@ -102,7 +120,11 @@ export function SignInPanel({ next = "/", prompt, titleAs = "h1" }: SignInPanelP
         <div className="mt-6 grid gap-2">
           <Button
             variant="secondary"
-            className="h-12 w-full bg-fg text-bg hover:opacity-95"
+            className={
+              atelier
+                ? "atelier-sign-in-loud h-12 w-full"
+                : "h-12 w-full bg-fg text-bg hover:opacity-95"
+            }
             onClick={() => {
               void signIn("grok-google", {
                 callbackURL,
@@ -159,24 +181,30 @@ export function SignInPanel({ next = "/", prompt, titleAs = "h1" }: SignInPanelP
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
           />
-          <Button type="submit" className="w-full" disabled={busy}>
+          <Button
+            type="submit"
+            className={atelier ? "atelier-sign-in-loud w-full" : "w-full"}
+            disabled={busy}
+          >
             {busy ? t("login.wait") : t("login.signin")}
           </Button>
         </form>
       ) : null}
 
-      <nav className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-xs text-subtle" aria-label={t("nav.examples")}>
-        <Link to="/vetrina" search={{ app: undefined }} className="underline underline-offset-2">
-          {t("nav.examples")}
-        </Link>
-        <Link to="/prezzi" className="underline underline-offset-2">
-          {t("nav.pricing")}
-        </Link>
-        <Link to="/house" className="underline underline-offset-2">
-          {t("nav.house")}
-        </Link>
-      </nav>
-      <p className="mt-3 text-xs text-subtle">{t("login.legal")}</p>
+      {atelier ? null : (
+        <nav className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-xs text-subtle" aria-label={t("nav.examples")}>
+          <Link to="/vetrina" search={{ app: undefined }} className="underline underline-offset-2">
+            {t("nav.examples")}
+          </Link>
+          <Link to="/prezzi" className="underline underline-offset-2">
+            {t("nav.pricing")}
+          </Link>
+          <Link to="/house" className="underline underline-offset-2">
+            {t("nav.house")}
+          </Link>
+        </nav>
+      )}
+      <p className={atelier ? "atelier-sign-in-legal" : "mt-3 text-xs text-subtle"}>{t("login.legal")}</p>
     </div>
   );
 }

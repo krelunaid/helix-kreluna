@@ -79,16 +79,30 @@ test("the home mounts the OS dashboard for a user and sign-in chrome when signed
   assert.match(signInSource, /dashboard-home-sidebar/);
   assert.match(signInSource, /dashboard-home-rail/);
   assert.match(signInSource, /dashboard-nav/);
+  assert.match(signInSource, /atelier-home/);
+  assert.match(signInSource, /<AtelierObject/);
   assert.match(signInSource, /function focusAccedi/);
-  assert.match(signInSource, /<SignInPanel next="\/" prompt=\{prompt\} titleAs="h2" \/>/);
+  assert.match(signInSource, /setAccediOpen\(true\)/);
+  assert.match(signInSource, /<SignInPanel next="\/" prompt=\{prompt\} titleAs="h2" variant="atelier" \/>/);
   assert.match(signInSource, /copy\.signedOutLead/);
   assert.match(signInSource, /copy\.signIn/);
+  assert.match(signInSource, /copy\.greeting/);
+  assert.match(signInSource, /copy\.headlineBefore/);
+  assert.match(signInSource, /copy\.headlineAccent/);
+  assert.match(signInSource, /atelier-locked-composer/);
+  assert.match(signInSource, /dashboard-hero/);
+  assert.match(signInSource, /dashboard-composer-wrap/);
+  assert.match(signInSource, /<StudioDemoGallery/);
+  assert.doesNotMatch(signInSource, /atelier-accedi/);
+  assert.doesNotMatch(signInSource, /Bottega del Capello|Accademia della Bugia/);
   assert.doesNotMatch(signInSource, /<SiteHeader/);
   assert.doesNotMatch(signInSource, /<IdeaDesk/);
   assert.doesNotMatch(signInSource, /id="idea"/);
   assert.doesNotMatch(signInSource, /mkt\.title/);
+  assert.doesNotMatch(signInSource, /HelixOrb|dashboard-metric-card/);
   assert.doesNotMatch(signInSource, /useHelixCreate|startGuestBuild|DemoProjectGallery/);
-  assert.doesNotMatch(signInSource, /Prototipo|Produzione|Crea gratis/);
+  assert.doesNotMatch(signInSource, /Prototipo|Produzione|Crea gratis|Dalla tua idea/);
+  assert.doesNotMatch(signInSource, />—</);
   assert.match(createSource, /startGuestBuild\(/);
   assert.match(landingSource, /t\("mkt\.title"\)/);
   assert.match(landingSource, /id="esempi"/);
@@ -227,7 +241,51 @@ test("dashboard state, metrics, filters and activity are deterministic and data-
       }
       assert.ok(localized.signedOutLead.trim().length > 12, `${locale} missing signed-out gate copy`);
       assert.ok(localized.signIn.trim().length > 2, `${locale} missing signed-out Accedi label`);
+      assert.ok(localized.atelier.title.trim().length > 8, `${locale} missing atelier title`);
+      assert.ok(localized.atelier.invite.trim().length > 16, `${locale} missing atelier invite`);
+      assert.doesNotMatch(localized.atelier.title, /Dalla tua idea|Cosa vuoi creare|What do you want to/);
+      assert.ok(localized.studioDemos.title.trim().length > 2, `${locale} missing studio demo title`);
     }
+  });
+
+  await t.test("the studio lists 18 premium demos plus Andrea’s live sites", async () => {
+    const premium = await vite.ssrLoadModule("/src/lib/premium-demos.ts");
+    assert.equal(premium.PREMIUM_DEMO_IDS.length, 18);
+    assert.equal(new Set(premium.PREMIUM_DEMO_IDS).size, 18);
+    assert.deepEqual(premium.ANDREA_LIVE_SITES, ["mercedes-epoque", "italvia", "mini4wd-lab"]);
+    assert.doesNotMatch(premium.PREMIUM_DEMO_IDS.join(" "), /bottega|bugia|capello/i);
+    assert.match(premium.buildPremiumDemoHtml("velvet-table", "it"), /Velvet Table/);
+    assert.deepEqual(
+      premium.premiumDemos("it").map((item) => item.name),
+      [
+        "Velvet Table",
+        "CutCraft",
+        "Nexora CRM",
+        "Sonora",
+        "ToonVerse",
+        "Orbital",
+        "StormGlass",
+        "World Pulse",
+        "RoomVerse",
+        "Aurelion Motors",
+        "Vela Noir",
+        "Maison 27",
+        "Studio Monolith",
+        "Nestra Estates",
+        "Lumen Festival",
+        "Cinematica",
+        "Atlas Command",
+        "WorldForge",
+      ],
+    );
+    assert.match(authenticatedHomeSource, /<StudioDemoGallery/);
+    const gallerySource = await readFile(join(ROOT, "src/components/studio-demo-gallery.tsx"), "utf8");
+    assert.match(gallerySource, /to="\/a\/\$slug"/);
+    assert.match(gallerySource, /<StudioPosterArt/);
+    assert.ok(
+      authenticatedHomeSource.indexOf("<StudioDemoGallery") >
+        authenticatedHomeSource.indexOf("dashboard-composer-wrap"),
+    );
   });
 });
 

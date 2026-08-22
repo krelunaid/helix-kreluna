@@ -4,7 +4,6 @@ import {
   Activity,
   BookOpen,
   Braces,
-  Coins,
   CreditCard,
   FolderKanban,
   Globe2,
@@ -18,38 +17,44 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { AtelierObject } from "@/components/atelier-object";
 import { HelpButton } from "@/components/help-drawer";
-import { HelixOrb } from "@/components/helix-orb";
 import { HelixMark } from "@/components/kreluna-mark";
 import { SignInPanel } from "@/components/sign-in-panel";
+import { StudioDemoGallery } from "@/components/studio-demo-gallery";
 import { authenticatedHomeCopy } from "@/lib/authenticated-home-copy";
 import { LOCALES, LOCALE_LABEL, useI18n } from "@/lib/i18n";
 
 const QUICK_ICONS = [Globe2, Smartphone, LayoutDashboard, Braces, Sparkles, ShoppingBag] as const;
 
 /**
- * Signed-out `/`: the same Helix OS studio chrome, then Accedi.
- * No marketing landing, no composer, no guest create.
+ * Signed-out `/`: the same Helix OS studio chrome, already visible.
+ * Accedi appears when the visitor tries to create, open projects, or use credits.
+ * No marketing landing, no composer submit, no guest create.
  */
 export function HomeSignIn({ prompt }: { prompt?: string }) {
   const { locale, setLocale } = useI18n();
   const copy = authenticatedHomeCopy(locale);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [accediOpen, setAccediOpen] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
 
   function focusAccedi() {
     setMobileMenuOpen(false);
-    window.requestAnimationFrame(() => {
-      const root = document.getElementById("home-sign-in");
-      root?.scrollIntoView({ block: "center" });
-      root?.querySelector<HTMLElement>("button:not(:disabled), input")?.focus();
-    });
+    setAccediOpen(true);
   }
 
   function closeMobileMenu() {
     setMobileMenuOpen(false);
     window.requestAnimationFrame(() => mobileMenuButtonRef.current?.focus());
   }
+
+  useEffect(() => {
+    if (!accediOpen) return;
+    const root = document.getElementById("home-sign-in");
+    root?.scrollIntoView({ block: "center" });
+    root?.querySelector<HTMLElement>("button:not(:disabled), input")?.focus();
+  }, [accediOpen]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -61,7 +66,7 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
   }, [mobileMenuOpen]);
 
   return (
-    <div id="dashboard-top" className="dashboard-home-shell">
+    <div id="dashboard-top" className="dashboard-home-shell atelier-home">
       <a href="#dashboard-main" className="dashboard-skip-link">
         {copy.skipToContent}
       </a>
@@ -78,28 +83,11 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
         </Link>
         <SignedOutNavigation copy={copy} onAccedi={focusAccedi} />
         <div className="mt-auto space-y-3">
-          <div className="dashboard-plan-card">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold">{copy.plan}</span>
-              <span className="rounded-full bg-ok/15 px-2 py-1 text-[9px] font-semibold tracking-[0.12em] text-ok uppercase">
-                {copy.plan}
-              </span>
-            </div>
-            <p className="mt-5 text-xs text-muted">{copy.credits}</p>
-            <p className="mt-1 text-3xl font-semibold tabular-nums text-accent-soft">—</p>
-            <button
-              type="button"
-              className="mt-4 flex h-11 w-full items-center justify-center rounded-xl border border-accent/40 text-xs text-accent-soft hover:bg-accent/10"
-              onClick={focusAccedi}
-            >
-              {copy.signIn}
-            </button>
-          </div>
           <button type="button" className="dashboard-user-card" onClick={focusAccedi}>
             <span className="dashboard-avatar">H</span>
             <span className="min-w-0 text-left">
-              <span className="block truncate text-sm font-medium">{copy.signIn}</span>
-              <span className="block truncate text-[11px] text-muted">{copy.signedOutLead}</span>
+              <span className="block truncate text-sm font-medium">{copy.atelier.guest}</span>
+              <span className="block truncate text-[11px] text-muted">{copy.atelier.room}</span>
             </span>
           </button>
         </div>
@@ -178,7 +166,7 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
           </select>
           <button type="button" className="dashboard-account-pill" onClick={focusAccedi}>
             <span className="dashboard-avatar dashboard-avatar-small">H</span>
-            <span className="max-w-32 truncate">{copy.signIn}</span>
+            <span className="max-w-32 truncate">{copy.atelier.guest}</span>
           </button>
         </div>
 
@@ -190,15 +178,38 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
             <h1 id="dashboard-title" className="dashboard-hero-title">
               {copy.headlineBefore} <span>{copy.headlineAccent}</span> {copy.headlineAfter}
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted sm:text-base">
-              {copy.signedOutLead}
-            </p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted sm:text-base">{copy.lead}</p>
           </div>
-          <HelixOrb className="dashboard-hero-orb" />
-          <div id="home-sign-in" className="mt-8 max-w-md">
-            <SignInPanel next="/" prompt={prompt} titleAs="h2" />
+          <AtelierObject className="dashboard-hero-orb" />
+          <div className="dashboard-composer-wrap">
+            <p className="mb-3 text-xs font-semibold tracking-[0.16em] text-accent-soft uppercase">
+              {copy.createSection}
+            </p>
+            {accediOpen ? (
+              <div id="home-sign-in">
+                <p className="mb-3 text-sm text-muted">{copy.signedOutLead}</p>
+                <SignInPanel next="/" prompt={prompt} titleAs="h2" variant="atelier" />
+              </div>
+            ) : (
+              <button
+                type="button"
+                id="home-sign-in"
+                className="atelier-locked-composer"
+                onClick={focusAccedi}
+              >
+                <span className="atelier-locked-placeholder">{copy.createPlaceholder}</span>
+              </button>
+            )}
           </div>
         </section>
+
+        <StudioDemoGallery
+          locale={locale}
+          title={copy.studioDemos.title}
+          lead={copy.studioDemos.lead}
+          open={copy.studioDemos.open}
+          andrea={copy.studioDemos.andrea}
+        />
 
         <section className="mt-6" aria-labelledby="quick-create-title">
           <h2 id="quick-create-title" className="dashboard-section-label">
@@ -219,9 +230,7 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
                   </span>
                   <span>
                     <span className="block text-sm font-medium text-fg">{preset.label}</span>
-                    <span className="mt-1 block text-xs leading-4 text-muted">
-                      {preset.description}
-                    </span>
+                    <span className="mt-1 block text-xs leading-4 text-muted">{preset.description}</span>
                   </span>
                 </button>
               );
@@ -234,17 +243,17 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
           className="dashboard-project-section"
           aria-labelledby="dashboard-projects-title"
         >
-          <div className="dashboard-empty-intro">
+          <button type="button" className="atelier-locked-projects" onClick={focusAccedi}>
             <span className="dashboard-empty-icon">
               <Sparkles className="size-5" />
             </span>
-            <div>
+            <span>
               <h2 id="dashboard-projects-title" className="text-2xl tracking-tight">
                 {copy.empty.title}
               </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{copy.signedOutLead}</p>
-            </div>
-          </div>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{copy.empty.lead}</p>
+            </span>
+          </button>
         </section>
       </main>
 
@@ -253,22 +262,7 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
           <h2 id="dashboard-overview-title-signed-out" className="text-sm font-semibold">
             {copy.overview.title}
           </h2>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            {[
-              { icon: FolderKanban, label: copy.overview.total },
-              { icon: Globe2, label: copy.overview.online },
-              { icon: Coins, label: copy.overview.credits },
-              { icon: Activity, label: copy.overview.ready },
-            ].map((item) => (
-              <div key={item.label} className="dashboard-metric-card">
-                <div className="flex items-center gap-2 text-[11px] text-muted">
-                  <item.icon className="size-3.5 text-info" />
-                  <span>{item.label}</span>
-                </div>
-                <p className="mt-2 text-xl font-semibold tabular-nums">—</p>
-              </div>
-            ))}
-          </div>
+          <p className="mt-3 text-sm text-muted">{copy.atelier.roomLine}</p>
         </section>
         <section className="dashboard-rail-panel" aria-labelledby="dashboard-build-title-signed-out">
           <div className="flex items-center justify-between gap-3">
@@ -277,9 +271,9 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
             </h2>
             <Activity className="size-4 text-accent-soft" />
           </div>
-          <p className="mt-4 rounded-xl border border-border/70 bg-bg/35 p-3 text-xs text-muted">
+          <button type="button" className="mt-4 w-full rounded-xl border border-border/70 bg-bg/35 p-3 text-left text-xs text-muted" onClick={focusAccedi}>
             {copy.build.none}
-          </p>
+          </button>
         </section>
         <section className="dashboard-rail-panel" aria-labelledby="dashboard-activity-title">
           <h2 id="dashboard-activity-title" className="text-sm font-semibold">
@@ -325,7 +319,7 @@ function SignedOutNavigation({
           aria-current={item.current ? "page" : undefined}
           onClick={(event) => {
             onNavigate?.();
-            if (item.href === "#home-sign-in") {
+            if (item.href !== "#dashboard-top") {
               event.preventDefault();
               onAccedi();
             }
@@ -361,7 +355,7 @@ function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>) {
   if (event.key !== "Tab") return;
   const focusable = Array.from(
     event.currentTarget.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), select:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      'a[href], button:not(:disabled), select:not(:disabled), textarea:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
     ),
   ).filter((element) => !element.hasAttribute("hidden"));
   const first = focusable[0];

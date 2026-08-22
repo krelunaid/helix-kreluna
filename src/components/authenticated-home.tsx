@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { AccountDesk } from "@/components/account-desk";
 import { DemoProjectGallery } from "@/components/demo-project-gallery";
+import { StudioDemoGallery } from "@/components/studio-demo-gallery";
 import { HelpButton } from "@/components/help-drawer";
 import { HelixOrb } from "@/components/helix-orb";
 import { IdeaDesk } from "@/components/idea-desk";
@@ -285,6 +286,14 @@ export function AuthenticatedHome({
             />
           </div>
         </section>
+
+        <StudioDemoGallery
+          locale={locale}
+          title={copy.studioDemos.title}
+          lead={copy.studioDemos.leadSignedIn}
+          open={copy.studioDemos.open}
+          andrea={copy.studioDemos.andrea}
+        />
 
         <section className="mt-6" aria-labelledby="quick-create-title">
           <h2 id="quick-create-title" className="dashboard-section-label">
