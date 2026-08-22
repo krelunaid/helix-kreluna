@@ -147,6 +147,18 @@ test("the showcase contains eighteen honest and distinct flagship products", asy
     assert.match(sites[0]?.kind ?? "", /auto|noleggio|collezione/i);
     assert.match(catalog.flagshipFor("it").find((entry) => entry.id === "italvia")?.kind ?? "", /immobiliare/i);
     assert.match(catalog.flagshipFor("it").find((entry) => entry.id === "mini4wd-lab")?.kind ?? "", /hobby|laboratorio|Mini/i);
+    const epoque = catalog.buildFlagshipHtml("mercedes-epoque", "it");
+    const italvia = catalog.buildFlagshipHtml("italvia", "it");
+    const mini = catalog.buildFlagshipHtml("mini4wd-lab", "it");
+    assert.match(epoque, /\/vetrina\/epoque\/mercedes-300-sl-wings\.jpg/);
+    assert.match(epoque, /\/vetrina\/epoque\/mercedes-190-sl\.jpg/);
+    assert.match(epoque, /\/vetrina\/epoque\/mercedes-amg-gt\.jpg/);
+    assert.match(epoque, /<img[^>]+src="\/vetrina\/epoque\//);
+    assert.doesNotMatch(epoque, /cr[eê]pe|Rue de Verneuil|maison de mode|lookbook/i);
+    assert.match(italvia, /\/vetrina\/italvia\/val-dorcia\.jpg/);
+    assert.match(italvia, /\/vetrina\/italvia\/tropea\.jpg/);
+    assert.match(mini, /\/vetrina\/mini4wd\/race-night\.jpg/);
+    assert.match(mini, /\/vetrina\/mini4wd\/fleet\.jpg/);
     for (const excluded of ["la-bottega-del-capello", "accademia-della-bugia", "peselli-hub"]) {
       assert.equal(catalog.isFlagshipId(excluded), false);
       assert.equal(
@@ -348,6 +360,7 @@ test("Home, Vetrina and public routing use the real localized app preview", asyn
   assert.match(vetrina, /categoryItems\[0\]\?\.categoryLabel/);
   assert.match(vetrina, /archivedFor\(locale\)/);
   assert.doesNotMatch(vetrina, /cover=\{item\.cover\}/);
+  assert.match(vetrina, /ANDREA_VETRINA_COVERS/);
   assert.match(vetrina, /search=\{\{ lang: locale \}\}/);
 
   assert.match(publicRoute, /locale: deps\.lang/);

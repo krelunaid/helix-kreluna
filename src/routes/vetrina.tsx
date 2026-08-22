@@ -5,6 +5,7 @@ import { ProjectCard } from "@/components/project-card";
 import { Button } from "@/components/ui/button";
 import { archivedFor, featuredFor, featuredHtml } from "@/lib/templates";
 import { flagshipShowcaseLabels } from "@/lib/flagships";
+import { ANDREA_VETRINA_COVERS } from "@/lib/flagships/andrea-sites";
 import type { FlagshipEntry, FlagshipSurface } from "@/lib/flagships";
 import { FLAGSHIP_CATEGORY_ORDER } from "@/lib/flagships/catalog";
 import { useI18n } from "@/lib/i18n";
@@ -181,6 +182,11 @@ function CategoryGroups({
                     meta={item.title}
                     previewTitle={`${item.brand} · ${item.title}`}
                     html={featuredHtml(item.id, locale)}
+                    cover={
+                      item.id in ANDREA_VETRINA_COVERS
+                        ? ANDREA_VETRINA_COVERS[item.id as keyof typeof ANDREA_VETRINA_COVERS]
+                        : undefined
+                    }
                   />
                 </Link>
                 <dl className="mt-4 space-y-3 text-sm">
