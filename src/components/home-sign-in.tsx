@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import {
+  Activity,
   BookOpen,
   Braces,
   CreditCard,
@@ -29,7 +30,7 @@ const QUICK_ICONS = [Globe2, Smartphone, LayoutDashboard, Braces, Sparkles, Shop
 /**
  * Signed-out `/`: the same Helix OS studio chrome, already visible.
  * Accedi appears when the visitor tries to create, open projects, or use credits.
- * No marketing landing, no composer, no guest create.
+ * No marketing landing, no composer submit, no guest create.
  */
 export function HomeSignIn({ prompt }: { prompt?: string }) {
   const { locale, setLocale } = useI18n();
@@ -71,27 +72,28 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
       </a>
 
       <aside className="dashboard-home-sidebar" aria-label={copy.nav.home}>
-        <Link to="/" className="atelier-brand">
+        <Link to="/" className="flex items-center gap-3 px-2 py-1">
           <HelixMark className="size-14 shrink-0" />
           <span>
-            <span className="atelier-brand-name">Kreluna</span>
-            <span className="atelier-brand-os">Helix OS</span>
+            <span className="block font-semibold tracking-[0.08em]">KRELUNA</span>
+            <span className="block text-[10px] tracking-[0.16em] text-subtle uppercase">
+              Helix OS
+            </span>
           </span>
         </Link>
         <SignedOutNavigation copy={copy} onAccedi={focusAccedi} />
         <div className="mt-auto space-y-3">
-          <div className="atelier-guest-card">
-            <p className="atelier-guest-label">{copy.atelier.guest}</p>
-            <p className="atelier-guest-note">{copy.atelier.guestNote}</p>
-            <p className="atelier-guest-gate">{copy.signedOutLead}</p>
-            <button type="button" className="atelier-accedi" onClick={focusAccedi}>
-              {copy.signIn}
-            </button>
-          </div>
+          <button type="button" className="dashboard-user-card" onClick={focusAccedi}>
+            <span className="dashboard-avatar">H</span>
+            <span className="min-w-0 text-left">
+              <span className="block truncate text-sm font-medium">{copy.atelier.guest}</span>
+              <span className="block truncate text-[11px] text-muted">{copy.atelier.room}</span>
+            </span>
+          </button>
         </div>
       </aside>
 
-      <header className="dashboard-mobile-header atelier-mobile-header">
+      <header className="dashboard-mobile-header">
         <button
           ref={mobileMenuButtonRef}
           type="button"
@@ -102,19 +104,19 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
         >
           <Menu className="size-5" />
         </button>
-        <Link to="/" className="atelier-mobile-mark">
+        <Link to="/" className="flex items-center gap-2">
           <HelixMark className="size-10" />
-          <span>Helix</span>
+          <span className="text-sm font-semibold">Helix</span>
         </Link>
-        <button type="button" className="atelier-accedi atelier-accedi-compact" onClick={focusAccedi}>
-          {copy.signIn}
+        <button type="button" className="dashboard-avatar" onClick={focusAccedi} aria-label={copy.signIn}>
+          H
         </button>
       </header>
 
       {mobileMenuOpen ? (
         <div className="dashboard-mobile-drawer" role="presentation" onClick={closeMobileMenu}>
           <aside
-            className="dashboard-mobile-drawer-panel atelier-drawer"
+            className="dashboard-mobile-drawer-panel"
             role="dialog"
             aria-modal="true"
             aria-label={copy.nav.home}
@@ -122,11 +124,11 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-6 flex items-center justify-between">
-              <div className="atelier-brand">
+              <div className="flex items-center gap-3">
                 <HelixMark className="size-12" />
                 <div>
-                  <p className="atelier-brand-name">Kreluna</p>
-                  <p className="atelier-brand-os">Helix OS</p>
+                  <p className="font-semibold">Kreluna</p>
+                  <p className="text-[10px] tracking-[0.16em] text-subtle uppercase">Helix OS</p>
                 </div>
               </div>
               <button
@@ -144,8 +146,8 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
         </div>
       ) : null}
 
-      <main id="dashboard-main" className="dashboard-home-main atelier-main">
-        <div className="atelier-toolbar">
+      <main id="dashboard-main" className="dashboard-home-main">
+        <div className="dashboard-top-actions">
           <HelpButton />
           <label className="sr-only" htmlFor="home-language">
             {copy.nav.home}
@@ -154,7 +156,7 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
             id="home-language"
             value={locale}
             onChange={(event) => setLocale(event.target.value as typeof locale)}
-            className="atelier-select"
+            className="dashboard-select"
           >
             {LOCALES.map((code) => (
               <option key={code} value={code}>
@@ -162,27 +164,30 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
               </option>
             ))}
           </select>
-          <button type="button" className="atelier-account-pill" onClick={focusAccedi}>
-            {copy.atelier.guest}
+          <button type="button" className="dashboard-account-pill" onClick={focusAccedi}>
+            <span className="dashboard-avatar dashboard-avatar-small">H</span>
+            <span className="max-w-32 truncate">{copy.atelier.guest}</span>
           </button>
         </div>
 
-        <section id="dashboard-create" className="atelier-studio-hero" aria-labelledby="dashboard-title">
-          <div className="atelier-copy">
-            <p className="atelier-evening">
+        <section id="dashboard-create" className="dashboard-hero" aria-labelledby="dashboard-title">
+          <div className="dashboard-hero-copy">
+            <p className="text-sm text-muted">
               {copy.greeting} <span aria-hidden>👋</span>
             </p>
-            <h1 id="dashboard-title" className="atelier-title">
-              {copy.headlineBefore} <em>{copy.headlineAccent}</em> {copy.headlineAfter}
+            <h1 id="dashboard-title" className="dashboard-hero-title">
+              {copy.headlineBefore} <span>{copy.headlineAccent}</span> {copy.headlineAfter}
             </h1>
-            <p className="atelier-invite">{copy.lead}</p>
-            <p className="atelier-gate">{copy.signedOutLead}</p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted sm:text-base">{copy.lead}</p>
           </div>
-          <AtelierObject />
-          <div className="atelier-desk">
-            <p className="atelier-desk-label">{copy.createSection}</p>
+          <AtelierObject className="dashboard-hero-orb" />
+          <div className="dashboard-composer-wrap">
+            <p className="mb-3 text-xs font-semibold tracking-[0.16em] text-accent-soft uppercase">
+              {copy.createSection}
+            </p>
             {accediOpen ? (
               <div id="home-sign-in">
+                <p className="mb-3 text-sm text-muted">{copy.signedOutLead}</p>
                 <SignInPanel next="/" prompt={prompt} titleAs="h2" variant="atelier" />
               </div>
             ) : (
@@ -193,7 +198,6 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
                 onClick={focusAccedi}
               >
                 <span className="atelier-locked-placeholder">{copy.createPlaceholder}</span>
-                <span className="atelier-accedi atelier-accedi-inline">{copy.signIn}</span>
               </button>
             )}
           </div>
@@ -207,28 +211,26 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
           andrea={copy.studioDemos.andrea}
         />
 
-        <section className="mt-8" aria-labelledby="quick-create-title">
-          <h2 id="quick-create-title" className="atelier-section-label">
+        <section className="mt-6" aria-labelledby="quick-create-title">
+          <h2 id="quick-create-title" className="dashboard-section-label">
             {copy.quickCreate}
           </h2>
-          <div className="atelier-quick-grid">
+          <div className="dashboard-quick-grid">
             {copy.quickPresets.map((preset, index) => {
               const Icon = QUICK_ICONS[index];
               return (
                 <button
                   key={preset.label}
                   type="button"
-                  className="atelier-quick-card"
+                  className="dashboard-quick-card"
                   onClick={focusAccedi}
                 >
-                  <span className="atelier-quick-icon">
+                  <span className="dashboard-quick-icon">
                     <Icon className="size-5" />
                   </span>
                   <span>
-                    <span className="block text-sm font-medium">{preset.label}</span>
-                    <span className="mt-1 block text-xs leading-4 text-[color:var(--atelier-muted)]">
-                      {preset.description}
-                    </span>
+                    <span className="block text-sm font-medium text-fg">{preset.label}</span>
+                    <span className="mt-1 block text-xs leading-4 text-muted">{preset.description}</span>
                   </span>
                 </button>
               );
@@ -238,44 +240,55 @@ export function HomeSignIn({ prompt }: { prompt?: string }) {
 
         <section
           id="dashboard-projects"
-          className="atelier-project-section"
+          className="dashboard-project-section"
           aria-labelledby="dashboard-projects-title"
         >
           <button type="button" className="atelier-locked-projects" onClick={focusAccedi}>
-            <span className="atelier-quick-icon">
-              <FolderKanban className="size-5" />
+            <span className="dashboard-empty-icon">
+              <Sparkles className="size-5" />
             </span>
             <span>
               <h2 id="dashboard-projects-title" className="text-2xl tracking-tight">
                 {copy.empty.title}
               </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--atelier-muted)]">
-                {copy.signedOutLead}
-              </p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{copy.empty.lead}</p>
             </span>
           </button>
         </section>
       </main>
 
-      <aside className="dashboard-home-rail atelier-rail" aria-label={copy.overview.title}>
-        <section className="atelier-rail-card">
-          <p className="atelier-rail-kicker">{copy.overview.title}</p>
-          <p className="atelier-rail-line">{copy.atelier.roomLine}</p>
-          <p className="atelier-guest-gate">{copy.signedOutLead}</p>
+      <aside className="dashboard-home-rail" aria-label={copy.overview.title}>
+        <section className="dashboard-rail-panel" aria-labelledby="dashboard-overview-title-signed-out">
+          <h2 id="dashboard-overview-title-signed-out" className="text-sm font-semibold">
+            {copy.overview.title}
+          </h2>
+          <p className="mt-3 text-sm text-muted">{copy.atelier.roomLine}</p>
         </section>
-        <section className="atelier-rail-card">
-          <p className="atelier-rail-kicker">{copy.build.title}</p>
-          <p className="atelier-rail-line">{copy.atelier.guestNote}</p>
-          <button type="button" className="atelier-accedi" onClick={focusAccedi}>
-            {copy.signIn}
+        <section className="dashboard-rail-panel" aria-labelledby="dashboard-build-title-signed-out">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="dashboard-build-title-signed-out" className="text-sm font-semibold">
+              {copy.build.title}
+            </h2>
+            <Activity className="size-4 text-accent-soft" />
+          </div>
+          <button type="button" className="mt-4 w-full rounded-xl border border-border/70 bg-bg/35 p-3 text-left text-xs text-muted" onClick={focusAccedi}>
+            {copy.build.none}
           </button>
         </section>
-        <Link to="/vetrina" search={{ app: undefined }} className="atelier-rail-link">
-          <PanelsTopLeft className="size-4" />
-          {copy.nav.showcase}
-        </Link>
-        <div className="atelier-rail-help">
-          <p>Helix by Kreluna</p>
+        <section className="dashboard-rail-panel" aria-labelledby="dashboard-activity-title">
+          <h2 id="dashboard-activity-title" className="text-sm font-semibold">
+            {copy.recent.title}
+          </h2>
+          <p className="mt-4 text-xs text-muted">{copy.recent.none}</p>
+        </section>
+        <div className="dashboard-help-card">
+          <span className="dashboard-quick-icon">
+            <Sparkles className="size-5" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold">{copy.nav.help}</p>
+            <p className="mt-1 text-xs text-muted">Helix by Kreluna</p>
+          </div>
           <HelpButton />
         </div>
       </aside>
@@ -298,7 +311,7 @@ function SignedOutNavigation({
     { icon: FolderKanban, label: copy.nav.projects, href: "#dashboard-projects" },
   ];
   return (
-    <nav className="dashboard-nav atelier-nav" aria-label={copy.nav.home}>
+    <nav className="dashboard-nav" aria-label={copy.nav.home}>
       {items.map((item) => (
         <a
           key={item.href}

@@ -90,7 +90,10 @@ test("the home mounts the OS dashboard for a user and sign-in chrome when signed
   assert.match(signInSource, /copy\.headlineBefore/);
   assert.match(signInSource, /copy\.headlineAccent/);
   assert.match(signInSource, /atelier-locked-composer/);
+  assert.match(signInSource, /dashboard-hero/);
+  assert.match(signInSource, /dashboard-composer-wrap/);
   assert.match(signInSource, /<StudioDemoGallery/);
+  assert.doesNotMatch(signInSource, /atelier-accedi/);
   assert.doesNotMatch(signInSource, /Bottega del Capello|Accademia della Bugia/);
   assert.doesNotMatch(signInSource, /<SiteHeader/);
   assert.doesNotMatch(signInSource, /<IdeaDesk/);
