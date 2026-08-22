@@ -147,6 +147,33 @@
   color: var(--vt-ink);
 }
 
+@media (max-width: 640px) {
+  .vt-shell {
+    padding: 8px 10px;
+  }
+
+  .vt-shell-brand {
+    display: none;
+  }
+
+  .vt-ghost,
+  .vt-text,
+  .vt-create,
+  .vt-made {
+    letter-spacing: 0.08em;
+  }
+
+  .vt-hero-copy {
+    min-height: 42svh;
+    padding-top: 20px;
+  }
+
+  .vt-word {
+    font-size: 64px;
+    right: 12px;
+  }
+}
+
 .vt-notice {
   position: absolute;
   left: 50%;
